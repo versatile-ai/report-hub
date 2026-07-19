@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSpark NPU 适配 — 阶段性实验报告</title>
+<style>
+  :root{
+    --bg:#0d1117; --surface:#161b22; --surface2:#1c2230; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --green:#3fb950;
+    --yellow:#d29922; --red:#f85149; --purple:#bc8cff; --orange:#e8964e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.65;padding:24px 32px 80px;max-width:1280px;margin:0 auto}
+  h1{font-size:24px;font-weight:600;margin-bottom:6px}
+  h2{font-size:19px;font-weight:600;color:var(--accent);margin:40px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  h3{font-size:15px;font-weight:600;color:var(--purple);margin:24px 0 10px}
+  h4{font-size:13px;font-weight:600;color:var(--yellow);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.5px}
+  p{margin:8px 0;color:var(--text)}
+  .meta{color:var(--muted);font-size:12px;margin-bottom:24px}
+  .meta b{color:var(--text)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+  th{background:var(--surface2);color:var(--accent);text-align:left;padding:8px 10px;font-weight:600;border:1px solid var(--border);font-size:12px}
+  td{padding:8px 10px;border:1px solid var(--border);color:var(--text);vertical-align:top}
+  tr:nth-child(even) td{background:var(--surface)}
+  .ok{color:var(--green);font-weight:600}
+  .bad{color:var(--red);font-weight:600}
+  .warn{color:var(--yellow);font-weight:600}
+  code{background:#1f2937;color:#79c0ff;padding:1px 5px;border-radius:3px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:12px}
+  pre{background:#010409;border:1px solid var(--border);border-radius:6px;padding:14px;overflow-x:auto;margin:12px 0;font-size:12px;line-height:1.5}
+  pre code{background:none;color:var(--text);padding:0}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px 18px;margin:12px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px;text-align:center}
+  .stat .v{font-size:26px;font-weight:700;color:var(--green)}
+  .stat .l{font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+  .stat.warn .v{color:var(--yellow)}
+  .stat.bad .v{color:var(--red)}
+  .stat.info .v{color:var(--accent)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px}
+  .b-green{background:rgba(63,185,80,.15);color:var(--green)}
+  .b-yellow{background:rgba(210,153,34,.15);color:var(--yellow)}
+  .b-red{background:rgba(248,81,73,.15);color:var(--red)}
+  .b-blue{background:rgba(88,166,255,.15);color:var(--accent)}
+  .b-purple{background:rgba(188,140,255,.15);color:var(--purple)}
+  .toc{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px 18px;margin:20px 0;font-size:13px}
+  .toc a{color:var(--accent);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  .toc ol{padding-left:22px}
+  .toc li{margin:4px 0}
+  .note{border-left:3px solid var(--yellow);background:rgba(210,153,34,.06);padding:10px 14px;margin:12px 0;font-size:13px}
+  .note.bad{border-left-color:var(--red);background:rgba(248,81,73,.06)}
+  .note.ok{border-left-color:var(--green);background:rgba(63,185,80,.06)}
+  .timeline{position:relative;padding-left:24px;margin:18px 0}
+  .timeline:before{content:'';position:absolute;left:7px;top:0;bottom:0;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin:0 0 16px}
+  .tl-item:before{content:'';position:absolute;left:-21px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+  .tl-item.bad:before{background:var(--red)}
+  .tl-item.ok:before{background:var(--green)}
+  .tl-item.warn:before{background:var(--yellow)}
+  .tl-date{color:var(--muted);font-size:11px;font-family:monospace}
+  .tl-title{font-weight:600;margin:2px 0 4px}
+  .tl-desc{font-size:13px;color:var(--muted)}
+  .ascii{font-family:'SF Mono',Consolas,monospace;font-size:11px;line-height:1.4;color:var(--text);background:#010409;border:1px solid var(--border);border-radius:6px;padding:12px;overflow-x:auto;white-space:pre}
+  .perf-bar{height:18px;border-radius:3px;display:inline-block;vertical-align:middle}
+  hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+  .foot{color:var(--muted);font-size:11px;margin-top:40px;padding-top:16px;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<h1>DSpark on Ascend NPU — 阶段性实验报告</h1>
+<div class="meta">
+  <b>实验</b>: wip-deepseek-v4-npu-dspark &nbsp;|&nbsp;
+  <b>周期</b>: 2026-07-14 ~ 2026-07-19 (5 天) &nbsp;|&nbsp;
+  <b>状态</b>: <span class="ok">图模式+DSpark 端到端跑通, 性能优化中</span> &nbsp;|&nbsp;
+  <b>报告日期</b>: 2026-07-19
+</div>
+
+<div class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#summary">关键结论速查</a></li>
+    <li><a href="#perf">图模式 + DSpark 性能效果</a></li>
+    <li><a href="#principle">特性开发原理</a></li>
+    <li><a href="#code">代码修改位置清单</a></li>
+    <li><a href="#path">开发路径与解决方案</a></li>
+    <li><a href="#constraints">硬约束矩阵</a></li>
+    <li><a href="#lessons">经验总结</a></li>
+  </ol>
+</div>
+
+<!-- ============ 1. SUMMARY ============ -->
+<h2 id="summary">一、关键结论速查</h2>
+
+<div class="grid2">
+  <div class="stat ok"><div class="v">58 ms</div><div class="l">DSpark+FULL TPOT (num_spec=1)</div></div>
+  <div class="stat ok"><div class="v">43 ms</div><div class="l">DSpark+FULL TPOT (num_spec=3 最优)</div></div>
+  <div class="stat info"><div class="v">2.25</div><div class="l">Accept Length (num_spec=3)</div></div>
+  <div class="stat warn"><div class="v">19%</div><div class="l">真实加速比 (vs baseline 53ms)</div></div>
+</div>
+
+<p>本实验在 <b>Ascend 910B3 NPU 4 节点集群 (32 卡)</b> 上完成 DeepSeek-V4-Flash-DSpark-BF16 模型的 DSpark 推测解码适配。经历两个阶段：</p>
+
+<table>
+<tr><th>阶段</th><th>里程碑</th><th>状态</th><th>关键指标</th></tr>
+<tr><td><b>M3 Eager</b></td><td>DSpark eager 端到端推理跑通</td><td><span class="badge b-green">达成</span></td><td>accept 1.53, 100 req 无崩溃</td></tr>
+<tr><td><b>M4 图模式</b></td><td>PIECEWISE + DSpark 跑通</td><td><span class="badge b-green">达成</span></td><td>24/24 图捕获, accept 1.7-2.3</td></tr>
+<tr><td><b>M4 图模式</b></td><td>FULL + DSpark 跑通 (TPOT&lt;60ms)</td><td><span class="badge b-green">达成</span></td><td>TPOT 58ms (num_spec=1)</td></tr>
+<tr><td><b>M6 性能优化</b></td><td>num_spec=3 调优到 43ms</td><td><span class="badge b-yellow">进行中</span></td><td>真实加速 19%, 瓶颈=verify batch pad</td></tr>
+<tr><td><b>M5 性能优化</b></td><td>accept ≥ 2.0</td><td><span class="badge b-green">达成</span></td><td>实测 2.25 (num_spec=3)</td></tr>
+</table>
+
+<div class="note ok">
+<b>核心成果</b>: DSpark + FULL_DECODE_ONLY 图模式 + num_spec=3 实测 effective TPOT 43ms (decode-only),
+相比无 DSpark baseline 53ms 实现 19% 加速。accept length 2.25 超过 2.0 目标。
+但理论加速比应为 3.25x，被 <b>verify batch pad 到 8</b> 导致的 target forward 2.64x 开销抵消。
+</div>
+
+<!-- ============ 2. PERFORMANCE ============ -->
+<h2 id="perf">二、图模式 + DSpark 性能效果</h2>
+
+<h3>2.1 完整性能矩阵</h3>
+
+<table>
+<tr><th>配置</th><th>单请求 TPOT</th><th>8 并发</th><th>32 并发</th><th>图模式</th><th>DSpark</th><th>Accept</th></tr>
+<tr><td>FULL+async+dsa_cp <span class="badge b-red">无DSpark</span></td><td class="ok">57ms</td><td>81ms</td><td>302ms</td><td><code>FULL</code></td><td>—</td><td>—</td></tr>
+<tr><td>FULL+no-async+no-dsa_cp <span class="badge b-red">无DSpark</span></td><td class="ok">48ms</td><td>—</td><td>—</td><td><code>FULL</code></td><td>—</td><td>—</td></tr>
+<tr><td><b>DSpark+FULL+num_spec=1</b></td><td class="ok">58ms</td><td>—</td><td>—</td><td><code>FULL</code></td><td><span class="ok">有</span></td><td>1.37-1.44</td></tr>
+<tr><td><b>DSpark+FULL+num_spec=3</b> <span class="badge b-green">最优</span></td><td class="ok">43ms</td><td>—</td><td>—</td><td><code>FULL</code></td><td><span class="ok">有</span></td><td><b>2.25</b></td></tr>
+<tr><td>DSpark+FULL+num_spec=7</td><td class="warn">93ms</td><td>—</td><td>—</td><td><code>FULL</code></td><td><span class="ok">有</span></td><td>1.39</td></tr>
+<tr><td>DSpark+PIECEWISE+num_spec=5</td><td class="bad">235ms</td><td>—</td><td>—</td><td><code>PIECEWISE</code></td><td><span class="ok">有</span></td><td>1.7-2.3</td></tr>
+<tr><td>DSpark+PIECEWISE+num_spec=7</td><td class="bad">321ms</td><td class="bad">678ms</td><td class="bad">1179ms</td><td><code>PIECEWISE</code></td><td><span class="ok">有</span></td><td>1.39</td></tr>
+<tr><td>PIECEWISE baseline <span class="badge b-red">无DSpark</span></td><td>282ms</td><td>1244ms</td><td>688ms</td><td><code>PIECEWISE</code></td><td>—</td><td>—</td></tr>
+</table>
+
+<h4>关键观察</h4>
+<p><b>1. PIECEWISE 是负优化</b>: DSpark+PIECEWISE 32并发 1179ms 比无 DSpark 的 688ms 还慢 1.7x。根因是 PIECEWISE 在 MoE 层 graph break，单请求 batch=1 走 eager 回退 (300ms+)，DSpark draft+verify overhead 超过 accept 收益。</p>
+
+<p><b>2. FULL 是正确路径</b>: FULL_DECODE_ONLY 单请求 48-57ms (无 DSpark)，加 DSpark 后 43-58ms。num_spec=3 是最优点 (accept 2.25 最高)。</p>
+
+<p><b>3. 加速比未达理论值</b>: 理论 3.25x (accept 2.25)，实际 1.19x。根因是 verify batch pad 到 8 (TP=8 整除要求)，target forward(batch=8) 比 batch=1 慢 2.64x，几乎完全抵消 accept 收益。</p>
+
+<h3>2.2 性能瓶颈分解 (num_spec=3)</h3>
+
+<pre><code>baseline (无DSpark, batch=1):     53 ms/token
+                                       │
+DSpark verify (batch=8, pad from 4):   140 ms  ← verify_time
+  ├─ target forward (batch=8 图)       ~90 ms  (64%)  ← MoE all-to-all 通信开销
+  ├─ draft forward (batch=8, 3步 eager) ~30 ms  (21%)
+  └─ rejection sampling + DP 同步       ~20 ms  (15%)
+                                       │
+effective TPOT = 140 / 3.25 =          43 ms   ← 实测值
+                                       │
+理论加速: 53/3.25 = 16 ms (3.25x)
+实际加速: 53/43  = 1.23x  (accept 2.25 的收益被 verify 2.64x 开销抵消)</code></pre>
+
+<h3>2.3 num_spec 可行性矩阵 (SP 整除约束)</h3>
+
+<table>
+<tr><th>num_spec</th><th>num_spec+1</th><th>multiple_of (max(s+1,TP=8))</th><th>整除判定</th><th>结果</th></tr>
+<tr><td>0</td><td>1</td><td>8</td><td>8%1=0, 8%8=0</td><td class="ok">OK</td></tr>
+<tr><td>1</td><td>2</td><td>8</td><td>8%2=0</td><td class="ok">OK (58ms)</td></tr>
+<tr><td>2</td><td>3</td><td>8</td><td>8%3=2</td><td class="bad">FAIL</td></tr>
+<tr><td><b>3</b></td><td>4</td><td>8</td><td>8%4=0</td><td class="ok">OK (43ms, 最优)</td></tr>
+<tr><td>4</td><td>5</td><td>8</td><td>8%5=3</td><td class="bad">FAIL (实测崩溃)</td></tr>
+<tr><td>5</td><td>6</td><td>8</td><td>8%6=2</td><td class="bad">FAIL</td></tr>
+<tr><td>7</td><td>8</td><td>8</td><td>8%8=0</td><td class="warn">OK (93ms)</td></tr>
+</table>
+<p><b>可行集 = {0, 1, 3, 7}</b>。num_spec=3 是 accept 与 verify_time 的最优点。num_spec 调优路径已走死。</p>
+
+<!-- ============ 3. PRINCIPLE ============ -->
+<h2 id="principle">三、特性开发原理</h2>
+
+<h3>3.1 DSpark 算法原理</h3>
+
+<p>DSpark 是 DeepSeek 提出的推测解码方法，核心区别于传统 EAGLE：draft model 是<b>半自回归</b>的——并行 backbone 一次产出 N 个 logits，Markov head 逐位置注入偏置后采样。</p>
+
+<pre><code>传统推测解码:
+  Target prefix → Draft 逐 token 生成 → Target verify → accept/reject
+  瓶颈: draft 阶段仍逐 token 串行
+
+DSpark:
+  Target prefix → Parallel backbone (一次出 N 个 logits)
+                → Markov sequential bias + sample
+                → Target 一次验证全部
+  优势: draft 阶段并行 (仅轻量 Markov 采样串行)</code></pre>
+
+<h4>三个核心设计</h4>
+
+<div class="card">
+<h4>A. 并行 Backbone (架构)</h4>
+<p>Draft model 嵌入在 target checkpoint 的 <code>mtp.{0,1,2}.*</code> 中，复用 target decoder layer 架构。额外显存 ~20-30% (3 层 decoder + draft KV cache)。</p>
+<pre><code>DSparkDraftModel:
+├── embed_tokens      → alias target (零额外显存)
+├── lm_head           → alias target (零额外显存)
+├── main_proj         → target hidden states → draft 维度 (12288→4096)
+├── main_norm         → RMSNorm
+├── layers × 3        → 复用 target DeepseekV2DecoderLayer (MLA + MoE + hc_pre/post)
+├── norm              → head 前 RMSNorm
+├── hc_head           → FP32 小参数
+└── markov_head       → DSpark 专属 (~16MB)
+    ├── markov_w1: [V × 256]  嵌入查表
+    └── markov_w2: [256 × V]  logit 偏置投影</code></pre>
+</div>
+
+<div class="card">
+<h4>B. 非因果 Attention (attention 层)</h4>
+<p>DSpark query[i] 能看到 block 内所有 query token (包括 i 之后的)，让 block 内信息充分流动。Ascend DSA kernel 硬编码 <code>cmp_mask_mode=3</code> (causal)，PR #12003 解法：在外部预计算每个 query 的可见 KV 物理 slot 列表，作为显式索引 tensor 传入。</p>
+</div>
+
+<div class="card">
+<h4>C. Markov Head (采样层)</h4>
+<p>并行 backbone 的弱点：各位置 logits 独立计算，缺少 token 间依赖。Markov head 用 rank=256 的 vocab×vocab bigram 转移矩阵分解，注入上一个 token 的偏置。</p>
+<pre><code>base_logits[i] = lm_head(hidden[i])               ← 并行 backbone
+bias[i] = markov_w2(markov_w1(prev_token[i-1]))    ← 低秩 bigram 转移
+logits[i] = base_logits[i] + bias[i]
+token[i] = gumbel_sample(logits[i])</code></pre>
+</div>
+
+<h3>3.2 NPU 适配：三层等价替换</h3>
+
+<p>适配不改算法、不改 vllm 调度框架，只做 NPU 硬件的三层等价替换：</p>
+
+<table>
+<tr><th>层</th><th>组件</th><th>NVIDIA 实现</th><th>Ascend 替换</th><th>改动量</th></tr>
+<tr><td><b>Layer 1</b><br>Attention</td><td>Non-causal kernel</td><td>tilelang kernel</td><td>外部预计算 slot 索引 + C++ <code>DataCopyPABySlots</code> 分支</td><td>最大<br>(C++ 326 行 + Python 150 行)</td></tr>
+<tr><td><b>Layer 2</b><br>Model</td><td>Draft model 定义</td><td>NVIDIA DSpark model</td><td>Ascend 专属 <code>DSparkDraftModel</code>，复用 <code>DeepseekV2DecoderLayer</code></td><td>大<br>(516 行 + 权重映射)</td></tr>
+<tr><td><b>Layer 3</b><br>Proposer</td><td>Speculator</td><td>NVIDIA speculator</td><td>继承 <code>AscendDsparkProposer</code>，覆盖 <code>_propose</code></td><td>中<br>(~600 行)</td></tr>
+</table>
+
+<h3>3.3 一次 DSpark 推理的数据流</h3>
+
+<div class="ascii">┌─────────────────────────────────────────────────────────────────┐
+│                     一次 DSpark 推理请求                          │
+│                                                                 │
+│  Request → Scheduler → Model Runner                              │
+│                            │                                    │
+│                    ┌───────▼────────┐                           │
+│                    │ Target Model    │  layer 0-42 forward       │
+│                    │ Forward         │  layer 40,41,42 → aux_hs │
+│                    └───────┬────────┘                           │
+│                            │                                    │
+│              aux_hidden_states [N, 12288]                        │
+│              (3层 × 4096, hc_head collapse)                     │
+│                            │                                    │
+│                    ┌───────▼────────┐                           │
+│                    │ Draft Proposer   │  precompute_context_kv   │
+│                    │ _propose()       │  (main_proj 12288→4096)  │
+│                    │  ├─ draft fwd    │  ← TP pad: 5→8           │
+│                    │  ├─ compute_logit│                          │
+│                    │  ├─ markov bias  │                          │
+│                    │  └─ sample N tok │                          │
+│                    └───────┬────────┘                           │
+│                            │                                    │
+│                    draft_tokens [N, 5]                          │
+│                            │                                    │
+│                    ┌───────▼────────┐                           │
+│                    │ Target Verify   │  (拒绝采样)               │
+│                    │ Forward         │                           │
+│                    └───────┬────────┘                           │
+│                            │                                    │
+│                        Response                                 │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+<h4>关键 tensor 维度追踪</h4>
+
+<pre><code>Target:  input_ids [N] → embed → [N,4,4096] → layer 0-42 → aux_hs[i]=[N,4096]
+         return (hidden [N,4096], [aux0, aux1, aux2])
+
+Runner:  target_hidden = cat(aux_hs) = [N, 12288]
+         drafter._propose(target_hidden_states=[N,12288])
+
+Proposer: main_hs = main_norm(main_proj([N,12288])) → [N, 4096]   ← 12288→4096
+          for each draft layer 43,44,45: wkv → rotary → SWA cache
+          input_ids [Q=5] → embed → [5,4,4096] → layer 43-45      ← TP pad 5→8
+          → hc_head → logits [Q, vocab=129280]
+          → _sample_sequential → 5 draft tokens</code></pre>
+
+<!-- ============ 4. CODE ============ -->
+<h2 id="code">四、代码修改位置清单</h2>
+
+<h3>4.1 NFS Overlay (容器启动时 cp -a 覆盖到 vllm-ascend editable install)</h3>
+
+<table>
+<tr><th>#</th><th>文件 (overlay/vllm-workspace/vllm-ascend/vllm_ascend/)</th><th>修改</th><th>不修则</th><th>引入阶段</th></tr>
+<tr><td><b>A</b></td><td><code>utils.py</code></td><td><code>is_drafter_moe_model</code> 加 <code>DSparkDraftModel</code> carve-out</td><td>DP all_reduce 死锁 → EngineDead</td><td>v15 (eager)</td></tr>
+<tr><td><b>B</b></td><td><code>spec_decode/deepseek_v4_dspark_proposer.py</code></td><td>TP padding 后同步 <code>num_tokens_across_dp[dp_rank]</code></td><td>forward_context.py:93 断言 5 vs 8</td><td>v15 (eager)</td></tr>
+<tr><td><b>C</b></td><td><code>spec_decode/llm_base_proposer.py:2067</code></td><td><code>positions_cpu=positions_cpu[token_indices.cpu()]</code></td><td>device mismatch (NPU 索引 CPU tensor)</td><td>v13 (eager)</td></tr>
+<tr><td><b>D</b></td><td><code>models/deepseek_v4_dspark.py:332-361</code></td><td>删除 6 处 inline debug log (<code>logging.getLogger</code>)</td><td>torch.compile <code>Unsupported</code> crash (114 graph break)</td><td>v16 (图模式)</td></tr>
+<tr><td><b>E</b></td><td><code>models/deepseek_v4_dspark_proposer.py:385-399</code></td><td>删除 2 处 inline debug log</td><td>同上</td><td>v16 (图模式)</td></tr>
+<tr><td><b>F</b></td><td><code>models/deepseek_v4.py</code></td><td>target model aux hidden state 收集 (layer 40,41,42) + 继承 <code>SupportsEagle3</code></td><td>matmul 4096 vs 12288 维度不匹配</td><td>v8 (eager)</td></tr>
+<tr><td><b>G</b></td><td><code>ascend_forward_context.py</code></td><td><code>is_draft_model=True</code> 时 <code>flash_comm_v1_enabled=False</code></td><td>SP 分散 token (8→1)</td><td>v12 (eager)</td></tr>
+<tr><td><b>H</b></td><td><code>worker/model_runner_v1.py</code></td><td><code>use_aux_hidden_state_outputs</code> 去 0.23.0 版本条件 + <code>initialize_attn_backend</code> 加 <code>use_dspark()</code></td><td>aux hidden 不收集 / attn backend 不初始化</td><td>v8 (eager)</td></tr>
+<tr><td><b>I</b></td><td><code>spec_decode/__init__.py</code></td><td><code>get_spec_decode_method</code> 检测 DSV4 返回专用 proposer</td><td>用通用 proposer，路径错误</td><td>v8 (eager)</td></tr>
+</table>
+
+<h3>4.2 容器内手动修改 (非 overlay，需 deploy 脚本 sed 注入)</h3>
+
+<table>
+<tr><th>文件 (容器内路径)</th><th>行号</th><th>修改</th><th>阶段</th></tr>
+<tr><td><code>/vllm-workspace/vllm/vllm/config/vllm.py</code></td><td>1091</td><td>注释 <code>compilation_config.mode = NONE</code> (VLLM_USE_BREAKABLE_CUDAGRAPH=1 触发)</td><td>v16</td></tr>
+<tr><td><code>/vllm-workspace/vllm/vllm/config/vllm.py</code></td><td>1126</td><td>恢复 <code>else: CompilationMode.NONE</code> (sed 误伤修复)</td><td>v16</td></tr>
+<tr><td><code>/vllmm-workspace/vllm/vllm/config/vllm.py</code></td><td>1394</td><td>恢复 <code>assert (</code> (被误注释)</td><td>v16</td></tr>
+<tr><td><code>/vllm-workspace/vllm-ascend/vllm_ascend/platform.py</code></td><td>61-62</td><td>注释 <code>VLLM_USE_BREAKABLE_CUDAGRAPH = False</code></td><td>v16</td></tr>
+<tr><td><code>vllm/config/speculative.py</code></td><td>564</td><td><code>use_eagle()</code> 加 dspark 分支 + dspark body 改 pass</td><td>v17</td></tr>
+</table>
+
+<h3>4.3 部署脚本</h3>
+
+<table>
+<tr><th>脚本</th><th>用途</th><th>关键参数</th></tr>
+<tr><td><code>scripts/deploy/deploy_dspark_dp4.sh</code></td><td>Eager DSpark 部署 (v15)</td><td><code>--speculative-config dspark/5</code>, <code>--no-async-scheduling</code>, <code>--enforce-eager</code></td></tr>
+<tr><td><code>scripts/deploy/deploy_dspark_dp4_graph.sh</code></td><td>PIECEWISE 图模式 (v16)</td><td><code>cudagraph_mode:PIECEWISE</code>, <code>VLLM_USE_BREAKABLE_CUDAGRAPH=1</code>, <code>VLLM_SKIP_WARMUP=1</code></td></tr>
+<tr><td><code>scripts/nfs_deploy/deploy_dspark_full.sh</code></td><td>FULL 图模式 (v17-v18)</td><td><code>FULL_DECODE_ONLY</code>, <code>num_spec=1/3</code>, <code>flashcomm1=1</code></td></tr>
+<tr><td><code>scripts/nfs_deploy/launch_graph_core.sh</code></td><td>图模式 worker 启动</td><td>NIC auto-detect (<code>enp67s0f5</code>)</td></tr>
+</table>
+
+<h3>4.4 社区 PR Cherry-pick (代码来源)</h3>
+
+<table>
+<tr><th>PR</th><th>内容</th><th>文件数</th><th>行数</th></tr>
+<tr><td><code>#12003</code></td><td>Non-causal attention (DSA window + C++ kernel)</td><td>16</td><td>+1047/-82</td></tr>
+<tr><td><code>#12004</code></td><td>Draft model 定义 + 权重映射</td><td>—</td><td>516</td></tr>
+<tr><td><code>#12005</code></td><td>Eager speculator / proposer</td><td>—</td><td>505</td></tr>
+</table>
+
+<!-- ============ 5. PATH ============ -->
+<h2 id="path">五、开发路径与解决方案</h2>
+
+<h3>5.1 完整时间线</h3>
+
+<div class="timeline">
+  <div class="tl-item ok">
+    <div class="tl-date">7/14 · 3h</div>
+    <div class="tl-title">M0 环境搭建 — HCCL crash → 重建容器</div>
+    <div class="tl-desc">容器缺 <code>--privileged</code> + driver mounts → CANN/HCCL C++ 层 null 指针。用 GLM5.2 相同参数重建。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/15 · 6h</div>
+    <div class="tl-title">M1 代码集成 — Cherry-pick PR #12003-#12005</div>
+    <div class="tl-desc">对抗审查否定了"自写 350 行"的乐观估计 → cherry-pick 社区 PR (516+150+326 行)。零核心冲突。</div>
+  </div>
+  <div class="tl-item warn">
+    <div class="tl-date">7/16 · 全天</div>
+    <div class="tl-title">M2 启动阶段 — 12 个 boot-stage bug (F1-F12)</div>
+    <div class="tl-desc">registry 映射、MLA 参数、DSA metadata、Triton constexpr、block_table 越界... 最深是 A3: <code>--model</code> 参数被 <code>--served-model-name</code> 覆盖 → Qwen3Config 误用 → 4 个衍生 bug。15 次迭代才定位。</div>
+  </div>
+  <div class="tl-item bad">
+    <div class="tl-date">7/17 上午 · 12h 浪费</div>
+    <div class="tl-title">单节点 OOM 死循环</div>
+    <div class="tl-desc">567GB > 512GB (单节点 HBM)，小学数学。done 实验 runbook 明确写"必须 DP=4"。没读。最终切 4 节点 DP=4。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/17 15:59</div>
+    <div class="tl-title">最佳单点决策 — 切纯净镜像 + NFS overlay</div>
+    <div class="tl-desc">发现容器被 <code>pip install vllm 0.25.1</code> 污染，已打 5 个 monkey-patch。决策: 切基础镜像 nightly-main (vllm 0.23.0) + NFS overlay 动态注入。甩掉全部环境包袱。</div>
+  </div>
+  <div class="tl-item warn">
+    <div class="tl-date">7/17 晚 · 全天</div>
+    <div class="tl-title">M3 推理阶段 — 6 个 bug (B1-B6)</div>
+    <div class="tl-desc">isinstance TypeError → matmul 维度 → EAGLE3 接口 → attn_groups → 通用 Proposer → DP token padding。B2 时才完整画出数据流图 (3层→12288→4096)，架构理解偏晚。</div>
+  </div>
+  <div class="tl-item bad">
+    <div class="tl-date">7/18 05:33</div>
+    <div class="tl-title">Bug #10 — DP 竞争 + SP 分散交织</div>
+    <div class="tl-desc">logits 25856 vs 129280。根因是 DP 竞争 (5→8) + SP 分散 (8→1) 交织。5 轮 debug 才看到交织根因，前 4 轮每轮只看一个维度。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/18 18:31 · v13</div>
+    <div class="tl-title">一手日志纠正二手误判</div>
+    <div class="tl-desc">v11/v12 基于 phase summary 二手描述反复推断 Bug #10。v13 读 run_094705 一手日志发现实际错误是 MoE dispatch + positions_cpu device mismatch，Bug #10 根本没出现。打断二手推断链条。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/18 20:18 · v14</div>
+    <div class="tl-title">基线先行策略 — 隔离问题域</div>
+    <div class="tl-desc">用户指令: 先跑不带 DSpark 的基线。DP=4×TP=8, API 200 + POST 有效 + 100 req 无崩溃。证明 target 基础设施完全正确。叠加 DSpark 时错误必在 draft 路径，范围缩小 10x。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/18 21:17 · v15</div>
+    <div class="tl-title">★ DSpark eager 端到端跑通</div>
+    <div class="tl-desc">v14 baseline + DSpark。3 bug 层层暴露: DP shm_broadcast 死锁 (py-spy dump 定位) → forward_context 断言 → async scheduling。accept 1.53, 100 req 无崩溃。5 项验收全达标。</div>
+  </div>
+  <div class="tl-item warn">
+    <div class="tl-date">7/18 23:36 ~ 7/19 05:25</div>
+    <div class="tl-title">M4 图模式 — 3 次穿刺失败</div>
+    <div class="tl-desc">graph-v6: SpeculativeConfig 校验 DSparkDraftModel 失败 (overlay 遗漏注册)。graph-direct: 114 处 graph break (<code>logging.getLogger</code> 不兼容 torch.compile)。崩溃位置正是 <code>dev_graph_mode_plan.md</code> 预测的第 2 层阻塞。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/19 · v16</div>
+    <div class="tl-title">★ PIECEWISE + DSpark 跑通</div>
+    <div class="tl-desc">5 个阻塞点修复: vllm.py SyntaxError → CompilationMode.NONE → NIC 覆盖 → platform.py 硬禁用 → torch.compile debug log。24/24 图捕获, accept 1.7-2.3。但 TPOT 235ms (PIECEWISE eager 回退)。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/19 · v17</div>
+    <div class="tl-title">★ FULL + DSpark 达成 TPOT&lt;60ms</div>
+    <div class="tl-desc">num_spec=1, effective TPOT 58ms。确认三层硬约束: async 不兼容 + FULL cudagraph 不兼容 + CANN RoPE 算子崩溃。关键 patch: <code>speculative.py use_eagle()</code> 加 dspark。</div>
+  </div>
+  <div class="tl-item ok">
+    <div class="tl-date">7/19 · v18</div>
+    <div class="tl-title">num_spec=3 优化到 43ms</div>
+    <div class="tl-desc">accept 2.25。但真实加速比仅 19% (理论 3.25x)。根因: verify batch pad 到 8 → target forward 2.64x 开销抵消 accept 收益。</div>
+  </div>
+  <div class="tl-item bad">
+    <div class="tl-date">7/19 · v19</div>
+    <div class="tl-title">num_spec=4 崩溃 + 推理错误纠正</div>
+    <div class="tl-desc">v18 假设 dsa_cp=false → enable_sp=false → num_spec=4 可用。v19 用源码证伪: <code>enable_sp()</code> 被 flashcomm1/shared_expert_dp 强制 True。num_spec 可行集 = {0,1,3,7}，调优路径走死。</div>
+  </div>
+</div>
+
+<h3>5.2 Bug 根因分类 (21+ 个 bug)</h3>
+
+<table>
+<tr><th>根因类别</th><th>占比</th><th>典型 bug</th><th>本质</th></tr>
+<tr><td><code>vllm_version_is("0.23.0")</code> 版本分支缺口</td><td>29%</td><td>B2, B3, B4, B7, B8, B9</td><td>DSpark 新特性在旧版本适配不完整</td></tr>
+<tr><td>Draft 路径与 target 路径配置分歧</td><td>19%</td><td>F3, F4, F7, cos={}, spec_runtime_buffer</td><td>DSpark 专用初始化缺失</td></tr>
+<tr><td>Qwen3Config 误用 (A3 衍生)</td><td>19%</td><td>F2, F5, F8, F10</td><td>单一根因的连锁影响</td></tr>
+<tr><td>Registry 映射指向 NVIDIA</td><td>14%</td><td>F1, F12, B5</td><td>vllm-ascend 注册覆盖不完整</td></tr>
+<tr><td>DP/SP/TP 多并行维度交互</td><td>14%</td><td>F9, B6, B10</td><td>eager 模式下并行与 DSpark 协议冲突</td></tr>
+<tr><td>图模式 torch.compile 不兼容</td><td>5%</td><td>D, E (debug log)</td><td>logging.getLogger 不兼容 dynamo</td></tr>
+</table>
+
+<!-- ============ 6. CONSTRAINTS ============ -->
+<h2 id="constraints">六、硬约束矩阵</h2>
+
+<h3>6.1 DSpark + 图模式三层硬约束</h3>
+
+<table>
+<tr><th>#</th><th>约束</th><th>位置</th><th>错误</th><th>可绕过?</th></tr>
+<tr><td><b>1</b></td><td>async scheduling 不兼容</td><td><code>speculative.py:564</code></td><td><code>ValidationError: Async scheduling not compatible with disable_padded_drafter_batch=True</code></td><td class="warn">DSpark 必须无 async</td></tr>
+<tr><td><b>2</b></td><td>FULL cudagraph 不兼容</td><td><code>llm_base_proposer.py:320</code></td><td><code>NotImplementedError: only supports padded drafter batch</code></td><td class="warn">patch speculative.py 可绕过</td></tr>
+<tr><td><b>3</b></td><td>CANN RoPE 算子崩溃</td><td><code>aclnnInplacePartialRotaryMul</code></td><td><code>EZ9999: dim0 must be equal</code></td><td class="bad">不可绕过 (算子层)</td></tr>
+<tr><td><b>4</b></td><td>num_spec 整除约束</td><td><code>compilation.py:1484</code></td><td><code>ValueError: Can't determine cudagraph shapes...</code></td><td class="bad">数学约束 (num_spec+1 整除 TP)</td></tr>
+</table>
+
+<h3>6.2 enable_sp() 强制开启逻辑</h3>
+
+<div class="note bad">
+<b>v18 推理错误，v19 纠正</b>: v18 假设 <code>dsa_cp=false → pass_config.enable_sp=False → SP 约束不触发</code>。
+v19 用源码 <code>utils.py:903</code> 证伪: <code>enable_sp()</code> 会被 <code>enable_flashcomm1</code> 或 <code>enable_shared_expert_dp</code> 强制 True，
+与 <code>pass_config.enable_sp</code> 字段无关。<code>model_runner_v1.py:5364</code> 还会用 <code>enable_sp()</code> 覆盖字段值。
+</div>
+
+<pre><code># utils.py:903 — enable_sp() 的真实逻辑
+def enable_sp(vllm_config=None, enable_shared_expert_dp: bool = False) -> bool:
+    if additional_config has "enable_flashcomm1":
+        _ENABLE_SP = bool(additional_config["enable_flashcomm1"])   # = True
+    else:
+        _ENABLE_SP = get_ascend_config().enable_flashcomm1
+    if not _ENABLE_SP and enable_shared_expert_dp:
+        _ENABLE_SP = True   # shared_expert_dp=True 也会强制 SP
+    # → 本配置 flashcomm1=true 且 shared_expert_dp=true, 任一即 enable_sp()=True</code></pre>
+
+<!-- ============ 7. LESSONS ============ -->
+<h2 id="lessons">七、经验总结</h2>
+
+<h3>7.1 三条核心原则</h3>
+
+<div class="card">
+<h4>原则 1: 先理解，再动手</h4>
+<p>最大浪费 (~28h) 源于"跑起来再说"——启动→崩→修→重启→崩→修。每次 restart cycle 至少 7 分钟 (deploy 3min + 加载 3min + 触发 1min)。架构理解推迟到第 12 个 bug 之后，导致前 11 个 bug 有 4 个是单一根因的衍生品。正确节奏: Day 0 花 4 小时读 PR + 画数据流图 + 列约束矩阵。</p>
+</div>
+
+<div class="card">
+<h4>原则 2: 一手证据，不二手推断</h4>
+<p>v11/v12 在二手描述上反复推断 Bug #10，v13 读一手日志发现实际错误完全不同。v18 在交接文档推断上假设 num_spec=4 可用，v19 读源码证伪。phase summary 是摘要，不是真相。每次卡住时，回到 run 子目录的一手堆栈。</p>
+</div>
+
+<div class="card">
+<h4>原则 3: 基线先行，隔离问题域</h4>
+<p>v14→v15 的策略转向直接将 DSpark 调试范围从"全部组件"压缩到"draft 路径"。target 的正确性一旦证明，后续每个错误都有单一归属。图模式阶段重复了同一模式: 先跑 FULL baseline (无 DSpark, 57ms)，再叠加 DSpark。</p>
+</div>
+
+<h3>7.2 可复用检查清单</h3>
+
+<h4>前置可行性校验 (动手前必做)</h4>
+<ul>
+<li>模型大小 vs 单节点 HBM → 是否需要多节点？ (567GB > 512GB → DP=4)</li>
+<li><code>vllm.__version__</code> 实际值 vs 代码假设值 → 版本分支是否正确？</li>
+<li>CLI 参数 vs ModelConfig 默认值 → 位置参数是否被覆盖？ (<code>--model</code> 被 <code>--served-model-name</code> 覆盖)</li>
+<li>num_spec+1 是否整除 TP？ (可行集 {0,1,3,7} for TP=8)</li>
+<li><code>enable_sp()</code> 实际返回值 → 是否被 flashcomm1/shared_expert_dp 强制？</li>
+</ul>
+
+<h4>调试纪律 (每个 bug)</h4>
+<ul>
+<li>先看完整 traceback + 堆栈，不只看最后一行就动手</li>
+<li>同时检查所有可能维度 (TP/DP/SP)，不逐个排除</li>
+<li>问"这个错误合理吗？" → 不合理先查前置条件</li>
+<li>全局扫描同类问题 (如所有 reduce_scatter 点)，不修一个暴露一个</li>
+<li>死锁用 <code>py-spy dump</code>，不用静态推断</li>
+</ul>
+
+<h3>7.3 人机协作模式</h3>
+
+<table>
+<tr><th>决策类型</th><th>决策者</th><th>效果</th></tr>
+<tr><td>Cherry-pick vs 自写</td><td>审查 Agent → 用户确认</td><td class="ok">最大节省 (3-5 天)</td></tr>
+<tr><td>基线先行策略</td><td>用户</td><td class="ok">关键转折</td></tr>
+<tr><td>换节点 + 加节点 (99→112+24)</td><td>用户</td><td class="ok">资源瓶颈突破</td></tr>
+<tr><td>py-spy dump 诊断</td><td>开发者</td><td class="ok">高效定位死锁</td></tr>
+<tr><td>架构分析 (数据流图)</td><td>开发者 (B2 才做)</td><td class="warn">偏晚</td></tr>
+<tr><td>Bug 修复</td><td>开发者</td><td class="ok">逐个解决</td></tr>
+</table>
+
+<h3>7.4 关于"循环感"</h3>
+
+<p>用户在 v13 阶段反馈"一直在解决问题，陷入循环了"。事后看不是循环，而是 bug 层层暴露的正常过程。但"循环感"来源真实：</p>
+
+<ol>
+<li><b>phase summary 二手描述累积误差</b> — 每份 summary 推断的根因都偏了一点，后续推断越偏越远。v13/v19 两次用一手日志/源码打断链条。</li>
+<li><b>资源冲突背景噪声</b> — master 节点 NPU 被他人占用，让人分不清是代码 bug 还是环境问题。</li>
+<li><b>restart cycle 等待</b> — 每次部署 7 分钟起跳，反馈速度慢加剧"打地鼠"感。</li>
+</ol>
+
+<p>解决"循环感"的核心操作: <b>一手日志 + 基线先行</b>。两次应用都实现了从"似乎循环"到"完全跑通"的突破。</p>
+
+<hr>
+
+<h3>下一步 (未执行)</h3>
+
+<table>
+<tr><th>路径</th><th>内容</th><th>风险</th><th>预期收益</th></tr>
+<tr><td><b>A</b></td><td>verify batch 不 pad 到 8 (patch <code>adjust_cudagraph_sizes_for_spec_decode</code>)</td><td class="warn">SP 语义假设可能被破坏</td><td>verify_time 90ms → ~50ms</td></tr>
+<tr><td><b>B</b></td><td>开 mc2/fused_mc2 (MoE all-to-all 通信优化)</td><td class="ok">低风险 (128k runbook 有先例)</td><td>target forward batch=8 通信开销↓</td></tr>
+<tr><td><b>C</b></td><td>accept > 5 (改 dspark_target_layer_ids 或换 draft)</td><td class="bad">工程量大</td><td>effective = verify/(1+accept) 大幅降</td></tr>
+</table>
+
+<div class="note">
+<b>当前部署状态</b>: num_spec=4 部署已崩溃 (12:19 ERR99999)，vllm 进程僵尸。最新 <code>dspark-dp4-full-mc2</code> 日志显示 platform.py:62 仍在硬禁用 PIECEWISE (overlay 遗漏修复)。需恢复 num_spec=3 基线 + 确认 platform.py 修复在 overlay 中生效，再叠加 mc2 测试。
+</div>
+
+<div class="foot">
+  数据来源: phase_summary v1-v19, diagnosis × 5, design_doc.md, dspark_adaptation_principles.md, dev_path_diagram.md, dev_path_retrospective.md, risk_scan_report.md, review_report.md, tracker_report (438 轮), session_handoff.md<br>
+  实验目录: <code>/Users/liujiang/Workspace/Code/versatile-ai/AutoModelGo/experiments/wip-deepseek-v4-npu-dspark</code><br>
+  生成时间: 2026-07-19 · 基于 v19 最新状态
+</div>
+
+</body>
+</html>

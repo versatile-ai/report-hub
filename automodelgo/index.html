@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoModelGo · 实验报告</title>
+<style>
+  :root{
+    --bg:#0d1117; --surface:#161b22; --surface2:#1c2230; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --green:#3fb950;
+    --yellow:#d29922; --red:#f85149; --purple:#bc8cff; --orange:#e8964e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.6;padding:0}
+  a{color:inherit;text-decoration:none}
+  .header{padding:48px 32px 32px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#161b22 0%,var(--bg) 100%)}
+  .header-inner{max-width:1100px;margin:0 auto}
+  .crumb{color:var(--muted);font-size:12px;letter-spacing:.5px;margin-bottom:8px}
+  .crumb a{color:var(--accent)}
+  h1{font-size:28px;font-weight:700;letter-spacing:-.3px;margin-bottom:8px}
+  .header p{color:var(--muted);font-size:14px;max-width:680px}
+  .stats{display:flex;gap:28px;max-width:1100px;margin:28px auto 0;padding:0 32px;flex-wrap:wrap}
+  .stat{display:flex;flex-direction:column}
+  .stat .v{font-size:22px;font-weight:700;color:var(--accent)}
+  .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
+  .main{max-width:1100px;margin:0 auto;padding:32px}
+  .section-title{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:32px 0 14px;display:flex;align-items:center;gap:8px}
+  .exp{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;margin-bottom:16px;transition:border-color .15s}
+  .exp:hover{border-color:var(--accent)}
+  .exp-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+  .exp-title{font-size:16px;font-weight:600;color:var(--text)}
+  .exp-sub{color:var(--muted);font-size:13px;margin-top:3px}
+  .exp-meta{display:flex;gap:16px;font-size:12px;color:var(--muted);align-items:center;flex-wrap:wrap}
+  .exp-meta b{color:var(--text);font-weight:500}
+  .badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600;letter-spacing:.3px}
+  .b-active{background:rgba(63,185,80,.15);color:var(--green)}
+  .b-done{background:rgba(88,166,255,.15);color:var(--accent)}
+  .b-paused{background:rgba(210,153,34,.15);color:var(--yellow)}
+  .b-archived{background:rgba(139,148,158,.15);color:var(--muted)}
+  .metrics{display:flex;gap:10px;margin:12px 0;flex-wrap:wrap}
+  .metric{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 12px;display:flex;align-items:baseline;gap:6px}
+  .metric .ml{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .metric .mv{font-size:14px;font-weight:700}
+  .mv.good{color:var(--green)}
+  .mv.warn{color:var(--yellow)}
+  .mv.bad{color:var(--red)}
+  .mv.info{color:var(--accent)}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0}
+  .tag{background:rgba(188,140,255,.1);color:var(--purple);padding:2px 8px;border-radius:3px;font-size:11px;font-family:'SF Mono',Consolas,monospace}
+  .reports{margin-top:14px;border-top:1px dashed var(--border);padding-top:12px}
+  .report{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:5px;transition:background .12s;text-decoration:none;color:inherit}
+  .report:hover{background:var(--surface2)}
+  .report-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+  .report-icon{width:28px;height:28px;border-radius:5px;background:var(--surface2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .report-icon svg{width:14px;height:14px;stroke:var(--accent)}
+  .report-meta{min-width:0}
+  .report-title{font-size:13px;font-weight:500;color:var(--text)}
+  .report-sub{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .report-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .report-date{font-size:11px;color:var(--muted);font-family:'SF Mono',Consolas,monospace}
+  .report-type{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;border:1px solid var(--border);padding:1px 6px;border-radius:3px}
+  .report-arrow{color:var(--muted);font-size:14px}
+  .report:hover .report-arrow{color:var(--accent)}
+  .footer{max-width:1100px;margin:48px auto 0;padding:24px 32px;border-top:1px solid var(--border);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  .footer a{color:var(--accent)}
+  .empty{color:var(--muted);font-size:13px;padding:40px 0;text-align:center}
+  @media (max-width:640px){.header,.stats,.main,.footer{padding-left:16px;padding-right:16px}.exp{padding:16px}.report{padding:10px 6px}.report-sub{display:none}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-inner">
+    <div class="crumb"><a href="https://github.com/versatile-ai/AutoModelGo">versatile-ai / AutoModelGo</a> / experiments</div>
+    <h1>实验报告</h1>
+    <p>Ascend NPU 上的模型适配、推测解码、性能调优实验记录。每份报告是自包含 HTML，含性能数据、原理分析、代码改动位置与开发路径。</p>
+  </div>
+</div>
+<div class="stats" id="stats"></div>
+<div class="main">
+  <div id="experiments"></div>
+  <div class="empty" id="empty" style="display:none">暂无已发布报告</div>
+</div>
+<div class="footer">
+  <div>AutoModelGo Experiment Reports · 自动生成于 GitHub Pages</div>
+  <div><a href="https://github.com/versatile-ai/AutoModelGo/tree/gh-pages">编辑此页面</a></div>
+</div>
+<script>
+const EXPERIMENTS=[
+{id:"deepseek-v4-npu-dspark",name:"DSpark on Ascend NPU",subtitle:"DeepSeek-V4-Flash-DSpark 推测解码适配 (eager + 图模式 + 性能优化)",status:"active",startDate:"2026-07-14",lastUpdate:"2026-07-19",tags:["DSpark","Ascend 910B3","vllm-ascend 0.23.0","推测解码","4节点 32卡","TP=8 DP=4"],metrics:[{label:"TPOT",value:"43ms",tone:"good"},{label:"Accept",value:"2.25",tone:"good"},{label:"加速比",value:"19%",tone:"warn"},{label:"Bug修复",value:"21/21",tone:"info"}],reports:[{title:"阶段性实验报告",subtitle:"图模式+DSpark 效果 · 开发原理 · 代码修改位置 · 开发路径",file:"deepseek-v4-npu-dspark/stage-report.html",date:"2026-07-19",type:"stage"}]}
+];
+const STATUS_LABEL={active:"进行中",done:"已完成",paused:"暂停",archived:"已归档"};
+const STATUS_CLASS={active:"b-active",done:"b-done",paused:"b-paused",archived:"b-archived"};
+const TYPE_LABEL={stage:"阶段报告",final:"终报告",weekly:"周报",diagnosis:"诊断",design:"设计",retrospective:"复盘"};
+function iconSvg(t){const p={stage:"M9 2v6h6V2H9zm6 0v6h6V2h-6zM9 10v6h6v-6H9zm6 0v6h6v-6h-6z",final:"M5 13l4 4L19 7",weekly:"M8 2v2M16 2v2M3 6h18M5 4h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z",diagnosis:"M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01",design:"M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",retrospective:"M21 12a9 9 0 11-6.219-8.56"};const d=p[t]||p.stage;return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="'+d+'"></path></svg>';}
+function renderStats(){const t=EXPERIMENTS.length,a=EXPERIMENTS.filter(e=>e.status==="active").length,r=EXPERIMENTS.reduce((s,e)=>s+e.reports.length,0),u=EXPERIMENTS.reduce((m,e)=>e.lastUpdate>m?e.lastUpdate:m,"");document.getElementById("stats").innerHTML=['<div class="stat"><div class="v">'+t+'</div><div class="l">实验</div></div>','<div class="stat"><div class="v">'+a+'</div><div class="l">进行中</div></div>','<div class="stat"><div class="v">'+r+'</div><div class="l">已发布报告</div></div>','<div class="stat"><div class="v">'+u+'</div><div class="l">最近更新</div></div>'].join("");}
+function renderExperiments(){if(EXPERIMENTS.length===0){document.getElementById("empty").style.display="block";return;}document.getElementById("experiments").innerHTML=EXPERIMENTS.map(exp=>{const reports=exp.reports.map(r=>'<a class="report" href="'+r.file+'"><div class="report-left"><div class="report-icon">'+iconSvg(r.type)+'</div><div class="report-meta"><div class="report-title">'+r.title+'</div><div class="report-sub">'+r.subtitle+'</div></div></div><div class="report-right"><span class="report-type">'+(TYPE_LABEL[r.type]||r.type)+'</span><span class="report-date">'+r.date+'</span><span class="report-arrow">&rarr;</span></div></a>').join("");const metrics=(exp.metrics||[]).map(m=>'<div class="metric"><span class="ml">'+m.label+'</span><span class="mv '+(m.tone||"info")+'">'+m.value+'</span></div>').join("");const tags=(exp.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join("");return '<div class="exp"><div class="exp-head"><div><div class="exp-title">'+exp.name+'</div><div class="exp-sub">'+exp.subtitle+'</div></div><span class="badge '+(STATUS_CLASS[exp.status]||"b-archived")+'">'+(STATUS_LABEL[exp.status]||exp.status)+'</span></div>'+(metrics?'<div class="metrics">'+metrics+'</div>':'')+(tags?'<div class="tags">'+tags+'</div>':'')+'<div class="exp-meta"><span>开始 <b>'+exp.startDate+'</b></span><span>·</span><span>更新 <b>'+exp.lastUpdate+'</b></span><span>·</span><span>'+exp.reports.length+' 份报告</span></div><div class="reports">'+reports+'</div></div>';}).join("");}
+renderStats();renderExperiments();
+</script>
+</body>
+</html>

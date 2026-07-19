@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>versatile-ai · 静态报告中心</title>
+<style>
+  :root{
+    --bg:#0d1117; --surface:#161b22; --surface2:#1c2230; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --green:#3fb950;
+    --yellow:#d29922; --red:#f85149; --purple:#bc8cff; --orange:#e8964e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.6}
+  a{color:inherit;text-decoration:none}
+  .header{padding:56px 32px 40px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#161b22 0%,var(--bg) 100%)}
+  .header-inner{max-width:1100px;margin:0 auto}
+  .crumb{color:var(--muted);font-size:12px;letter-spacing:.5px;margin-bottom:10px}
+  .crumb a{color:var(--accent)}
+  h1{font-size:30px;font-weight:700;letter-spacing:-.5px;margin-bottom:10px}
+  .header p{color:var(--muted);font-size:14px;max-width:680px}
+  .stats{display:flex;gap:28px;max-width:1100px;margin:28px auto 0;padding:0 32px;flex-wrap:wrap}
+  .stat{display:flex;flex-direction:column}
+  .stat .v{font-size:22px;font-weight:700;color:var(--accent)}
+  .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
+  .main{max-width:1100px;margin:0 auto;padding:32px}
+  .section-title{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:8px 0 14px;display:flex;align-items:center;gap:8px}
+  .repo{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:22px 24px;margin-bottom:16px;transition:border-color .15s,transform .15s}
+  .repo:hover{border-color:var(--accent)}
+  .repo-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+  .repo-title{font-size:17px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:10px}
+  .repo-title .dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+  .repo-sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:680px}
+  .repo-meta{display:flex;gap:16px;font-size:12px;color:var(--muted);align-items:center;flex-wrap:wrap;margin-top:10px}
+  .repo-meta b{color:var(--text);font-weight:500}
+  .repo-tags{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 0}
+  .tag{background:rgba(188,140,255,.1);color:var(--purple);padding:2px 8px;border-radius:3px;font-size:11px;font-family:'SF Mono',Consolas,monospace}
+  .repo-arrow{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-size:13px;font-weight:500;padding:6px 12px;border:1px solid var(--border);border-radius:6px;flex-shrink:0}
+  .repo:hover .repo-arrow{border-color:var(--accent);background:rgba(88,166,255,.08)}
+  .repo-arrow svg{width:14px;height:14px;stroke:var(--accent)}
+  .footer{max-width:1100px;margin:48px auto 0;padding:24px 32px;border-top:1px solid var(--border);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  .footer a{color:var(--accent)}
+  .empty{color:var(--muted);font-size:13px;padding:40px 0;text-align:center}
+  @media (max-width:640px){.header,.stats,.main,.footer{padding-left:16px;padding-right:16px}.repo{padding:18px}.repo-arrow{width:100%;justify-content:center}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-inner">
+    <div class="crumb"><a href="https://github.com/versatile-ai">versatile-ai</a> / report-hub</div>
+    <h1>静态报告中心</h1>
+    <p>versatile-ai 各仓库的自包含 HTML 报告聚合入口。每个仓库在子目录下维护自己的导航与报告文件,顶层仅做仓库级索引,便于跨仓库检索与直链分享。</p>
+  </div>
+</div>
+<div class="stats" id="stats"></div>
+<div class="main">
+  <div class="section-title">仓库</div>
+  <div id="repos"></div>
+  <div class="empty" id="empty" style="display:none">暂无已发布的仓库报告</div>
+</div>
+<div class="footer">
+  <div>versatile-ai report-hub · 仓库级静态报告聚合</div>
+  <div><a href="https://github.com/versatile-ai">编辑此页面</a></div>
+</div>
+<script>
+// REPOS: 仓库级索引。新增仓库只需在此追加一项,子目录放对应 index.html 即可。
+// path  = 该仓库子目录(相对顶层 index.html),其下应有 index.html 作为仓库级导航
+// gh    = GitHub 仓库地址(用于面包屑与编辑入口)
+// tags  = 关键技术栈标签
+// stats = 该仓库的概要指标(可选,展示在卡片底部)
+const REPOS=[
+{id:"automodelgo",name:"AutoModelGo",path:"automodelgo/",gh:"https://github.com/versatile-ai/AutoModelGo",
+ desc:"Ascend NPU 上的模型适配、推测解码、性能调优实验记录。每份报告是自包含 HTML,含性能数据、原理分析、代码改动位置与开发路径。",
+ lastUpdate:"2026-07-19",reports:1,active:1,
+ tags:["Ascend 910B3","DSpark","vllm-ascend","推测解码"],
+ stats:[{label:"实验",value:"1"},{label:"报告",value:"1"},{label:"最近更新",value:"2026-07-19"}]}
+];
+function arrowSvg(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>';}
+function renderStats(){const r=REPOS.length,rep=REPOS.reduce((s,r)=>s+r.reports,0),a=REPOS.reduce((s,r)=>s+r.active,0),u=REPOS.reduce((m,r)=>r.lastUpdate>m?r.lastUpdate:m,"");
+ document.getElementById("stats").innerHTML=['<div class="stat"><div class="v">'+r+'</div><div class="l">仓库</div></div>',
+  '<div class="stat"><div class="v">'+a+'</div><div class="l">活跃</div></div>',
+  '<div class="stat"><div class="v">'+rep+'</div><div class="l">报告</div></div>',
+  '<div class="stat"><div class="v">'+u+'</div><div class="l">最近更新</div></div>'].join("");}
+function renderRepos(){if(REPOS.length===0){document.getElementById("empty").style.display="block";return;}
+ document.getElementById("repos").innerHTML=REPOS.map(r=>{
+  const tags=(r.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join("");
+  const stats=(r.stats||[]).map(s=>'<span>'+s.label+' <b>'+s.value+'</b></span>').join('<span>·</span>');
+  return '<a class="repo" href="'+r.path+'"><div class="repo-head"><div><div class="repo-title"><span class="dot"></span>'+r.name+'</div><div class="repo-sub">'+r.desc+'</div></div><span class="repo-arrow">进入仓库 '+arrowSvg()+'</span></div>'+(tags?'<div class="repo-tags">'+tags+'</div>':'')+'<div class="repo-meta">'+stats+'</div></a>';
+ }).join("");}
+renderStats();renderRepos();
+</script>
+</body>
+</html>
