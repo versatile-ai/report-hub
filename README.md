@@ -10,8 +10,8 @@ report-hub/
 ├── automodelwire/            # AutoModelWire 仓库的静态报告
 │   ├── index.html          # AutoModelWire 仓库级导航(从 gh-pages 迁移)
 │   └── deepseek-v4-npu-dspark/
-│       ├── stage-report.html
-│       └── phase-report-2026-07-22.html
+│       ├── 2026-07-19-stage-report.html
+│       └── 2026-07-22-phase-report.html
 └── <其他仓库>/             # 未来新增仓库按同样规则建子目录
     └── index.html
 ```
@@ -32,4 +32,4 @@ python3 -m http.server 8000
 
 ## 迁移来源
 
-- AutoModelWire `gh-pages` 分支(`ef62f75`):`index.html` 与 `deepseek-v4-npu-dspark/stage-report.html`,原样迁入 `automodelwire/` 子目录,报告内部相对链接保持不变。
+- AutoModelWire `gh-pages` 分支(`ef62f75`):`index.html` 与 `deepseek-v4-npu-dspark/2026-07-19-stage-report.html`(原 `stage-report.html`),原样迁入 `automodelwire/` 子目录,报告内部相对链接保持不变。

@@ -40,7 +40,7 @@
 | `--border` | `#E6E6E2` | `#30363D` | 分隔线、卡片边框 |
 | `--text` | `#18181B` | `#E6EDF3` | 正文 |
 | `--text-secondary` | `#71717A` | `#8B949E` | 次要正文、说明 |
-| `--text-tertiary` | `#6B7280` | `#6B7385` | 标签、meta(须过 WCAG AA 4.5:1) |
+| `--text-tertiary` | `#6B7280` | `#7A8296` | 标签、meta(须过 WCAG AA 4.5:1) |
 | `--accent` | `#6D28D9` | `#A78BFA` | 品牌紫:链接、强调、进度 |
 | `--accent-hover` | `#5B21B6` | `#C4B5FD` | 链接悬停 |
 | `--success` | `#059669` | `#3FB950` | 达成/改善/正向指标 |
@@ -219,5 +219,6 @@ H1(Display) + 一行 meta(Body,muted):周期、集群、分支、报告日期。
 
 ## 7. 文件命名约定(统一)
 
-报告文件名统一用 `phase-report-YYYY-MM-DD.html` / `stage-report.html` / `final-report.html`
-等**语义名 + 可选日期**。同一实验目录内不要混用两套命名约定。
+报告文件名统一用 **`YYYY-MM-DD-<类型>.html`** 格式:时间戳在前,描述在后。
+例如 `2026-07-22-phase-report.html`、`2026-07-19-stage-report.html`、`2026-07-19-final-report.html`。
+同一实验目录内所有报告遵循此格式,不混用语义名优先或日期后缀的旧约定。

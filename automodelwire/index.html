@@ -548,8 +548,8 @@ const EXPERIMENTS=[
    tags:["DSpark","Ascend 910B3","vllm-ascend 0.23.0","推测解码","4节点 32卡","TP=8 DP=4"],
    metrics:[{label:"TPOT",value:"36ms",tone:"good"},{label:"Graph TPOT",value:"33ms DP=2",tone:"good"},{label:"Accept",value:"2.25",tone:"good"},{label:"加速比",value:"19%",tone:"warn"},{label:"Bug修复",value:"21/21",tone:"info"}],
    reports:[
-   {title:"阶段性实验报告",subtitle:"图模式+DSpark 效果 · 开发原理 · 代码修改位置 · 开发路径",file:"deepseek-v4-npu-dspark/stage-report.html",date:"2026-07-19",type:"stage"},
-   {title:"Phase Report — Draft Graph",subtitle:"Draft Graph 突破 · torch.npu.graph 直接捕获 · TPOT 36ms · DP=2 vs DP=4 对比 · 13 Lessons Learned · 路线图",file:"deepseek-v4-npu-dspark/phase-report-2026-07-22.html",date:"2026-07-22",type:"stage"}
+   {title:"阶段性实验报告",subtitle:"图模式+DSpark 效果 · 开发原理 · 代码修改位置 · 开发路径",file:"deepseek-v4-npu-dspark/2026-07-19-stage-report.html",date:"2026-07-19",type:"stage"},
+   {title:"Phase Report — Draft Graph",subtitle:"Draft Graph 突破 · torch.npu.graph 直接捕获 · TPOT 36ms · DP=2 vs DP=4 对比 · 13 Lessons Learned · 路线图",file:"deepseek-v4-npu-dspark/2026-07-22-phase-report.html",date:"2026-07-22",type:"stage"}
   ]
   },
   {id:"verl-train-perfix-cache-perf",name:"verl 训练 Prefix-Cache 性能基线",subtitle:"verl GRPO 训练 (Megatron 后端) 前缀缓存优化基线 · Qwen3-8B · 单节点 8 卡 · timing 采集可靠性修复 (Fix1-3)",status:"active",startDate:"2026-07-21",lastUpdate:"2026-07-22",
