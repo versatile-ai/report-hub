@@ -127,6 +127,7 @@
     line-height: 1;
     font-feature-settings: "tnum";
     font-variant-numeric: tabular-nums;
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
   }
 
   .stat-label {
@@ -253,6 +254,7 @@
     font-weight: 700;
     font-feature-settings: "tnum";
     font-variant-numeric: tabular-nums;
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
   }
 
   .mv-good  { color: var(--success); }
@@ -616,7 +618,7 @@ function renderExperiments() {
       return '<span class="tag">' + t + '</span>';
     }).join("");
 
-    return '<div class="exp-card">' +
+    return '<div class="exp-card" id="' + exp.id + '">' +
       '<div class="exp-head">' +
         '<div class="exp-title-area">' +
           '<div class="exp-title">' + exp.name + '</div>' +

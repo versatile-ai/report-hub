@@ -6,16 +6,20 @@
 <title>DSpark NPU 适配 — 阶段性实验报告</title>
 <style>
   :root{
-    --bg:#0d1117; --surface:#161b22; --surface2:#1c2230; --border:#30363d;
-    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --green:#3fb950;
-    --yellow:#d29922; --red:#f85149; --purple:#bc8cff; --orange:#e8964e;
+    --bg:#0D1117; --surface:#161B22; --surface2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --code-bg:#010409;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.65;padding:24px 32px 80px;max-width:1280px;margin:0 auto}
-  h1{font-size:24px;font-weight:600;margin-bottom:6px}
-  h2{font-size:19px;font-weight:600;color:var(--accent);margin:40px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
-  h3{font-size:15px;font-weight:600;color:var(--purple);margin:24px 0 10px}
-  h4{font-size:13px;font-weight:600;color:var(--yellow);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.5px}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.65;padding:24px 32px 80px;max-width:1100px;margin:0 auto}
+  /* Display 角色:标题、数据值、日期、tag 用等宽,工程控制台质感 */
+  h1,h2,.stat .v,.tl-date,.tag,code,pre,.breadcrumb,.toc b{font-family:'SF Mono','Fira Code',Consolas,monospace}
+  h1{font-size:24px;font-weight:600;margin-bottom:6px;letter-spacing:-0.3px}
+  h2{font-size:19px;font-weight:600;color:var(--text);margin:40px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--border);letter-spacing:-0.2px}
+  h3{font-size:15px;font-weight:600;color:var(--accent);margin:24px 0 10px}
+  h4{font-size:12px;font-weight:600;color:var(--muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.5px}
   p{margin:8px 0;color:var(--text)}
   .meta{color:var(--muted);font-size:12px;margin-bottom:24px}
   .meta b{color:var(--text)}
@@ -42,7 +46,13 @@
   .b-yellow{background:rgba(210,153,34,.15);color:var(--yellow)}
   .b-red{background:rgba(248,81,73,.15);color:var(--red)}
   .b-blue{background:rgba(88,166,255,.15);color:var(--accent)}
-  .b-purple{background:rgba(188,140,255,.15);color:var(--purple)}
+  .b-purple{background:rgba(167,139,250,.15);color:var(--accent)}
+  /* Breadcrumb —— 站点归属与返回路径,消除导航死胡同 */
+  .breadcrumb{font-size:12px;color:var(--tertiary);margin-bottom:18px;letter-spacing:0.2px}
+  .breadcrumb a{color:var(--accent)}
+  .breadcrumb a:hover{color:var(--accent-hover);text-decoration:none}
+  .breadcrumb .sep{color:var(--border);margin:0 6px;user-select:none}
+  .breadcrumb .current{color:var(--muted)}
   .toc{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px 18px;margin:20px 0;font-size:13px}
   .toc a{color:var(--accent);text-decoration:none}
   .toc a:hover{text-decoration:underline}
@@ -68,6 +78,13 @@
 </style>
 </head>
 <body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#deepseek-v4-npu-dspark">DSpark on Ascend NPU</a><span class="sep">/</span>
+  <span class="current">阶段性实验报告</span>
+</nav>
 
 <h1>DSpark on Ascend NPU — 阶段性实验报告</h1>
 <div class="meta">

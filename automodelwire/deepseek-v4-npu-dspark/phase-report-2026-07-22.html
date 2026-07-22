@@ -1,83 +1,129 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DeepSeek V4 Flash DSpark NPU 推测解码 Phase Report — Draft Graph 突破,TPOT 36ms,DP=2 vs DP=4 对比,13 Lessons Learned。">
 <title>DeepSeek V4 Flash DSpark NPU — Phase Report (2026-07-22)</title>
 <style>
-:root { --bg: #0a0e14; --surface: #141b22; --border: #2a3040; --text: #c5cdd8; --dim: #6b7385; --accent: #4df0b5; --warn: #f0c24d; --danger: #f04d6a; --link: #5cb8f0; }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, "SF Mono", "Fira Code", Menlo, monospace; background: var(--bg); color: var(--text); line-height: 1.55; font-size: 14px; }
-a { color: var(--link); text-decoration: none; }
-a:hover { text-decoration: underline; }
+:root {
+  /* 深态统一 token —— 与 stage-report.html / docs/design-guide.md 一致 */
+  --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+  --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+  --accent:#A78BFA; --accent-hover:#C4B5FD;
+  --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+  --code-bg:#010409;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); line-height:1.65; font-size:14px; padding:24px 32px 80px; max-width:1100px; margin:0 auto; }
+/* Display 角色:标题、数值、日期、tag 用等宽 */
+h1,h2,.metric-card .value,.timeline-item .date,.tag,.breadcrumb,.toc b,code,pre { font-family:'SF Mono','Fira Code',Consolas,monospace; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
-header { background: linear-gradient(180deg, #0f1923 0%, var(--bg) 100%); padding: 48px 32px 32px; border-bottom: 1px solid var(--border); }
-header h1 { font-size: 26px; font-weight: 700; color: #e8edf2; margin-bottom: 8px; }
-header .status { display: inline-block; padding: 3px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; background: rgba(77,240,181,0.12); color: var(--accent); margin-left: 12px; vertical-align: middle; }
-header .meta { color: var(--dim); margin-top: 8px; font-size: 13px; }
+/* Breadcrumb */
+.breadcrumb { font-size:12px; color:var(--tertiary); margin-bottom:18px; letter-spacing:0.2px; }
+.breadcrumb a { color:var(--accent); }
+.breadcrumb a:hover { color:var(--accent-hover); text-decoration:none; }
+.breadcrumb .sep { color:var(--border); margin:0 6px; user-select:none; }
+.breadcrumb .current { color:var(--muted); }
 
-.container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+header { background:linear-gradient(180deg,#0f1923 0%,var(--bg) 100%); padding:28px 32px 24px; border:1px solid var(--border); border-radius:6px; margin-bottom:24px; }
+header h1 { font-size:24px; font-weight:600; color:#E8EDF2; margin-bottom:8px; letter-spacing:-0.3px; }
+header .status { display:inline-block; padding:3px 10px; border-radius:3px; font-size:11px; font-weight:600; background:rgba(167,139,250,0.15); color:var(--accent); margin-left:10px; vertical-align:middle; }
+header .meta { color:var(--muted); margin-top:8px; font-size:13px; }
 
-section { margin-bottom: 48px; }
-section h2 { font-size: 18px; font-weight: 600; color: #e8edf2; margin-bottom: 20px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-section h3 { font-size: 15px; font-weight: 600; color: #d8dee6; margin: 24px 0 12px; }
+/* TOC */
+.toc { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:14px 20px; margin-bottom:32px; font-size:13px; }
+.toc b { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; display:block; margin-bottom:8px; }
+.toc ol { padding-left:22px; }
+.toc li { margin:4px 0; }
+.toc a { color:var(--accent); }
+
+section { margin-bottom:48px; }
+section h2 { font-size:19px; font-weight:600; color:var(--text); margin:0 0 20px; padding-bottom:8px; border-bottom:1px solid var(--border); letter-spacing:-0.2px; }
+section h3 { font-size:15px; font-weight:600; color:var(--accent); margin:24px 0 12px; font-family:-apple-system,'SF Pro Text',sans-serif; }
+section p { margin:8px 0; }
 
 /* Metrics grid */
-.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
-.metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
-.metric-card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
-.metric-card .label { font-size: 11px; color: var(--dim); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-.metric-card.improved .value { color: #4df0b5; }
-.metric-card.blocked .value { color: var(--warn); }
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:24px; }
+.metric-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:16px; }
+.metric-card .value { font-size:26px; font-weight:700; color:var(--accent); }
+.metric-card .label { font-size:11px; color:var(--muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
+.metric-card.improved .value { color:var(--green); }
+.metric-card.blocked .value { color:var(--yellow); }
 
 /* Tables */
-table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
-th { background: var(--surface); border-bottom: 2px solid var(--border); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--dim); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
-td { border-bottom: 1px solid rgba(42,48,64,0.5); padding: 10px 12px; }
-tr:hover { background: rgba(255,255,255,0.02); }
-td.num { text-align: right; font-variant-numeric: tabular-nums; }
-td.ok { color: var(--accent); }
-td.warn { color: var(--warn); }
+table { width:100%; border-collapse:collapse; margin:12px 0 20px; font-size:13px; }
+th { background:var(--surface-2); color:var(--accent); text-align:left; padding:8px 10px; font-weight:600; border:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+td { padding:8px 10px; border:1px solid var(--border); vertical-align:top; }
+tr:nth-child(even) td { background:var(--surface); }
+td.num { text-align:right; font-variant-numeric:tabular-nums; }
+td.ok { color:var(--green); font-weight:600; }
+td.warn { color:var(--yellow); font-weight:600; }
+td.bad { color:var(--red); font-weight:600; }
 
 /* Timeline */
-.timeline { position: relative; padding-left: 24px; margin: 16px 0; }
-.timeline::before { content: ''; position: absolute; left: 8px; top: 4px; bottom: 4px; width: 2px; background: var(--border); }
-.timeline-item { position: relative; margin-bottom: 16px; padding-left: 20px; }
-.timeline-item::before { content: ''; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
-.timeline-item .date { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
-.timeline-item .desc { font-size: 13px; }
+.timeline { position:relative; padding-left:24px; margin:16px 0; }
+.timeline::before { content:''; position:absolute; left:7px; top:4px; bottom:4px; width:2px; background:var(--border); }
+.timeline-item { position:relative; margin-bottom:16px; padding-left:20px; }
+.timeline-item::before { content:''; position:absolute; left:-21px; top:6px; width:10px; height:10px; border-radius:50%; background:var(--accent); border:2px solid var(--bg); }
+.timeline-item .date { font-size:11px; color:var(--muted); margin-bottom:2px; }
+.timeline-item .desc { font-size:13px; }
 
 /* Code blocks */
-pre { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; font-size: 12px; line-height: 1.45; margin: 12px 0; }
-code { font-family: "SF Mono", "Fira Code", Menlo, monospace; font-size: 12px; }
+pre { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:14px; overflow-x:auto; font-size:12px; line-height:1.5; margin:12px 0; }
+code { background:#1f2937; color:var(--info); padding:1px 5px; border-radius:3px; font-size:12px; }
+pre code { background:none; color:var(--text); padding:0; }
 
 /* Progress bar */
-.bar { height: 6px; background: var(--border); border-radius: 3px; margin: 4px 0; }
-.bar-fill { height: 100%; border-radius: 3px; background: var(--accent); }
-
-/* Footer */
-footer { text-align: center; padding: 32px 24px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--border); margin-top: 48px; }
+.bar { height:6px; background:var(--border); border-radius:3px; margin:8px 0; }
+.bar-fill { height:100%; border-radius:3px; background:var(--accent); }
 
 /* Tags */
-.tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px; }
-.tag-green { background: rgba(77,240,181,0.12); color: var(--accent); }
-.tag-yellow { background: rgba(240,194,77,0.12); color: var(--warn); }
-.tag-red { background: rgba(240,77,106,0.12); color: var(--danger); }
+.tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:600; margin-right:4px; }
+.tag-green { background:rgba(63,185,80,0.15); color:var(--green); }
+.tag-yellow { background:rgba(210,153,34,0.15); color:var(--yellow); }
+.tag-red { background:rgba(248,81,73,0.15); color:var(--red); }
 
-@media print { body { background: white; color: #111; } header, .container { max-width: 100%; } }
+footer { text-align:center; padding:24px; color:var(--muted); font-size:12px; border-top:1px solid var(--border); margin-top:48px; }
+footer a { color:var(--accent); }
+
+@media (prefers-reduced-motion:reduce) { * { transition:none!important; animation:none!important; } }
+@media print { body { background:#fff; color:#111; } }
+@media (max-width:768px) { body { padding:16px 18px 60px; } header { padding:20px; } h1,header h1 { font-size:20px; } }
 </style>
 </head>
 <body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#deepseek-v4-npu-dspark">DSpark on Ascend NPU</a><span class="sep">/</span>
+  <span class="current">Phase Report · 2026-07-22</span>
+</nav>
 
 <header>
   <h1>DeepSeek V4 Flash DSpark NPU Speculative Decoding<span class="status">Draft Graph</span></h1>
   <div class="meta">Phase Report · 2026-07-14 → 2026-07-22 · Ascend 910B3 4-Node Cluster · experiments/deepseek-v4-flash branch</div>
 </header>
 
-<div class="container">
+<nav class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#metrics">Key Metrics</a></li>
+    <li><a href="#timeline">Experiment Timeline</a></li>
+    <li><a href="#draft-graph">Draft Graph Mode</a></li>
+    <li><a href="#dp">DP Scaling Comparison</a></li>
+    <li><a href="#lessons">Lessons Learned (13 Rules)</a></li>
+    <li><a href="#blockers">Remaining Blockers & Next Steps</a></li>
+    <li><a href="#code">Code Changes (Phase 6)</a></li>
+  </ol>
+</nav>
 
 <!-- ====== KEY METRICS ====== -->
-<section>
+<section id="metrics">
   <h2>Key Metrics</h2>
   <div class="metrics">
     <div class="metric-card improved">
@@ -117,7 +163,7 @@ footer { text-align: center; padding: 32px 24px; color: var(--dim); font-size: 1
 </section>
 
 <!-- ====== TIMELINE ====== -->
-<section>
+<section id="timeline">
   <h2>Experiment Timeline</h2>
   <div class="timeline">
     <div class="timeline-item">
@@ -148,7 +194,7 @@ footer { text-align: center; padding: 32px 24px; color: var(--dim); font-size: 1
 </section>
 
 <!-- ====== DRAFT GRAPH DESIGN ====== -->
-<section>
+<section id="draft-graph">
   <h2>Technical Deep-Dive: Draft Graph Mode</h2>
 
   <h3>Problem</h3>
@@ -202,11 +248,11 @@ with set_ascend_forward_context(None, ...):
     <tr><td>Eager Draft</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">43ms</td></tr>
     <tr><td>Draft Graph</td><td class="num">29ms</td><td class="num">37ms</td><td class="num">36ms</td><td class="num">42ms</td><td class="num">28ms</td><td class="num ok">36ms</td></tr>
   </table>
-  <p style="color:var(--dim);font-size:12px;">Verified: draft forward 30ms (eager) → ~5ms (graph replay). Savings: 25ms in verify_time. TPOT benefit diluted by accept rate (tokens/step ≈ 3.25). Math: 25ms / 3.25 ≈ 7.7ms TPOT saving → 43 - 7.7 ≈ 35.3ms ≈ 36ms ✓</p>
+  <p style="color:var(--muted);font-size:12px;">Verified: draft forward 30ms (eager) → ~5ms (graph replay). Savings: 25ms in verify_time. TPOT benefit diluted by accept rate (tokens/step ≈ 3.25). Math: 25ms / 3.25 ≈ 7.7ms TPOT saving → 43 - 7.7 ≈ 35.3ms ≈ 36ms ✓</p>
 </section>
 
 <!-- ====== DP COMPARISON ====== -->
-<section>
+<section id="dp">
   <h2>DP Scaling Comparison</h2>
   <table>
     <tr><th>Metric</th><th>DP=4 (4 nodes)</th><th>DP=2 (2 nodes)</th></tr>
@@ -218,11 +264,11 @@ with set_ascend_forward_context(None, ...):
     <tr><td>Startup Time</td><td class="num">144.76 s</td><td class="num">303.27 s</td></tr>
     <tr><td>Max Concurrency @8192 tok</td><td class="num">~5 reqs</td><td class="num">~1-2 reqs</td></tr>
   </table>
-  <p style="color:var(--dim);font-size:12px;">EP distributes experts across DP ranks: DP=2 → 2× experts per rank → 17GB more weight per worker, 14GB less KV cache. DP=2 gives better single-request TPOT (less DP sync), but DP=4 required for production concurrency.</p>
+  <p style="color:var(--muted);font-size:12px;">EP distributes experts across DP ranks: DP=2 → 2× experts per rank → 17GB more weight per worker, 14GB less KV cache. DP=2 gives better single-request TPOT (less DP sync), but DP=4 required for production concurrency.</p>
 </section>
 
 <!-- ====== LESSONS LEARNED ====== -->
-<section>
+<section id="lessons">
   <h2>Lessons Learned (13 Rules)</h2>
   <table>
     <tr><th>#</th><th>Rule</th><th>Severity</th></tr>
@@ -243,13 +289,13 @@ with set_ascend_forward_context(None, ...):
 </section>
 
 <!-- ====== BLOCKERS + NEXT STEPS ====== -->
-<section>
+<section id="blockers">
   <h2>Remaining Blockers & Next Steps</h2>
 
   <h3>Blocker: Accept Rate (2.25 vs community 4.43)</h3>
   <p>Community PR #11431 achieves accept=4.43 on same model (DeepSeek V4 DSpark, greedy). Our accept is 2.25. Root cause: version gap — our overlay based on vllm-ascend commit <code>bbabae3f</code> (07-14), #11431 restructured proposer+draft architecture (07-17~20). Backport to v0.23.0 blocked by triton kernel <code>set_inputs_first_pass</code> incompatibility (Rule 11). <strong>Requires v0.25.1 upgrade.</strong></p>
   <div class="bar"><div class="bar-fill" style="width:56%"></div></div>
-  <p style="font-size:11px;color:var(--dim)">Progress: overlay_v0251 + deploy_v0251.sh + test_plan_vllm_ascend_0251_upgrade.md ready, not yet deployed on server.</p>
+  <p style="font-size:11px;color:var(--muted)">Progress: overlay_v0251 + deploy_v0251.sh + test_plan_vllm_ascend_0251_upgrade.md ready, not yet deployed on server.</p>
 
   <h3 style="margin-top:24px;">Priority Roadmap</h3>
   <table>
@@ -263,7 +309,7 @@ with set_ascend_forward_context(None, ...):
 </section>
 
 <!-- ====== FILES CHANGED ====== -->
-<section>
+<section id="code">
   <h2>Code Changes (Phase 6)</h2>
   <table>
     <tr><th>File</th><th>Changes</th><th>Lines</th></tr>
@@ -277,10 +323,9 @@ with set_ascend_forward_context(None, ...):
   </table>
 </section>
 
-</div>
-
 <footer>
-  Generated 2026-07-22 · experiments/deepseek-v4-flash · <a href="https://github.com/versatile-ai/automodelwire">github.com/versatile-ai/automodelwire</a><br>
+  <a href="../index.html#deepseek-v4-npu-dspark">↑ 返回 AutoModelWire 实验索引</a> &nbsp;·&nbsp;
+  Generated 2026-07-22 · experiments/deepseek-v4-flash · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a><br>
   Commits: <code>8da3389</code> feat(draft graph) · <code>fef1806</code> perf(2-node results)
 </footer>
 
