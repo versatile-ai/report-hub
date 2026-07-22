@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek V4 Flash DSpark NPU — Phase Report (2026-07-22)</title>
+<style>
+:root { --bg: #0a0e14; --surface: #141b22; --border: #2a3040; --text: #c5cdd8; --dim: #6b7385; --accent: #4df0b5; --warn: #f0c24d; --danger: #f04d6a; --link: #5cb8f0; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "SF Mono", "Fira Code", Menlo, monospace; background: var(--bg); color: var(--text); line-height: 1.55; font-size: 14px; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+header { background: linear-gradient(180deg, #0f1923 0%, var(--bg) 100%); padding: 48px 32px 32px; border-bottom: 1px solid var(--border); }
+header h1 { font-size: 26px; font-weight: 700; color: #e8edf2; margin-bottom: 8px; }
+header .status { display: inline-block; padding: 3px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; background: rgba(77,240,181,0.12); color: var(--accent); margin-left: 12px; vertical-align: middle; }
+header .meta { color: var(--dim); margin-top: 8px; font-size: 13px; }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+section { margin-bottom: 48px; }
+section h2 { font-size: 18px; font-weight: 600; color: #e8edf2; margin-bottom: 20px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+section h3 { font-size: 15px; font-weight: 600; color: #d8dee6; margin: 24px 0 12px; }
+
+/* Metrics grid */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.metric-card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+.metric-card .label { font-size: 11px; color: var(--dim); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.metric-card.improved .value { color: #4df0b5; }
+.metric-card.blocked .value { color: var(--warn); }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+th { background: var(--surface); border-bottom: 2px solid var(--border); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--dim); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+td { border-bottom: 1px solid rgba(42,48,64,0.5); padding: 10px 12px; }
+tr:hover { background: rgba(255,255,255,0.02); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.ok { color: var(--accent); }
+td.warn { color: var(--warn); }
+
+/* Timeline */
+.timeline { position: relative; padding-left: 24px; margin: 16px 0; }
+.timeline::before { content: ''; position: absolute; left: 8px; top: 4px; bottom: 4px; width: 2px; background: var(--border); }
+.timeline-item { position: relative; margin-bottom: 16px; padding-left: 20px; }
+.timeline-item::before { content: ''; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+.timeline-item .date { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+.timeline-item .desc { font-size: 13px; }
+
+/* Code blocks */
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; font-size: 12px; line-height: 1.45; margin: 12px 0; }
+code { font-family: "SF Mono", "Fira Code", Menlo, monospace; font-size: 12px; }
+
+/* Progress bar */
+.bar { height: 6px; background: var(--border); border-radius: 3px; margin: 4px 0; }
+.bar-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+
+/* Footer */
+footer { text-align: center; padding: 32px 24px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--border); margin-top: 48px; }
+
+/* Tags */
+.tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px; }
+.tag-green { background: rgba(77,240,181,0.12); color: var(--accent); }
+.tag-yellow { background: rgba(240,194,77,0.12); color: var(--warn); }
+.tag-red { background: rgba(240,77,106,0.12); color: var(--danger); }
+
+@media print { body { background: white; color: #111; } header, .container { max-width: 100%; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DeepSeek V4 Flash DSpark NPU Speculative Decoding<span class="status">Draft Graph</span></h1>
+  <div class="meta">Phase Report · 2026-07-14 → 2026-07-22 · Ascend 910B3 4-Node Cluster · experiments/deepseek-v4-flash branch</div>
+</header>
+
+<div class="container">
+
+<!-- ====== KEY METRICS ====== -->
+<section>
+  <h2>Key Metrics</h2>
+  <div class="metrics">
+    <div class="metric-card improved">
+      <div class="value">36ms</div>
+      <div class="label">TPOT Median (DP=4 Draft Graph)</div>
+    </div>
+    <div class="metric-card improved">
+      <div class="value">33ms</div>
+      <div class="label">TPOT Median (DP=2 Draft Graph)</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">43ms</div>
+      <div class="label">TPOT Baseline (DSpark Eager Draft)</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">48ms</div>
+      <div class="label">No DSpark Baseline</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">2.46</div>
+      <div class="label">Max Accept Length (num_spec=3)</div>
+    </div>
+    <div class="metric-card blocked">
+      <div class="value">4.43</div>
+      <div class="label">Community Accept (PR #11431 target)</div>
+    </div>
+  </div>
+
+  <table>
+    <tr><th>Milestone</th><th>Config</th><th>TPOT</th><th>Δ</th><th>Date</th></tr>
+    <tr><td>Baseline</td><td>FULL, no DSpark</td><td class="num">48ms</td><td class="num">—</td><td>07-19</td></tr>
+    <tr><td>DSpark Eager</td><td>FULL, DSpark, num_spec=3, eager draft</td><td class="num">43ms</td><td class="num ok">-10%</td><td>07-19</td></tr>
+    <tr><td>Draft Graph (DP=4)</td><td>FULL, DSpark, num_spec=3, draft graph</td><td class="num">36ms</td><td class="num ok">-16% vs eager</td><td>07-22</td></tr>
+    <tr><td>Draft Graph (DP=2)</td><td>FULL, DSpark, num_spec=3, draft graph</td><td class="num">33ms</td><td class="num ok">-23% vs eager</td><td>07-22</td></tr>
+    <tr><td>Target (P0)</td><td>v0.25.1 + #11431 accept=4.43</td><td class="num">~24ms</td><td class="num warn">-44% vs eager</td><td>Planned</td></tr>
+  </table>
+</section>
+
+<!-- ====== TIMELINE ====== -->
+<section>
+  <h2>Experiment Timeline</h2>
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="date">07-14 ~ 07-16</div>
+      <div class="desc"><strong>Phase 1: PR Integration.</strong> Cherry-picked community PRs #12003-#12005. Encountered 10 bugs (F1-F10) across model parsing, registry, configuration layers. All traced to a single root cause: <code>--model</code> parameter defaulting to Qwen3.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="date">07-17</div>
+      <div class="desc"><strong>Phase 2: Root Cause.</strong> Isolated Qwen3 mis-parsing root cause (F11). Discovered image corruption from <code>pip install</code>. Established 4-node topology with shared NFS mount.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="date">07-18</div>
+      <div class="desc"><strong>Phase 3: Eager Breakthrough.</strong> TP padding + DP synchronization fix. First successful DSpark eager end-to-end inference (accept 1.53, TPOT 232ms). Bug #10 (DP/SP communication) fixed across 4 nodes.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="date">07-19</div>
+      <div class="desc"><strong>Phase 4: Graph Mode.</strong> FULL_DECODE_ONLY graph mode for target model. num_spec=3 tuning: accept 2.25, TPOT 43ms. Real speedup 19% vs no-DSpark baseline. 21 bug fixes accumulated.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="date">07-20 ~ 07-21</div>
+      <div class="desc"><strong>Phase 5: Consolidation.</strong> Community route analysis (#11431 accept=4.43). Deep architectural analysis: why accept 2.25 (not 4.43), why draft graph impossible via ACLGraphWrapper. Published DEPLOYMENT_GUIDE, experiment report, 12 lessons learned rules.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="date">07-22</div>
+      <div class="desc"><strong>Phase 6: Draft Graph Breakthrough.</strong> Designed and implemented draft model graph mode by bypassing ACLGraphWrapper. Direct <code>torch.npu.graph()</code> in <code>_propose</code>. 8/8 TP workers captured in 1s. TPOT: 43ms → 36ms (DP=4), 33ms (DP=2). 2-node deployment validated.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== DRAFT GRAPH DESIGN ====== -->
+<section>
+  <h2>Technical Deep-Dive: Draft Graph Mode</h2>
+
+  <h3>Problem</h3>
+  <p>Draft model in eager mode: each of 3 Markov steps re-launches NPU kernels. 30ms overhead (23% of verify_time). Previous attempt (Step 3) using ACLGraphWrapper failed — custom <code>_propose</code> bypassed runner dispatch pipeline, triggering vllm safety lock.</p>
+
+  <h3>Solution: Direct torch.npu.graph in _propose</h3>
+  <pre><code># In _propose (deepseek_v4_dspark_proposer.py):
+self._precompute_context_kv()  # Eager: update KV cache pool
+
+with set_ascend_forward_context(None, ...):
+    fc = get_forward_context()
+    if fc: fc.moe_layer_index = 0
+
+    if num_tokens in self._draft_graphs:
+        # REPLAY PATH (subsequent calls)
+        self._draft_graphs[num_tokens].replay()
+        hidden = self._draft_graph_outputs[num_tokens][:n].clone()
+
+    elif self._use_draft_graph:
+        # CAPTURE PATH (first call)
+        set_cudagraph_capturing_enabled(True)
+        for _ in range(3):          # warmup
+            md = self._build_attn_metadata(cad)
+            _ = self.model(input_ids=..., positions=...)
+        torch.npu.synchronize()
+
+        graph = torch.npu.NPUGraph()
+        with torch.npu.graph(graph, pool=global_pool):
+            # KEY: _build_attn_metadata INSIDE graph context
+            # → cos/sin tensors in graph pool (stable addresses)
+            md = self._build_attn_metadata(cad)
+            output = self.model(input_ids=..., positions=...)
+        self._draft_graphs[num_tokens] = graph
+        set_cudagraph_capturing_enabled(False)
+
+    return self._sample_sequential(hidden, ...)  # Markov eager</code></pre>
+
+  <h3>Why It Works</h3>
+  <table>
+    <tr><th>Challenge</th><th>Solution</th></tr>
+    <tr><td>cos/sin tensors created outside graph → addresses unstable on replay</td><td><code>_build_attn_metadata</code> called <em>inside</em> <code>torch.npu.graph()</code> — tensors allocated from graph pool, addresses persist</td></tr>
+    <tr><td>query_start_loc / seq_lens newly created each call</td><td>Pre-allocated buffers (<code>_query_start_loc_buffer</code>, <code>_seq_lens_buffer</code>), copy-in before each replay</td></tr>
+    <tr><td>vllm safety lock (cudagraph_capturing_enabled=False)</td><td>Manually <code>set_cudagraph_capturing_enabled(True)</code> before capture, restore after</td></tr>
+    <tr><td>dispatch system bypass (no batch_descriptor)</td><td>Not needed — <code>torch.npu.graph()</code> doesn't require vllm dispatch context</td></tr>
+    <tr><td>Compute_logits may overwrite graph output</td><td><code>.clone()</code> graph output before <code>_sample_sequential</code></td></tr>
+  </table>
+
+  <h3>Result (DP=4, 5-run benchmark)</h3>
+  <table>
+    <tr><th>Run</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>Median</th></tr>
+    <tr><td>Eager Draft</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">43ms</td></tr>
+    <tr><td>Draft Graph</td><td class="num">29ms</td><td class="num">37ms</td><td class="num">36ms</td><td class="num">42ms</td><td class="num">28ms</td><td class="num ok">36ms</td></tr>
+  </table>
+  <p style="color:var(--dim);font-size:12px;">Verified: draft forward 30ms (eager) → ~5ms (graph replay). Savings: 25ms in verify_time. TPOT benefit diluted by accept rate (tokens/step ≈ 3.25). Math: 25ms / 3.25 ≈ 7.7ms TPOT saving → 43 - 7.7 ≈ 35.3ms ≈ 36ms ✓</p>
+</section>
+
+<!-- ====== DP COMPARISON ====== -->
+<section>
+  <h2>DP Scaling Comparison</h2>
+  <table>
+    <tr><th>Metric</th><th>DP=4 (4 nodes)</th><th>DP=2 (2 nodes)</th></tr>
+    <tr><td>Nodes</td><td>112, 155, 2, 24</td><td>112, 2</td></tr>
+    <tr><td>TPOT Median (Draft Graph)</td><td class="num ok">36ms</td><td class="num ok">33ms</td></tr>
+    <tr><td>Weight per NPU Worker</td><td class="num">24.03 GB</td><td class="num">41.28 GB</td></tr>
+    <tr><td>KV Cache per NPU</td><td class="num">21.89 GiB</td><td class="num warn">7.49 GiB</td></tr>
+    <tr><td>NPU Graph Memory</td><td class="num">0.35 GiB</td><td class="num">0.35 GiB</td></tr>
+    <tr><td>Startup Time</td><td class="num">144.76 s</td><td class="num">303.27 s</td></tr>
+    <tr><td>Max Concurrency @8192 tok</td><td class="num">~5 reqs</td><td class="num">~1-2 reqs</td></tr>
+  </table>
+  <p style="color:var(--dim);font-size:12px;">EP distributes experts across DP ranks: DP=2 → 2× experts per rank → 17GB more weight per worker, 14GB less KV cache. DP=2 gives better single-request TPOT (less DP sync), but DP=4 required for production concurrency.</p>
+</section>
+
+<!-- ====== LESSONS LEARNED ====== -->
+<section>
+  <h2>Lessons Learned (13 Rules)</h2>
+  <table>
+    <tr><th>#</th><th>Rule</th><th>Severity</th></tr>
+    <tr><td>1</td><td>No runtime monkey-patching container source code</td><td><span class="tag tag-red">BLOCKER</span></td></tr>
+    <tr><td>2</td><td>Image must be digest-pinned (<code>@sha256:</code>), never rolling tags</td><td><span class="tag tag-red">BLOCKER</span></td></tr>
+    <tr><td>3</td><td>Single source of truth — config.sh is the only config entry point</td><td><span class="tag tag-yellow">HIGH</span></td></tr>
+    <tr><td>4</td><td>Snapshot success state after every deployment</td><td><span class="tag tag-yellow">HIGH</span></td></tr>
+    <tr><td>5</td><td>Pre-deployment pre-checks fail-fast</td><td><span class="tag tag-yellow">HIGH</span></td></tr>
+    <tr><td>6</td><td>Overlay/patches file provenance must be traceable</td><td><span class="tag tag-yellow">HIGH</span></td></tr>
+    <tr><td>7</td><td>Performance data must cite primary log evidence</td><td><span class="tag tag-yellow">HIGH</span></td></tr>
+    <tr><td>8</td><td>Workspace sync via NFS mount, never node-to-node tar</td><td><span class="tag tag-yellow">HIGH</span></td></tr>
+    <tr><td>9</td><td>Overlay must match target image version</td><td><span class="tag tag-red">BLOCKER</span></td></tr>
+    <tr><td>10</td><td>Container must use <code>--privileged</code></td><td><span class="tag tag-red">BLOCKER</span></td></tr>
+    <tr><td>11</td><td>Proposer + Draft Model are coupled — must upgrade together</td><td><span class="tag tag-red">BLOCKER</span></td></tr>
+    <tr><td>12</td><td>ACL Graph requires runner dispatch pipeline integration</td><td><span class="tag tag-red">BLOCKER</span></td></tr>
+    <tr><td>13</td><td>Bypass ACLGraphWrapper: use <code>torch.npu.graph</code> directly ✨</td><td><span class="tag tag-green">NEW</span></td></tr>
+  </table>
+</section>
+
+<!-- ====== BLOCKERS + NEXT STEPS ====== -->
+<section>
+  <h2>Remaining Blockers & Next Steps</h2>
+
+  <h3>Blocker: Accept Rate (2.25 vs community 4.43)</h3>
+  <p>Community PR #11431 achieves accept=4.43 on same model (DeepSeek V4 DSpark, greedy). Our accept is 2.25. Root cause: version gap — our overlay based on vllm-ascend commit <code>bbabae3f</code> (07-14), #11431 restructured proposer+draft architecture (07-17~20). Backport to v0.23.0 blocked by triton kernel <code>set_inputs_first_pass</code> incompatibility (Rule 11). <strong>Requires v0.25.1 upgrade.</strong></p>
+  <div class="bar"><div class="bar-fill" style="width:56%"></div></div>
+  <p style="font-size:11px;color:var(--dim)">Progress: overlay_v0251 + deploy_v0251.sh + test_plan_vllm_ascend_0251_upgrade.md ready, not yet deployed on server.</p>
+
+  <h3 style="margin-top:24px;">Priority Roadmap</h3>
+  <table>
+    <tr><th>P</th><th>Task</th><th>Expected TPOT Gain</th><th>Prerequisite</th></tr>
+    <tr><td>P0</td><td>v0.25.1 upgrade + #11431 (accept 4.43)</td><td class="num ok">36ms → ~24ms</td><td>Server deployment</td></tr>
+    <tr><td>P1</td><td>Diff draft model vs #11431 (locate computation bug)</td><td class="num">May fix on v0.23.0</td><td>Read-only, no server</td></tr>
+    <tr><td>P2</td><td>Markov sampling graph capture</td><td class="num">24ms → ~20ms</td><td>P0 complete</td></tr>
+    <tr><td>P3</td><td>num_spec=7 re-test (after accept fix)</td><td class="num">~20ms → ~15ms</td><td>P0 complete</td></tr>
+    <tr><td>P4</td><td>MoE communication optimization (MC2)</td><td class="num">Additional 10-20ms</td><td>Long-term</td></tr>
+  </table>
+</section>
+
+<!-- ====== FILES CHANGED ====== -->
+<section>
+  <h2>Code Changes (Phase 6)</h2>
+  <table>
+    <tr><th>File</th><th>Changes</th><th>Lines</th></tr>
+    <tr><td><code>overlay/.../spec_decode/deepseek_v4_dspark_proposer.py</code></td><td>Draft graph capture/replay/eager three-way branch. _build_attn_metadata inside graph context. Pre-allocated seq_lens_buffer + query_start_loc_buffer.</td><td class="num">+77</td></tr>
+    <tr><td><code>config.sh</code></td><td>Fixed node topology: MASTER=112, WORKERS correct. NFS_PATH fixed.</td><td class="num">4</td></tr>
+    <tr><td><code>scripts/launch/launch_dspark_full.sh</code></td><td>DP=4→2 toggle, num_spec=7→3, capture_sizes=[8,16,24,32].</td><td class="num">3</td></tr>
+    <tr><td><code>results/performance_data.json</code></td><td>Added draft-graph-v1 (DP=4) and draft-graph-dp2 data points + DP comparison matrix.</td><td class="num">+76</td></tr>
+    <tr><td><code>docs/experiment_report.md</code></td><td>Added Section 5: Draft Graph mode design and results.</td><td class="num">+65</td></tr>
+    <tr><td><code>docs/lessons_learned.md</code></td><td>Added Rule 13: Bypass ACLGraphWrapper with direct torch.npu.graph.</td><td class="num">+33</td></tr>
+    <tr><td><code>docs/blockers_summary.md</code></td><td>Marked graph mode as resolved. Updated with 07-22 status.</td><td class="num">+10</td></tr>
+  </table>
+</section>
+
+</div>
+
+<footer>
+  Generated 2026-07-22 · experiments/deepseek-v4-flash · <a href="https://github.com/versatile-ai/automodelwire">github.com/versatile-ai/automodelwire</a><br>
+  Commits: <code>8da3389</code> feat(draft graph) · <code>fef1806</code> perf(2-node results)
+</footer>
+
+</body>
+</html>

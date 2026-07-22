@@ -32,4 +32,4 @@
 
 | 仓库 | 子目录 | 来源 |
 |------|--------|------|
-| AutoModelGo | `automodelgo/` | `gh-pages` 分支 `ef62f75` |
+| AutoModelWire | `automodelwire/` | `gh-pages` 分支 `ef62f75` |

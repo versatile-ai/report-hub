@@ -7,8 +7,8 @@ versatile-ai 各仓库的自包含 HTML 报告聚合站点。仓库级 `index.ht
 ```
 report-hub/
 ├── index.html              # 仓库级聚合入口(versatile-ai 全局导航)
-├── automodelgo/            # AutoModelGo 仓库的静态报告
-│   ├── index.html          # AutoModelGo 仓库级导航(从 gh-pages 迁移)
+├── automodelwire/            # AutoModelWire 仓库的静态报告
+│   ├── index.html          # AutoModelWire 仓库级导航(从 gh-pages 迁移)
 │   └── deepseek-v4-npu-dspark/
 │       └── stage-report.html
 └── <其他仓库>/             # 未来新增仓库按同样规则建子目录
@@ -31,4 +31,4 @@ python3 -m http.server 8000
 
 ## 迁移来源
 
-- AutoModelGo `gh-pages` 分支(`ef62f75`):`index.html` 与 `deepseek-v4-npu-dspark/stage-report.html`,原样迁入 `automodelgo/` 子目录,报告内部相对链接保持不变。
+- AutoModelWire `gh-pages` 分支(`ef62f75`):`index.html` 与 `deepseek-v4-npu-dspark/stage-report.html`,原样迁入 `automodelwire/` 子目录,报告内部相对链接保持不变。

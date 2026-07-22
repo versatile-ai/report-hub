@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AutoModelGo · 实验报告</title>
+<title>AutoModelWire · 实验报告</title>
 <style>
   :root {
     --bg: #F9F9F6;
@@ -503,7 +503,7 @@
       <div class="crumb">
         <a href="../">versatile-ai</a>
         <span class="crumb-sep">/</span>
-        <a href="https://github.com/versatile-ai/AutoModelGo">AutoModelGo</a>
+        <a href="https://github.com/versatile-ai/AutoModelWire">AutoModelWire</a>
         <span class="crumb-sep">/</span>
         <span>experiments</span>
       </div>
@@ -536,16 +536,19 @@
 </div>
 
 <div class="footer">
-  <span>AutoModelGo Experiment Reports · GitHub Pages</span>
-  <a href="https://github.com/versatile-ai/AutoModelGo/tree/gh-pages">GitHub</a>
+  <span>AutoModelWire Experiment Reports · GitHub Pages</span>
+  <a href="https://github.com/versatile-ai/AutoModelWire/tree/gh-pages">GitHub</a>
 </div>
 
 <script>
 const EXPERIMENTS=[
-  {id:"deepseek-v4-npu-dspark",name:"DSpark on Ascend NPU",subtitle:"DeepSeek-V4-Flash-DSpark 推测解码适配 (eager + 图模式 + 性能优化)",status:"active",startDate:"2026-07-14",lastUpdate:"2026-07-19",
+  {id:"deepseek-v4-npu-dspark",name:"DSpark on Ascend NPU",subtitle:"DeepSeek-V4-Flash-DSpark 推测解码适配 (eager + 图模式 + 性能优化)",status:"active",startDate:"2026-07-14",lastUpdate:"2026-07-22",
    tags:["DSpark","Ascend 910B3","vllm-ascend 0.23.0","推测解码","4节点 32卡","TP=8 DP=4"],
-   metrics:[{label:"TPOT",value:"43ms",tone:"good"},{label:"Accept",value:"2.25",tone:"good"},{label:"加速比",value:"19%",tone:"warn"},{label:"Bug修复",value:"21/21",tone:"info"}],
-   reports:[{title:"阶段性实验报告",subtitle:"图模式+DSpark 效果 · 开发原理 · 代码修改位置 · 开发路径",file:"deepseek-v4-npu-dspark/stage-report.html",date:"2026-07-19",type:"stage"}]
+   metrics:[{label:"TPOT",value:"36ms",tone:"good"},{label:"Graph TPOT",value:"33ms DP=2",tone:"good"},{label:"Accept",value:"2.25",tone:"good"},{label:"加速比",value:"19%",tone:"warn"},{label:"Bug修复",value:"21/21",tone:"info"}],
+   reports:[
+   {title:"阶段性实验报告",subtitle:"图模式+DSpark 效果 · 开发原理 · 代码修改位置 · 开发路径",file:"deepseek-v4-npu-dspark/stage-report.html",date:"2026-07-19",type:"stage"},
+   {title:"Phase Report — Draft Graph",subtitle:"Draft Graph 突破 · torch.npu.graph 直接捕获 · TPOT 36ms · DP=2 vs DP=4 对比 · 13 Lessons Learned · 路线图",file:"deepseek-v4-npu-dspark/phase-report-2026-07-22.html",date:"2026-07-22",type:"stage"}
+  ]
   }
 ];
 
