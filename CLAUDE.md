@@ -26,7 +26,8 @@
 1. 子目录名 = GitHub 仓库名(全小写,连字符分隔)。
 2. 子目录内必须有 `index.html` 作为仓库级导航。
 3. 报告文件保留仓库内相对路径,确保导航链接不破坏。
-4. 在顶层 `index.html` 的 `REPOS` 数组登记新仓库。
+4. 在顶层 `index.html` 的 `REPOS` 数组登记新仓库,字段仅限 `id/name/path/gh/desc/lastUpdate/tags`。
+5. **聚合统计不复制**:实验数、报告数等由各仓库子目录 `index.html` 自行维护(其 `EXPERIMENTS`/`REPOS` 等数组即事实源)。顶层 `REPOS` 不持有 `reports`/`active`/`stats` 等聚合字段,顶层 stats ribbon 只报"仓库数 / 最近一次仓库级更新"两个顶层确实掌握的事实,避免顶层与仓库页双源漂移。
 
 ## 现有仓库
 

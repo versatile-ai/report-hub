@@ -549,6 +549,13 @@ const EXPERIMENTS=[
    {title:"阶段性实验报告",subtitle:"图模式+DSpark 效果 · 开发原理 · 代码修改位置 · 开发路径",file:"deepseek-v4-npu-dspark/stage-report.html",date:"2026-07-19",type:"stage"},
    {title:"Phase Report — Draft Graph",subtitle:"Draft Graph 突破 · torch.npu.graph 直接捕获 · TPOT 36ms · DP=2 vs DP=4 对比 · 13 Lessons Learned · 路线图",file:"deepseek-v4-npu-dspark/phase-report-2026-07-22.html",date:"2026-07-22",type:"stage"}
   ]
+  },
+  {id:"verl-train-perfix-cache-perf",name:"verl 训练 Prefix-Cache 性能基线",subtitle:"verl GRPO 训练 (Megatron 后端) 前缀缓存优化基线 · Qwen3-8B · 单节点 8 卡 · timing 采集可靠性修复 (Fix1-3)",status:"active",startDate:"2026-07-21",lastUpdate:"2026-07-22",
+   tags:["verl","GRPO","Megatron","Ascend 910B","Qwen3-8B","TP=4 DP=2","前缀缓存"],
+   metrics:[{label:"step",value:"626s",tone:"warn"},{label:"throughput",value:"130 tok/s/GPU",tone:"good"},{label:"update_actor",value:"45%",tone:"bad"},{label:"MFU",value:"4.27%",tone:"warn"},{label:"peak HBM",value:"29.5GB",tone:"good"},{label:"步数",value:"3 smoke",tone:"warn"}],
+   reports:[
+   {title:"基线数据报告",subtitle:"Batch 层级 · Forward/Backward/Update 计数 · 阶段耗时分解 · 8 卡一致性 · micro-batch 前向耗时分布 · 采集可靠性教训",file:"verl-train-perfix-cache-perf/baseline_report.html",date:"2026-07-22",type:"stage"}
+  ]
   }
 ];
 

@@ -407,12 +407,13 @@
 </div>
 
 <script>
+// 顶层仅登记仓库级元数据。实验数/报告数等聚合统计由各仓库子目录
+// index.html 自行维护,顶层不复制,避免双源漂移(见 CLAUDE.md 约定)。
 const REPOS=[
   {id:"automodelwire",name:"AutoModelWire",path:"automodelwire/",gh:"https://github.com/versatile-ai/AutoModelWire",
    desc:"Ascend NPU 上的模型适配、推测解码、性能调优实验记录。每份报告是自包含 HTML，含性能数据、原理分析、代码改动位置与开发路径。",
-   lastUpdate:"2026-07-19",reports:1,active:1,
-   tags:["Ascend 910B3","DSpark","vllm-ascend","推测解码"],
-   stats:[{label:"实验",value:"1"},{label:"报告",value:"1"},{label:"最近更新",value:"2026-07-19"}]}
+   lastUpdate:"2026-07-22",
+   tags:["Ascend 910B3","DSpark","vllm-ascend","推测解码"]}
 ];
 
 function arrowSvg() {
@@ -420,14 +421,12 @@ function arrowSvg() {
 }
 
 function renderStats() {
-  var r = REPOS.length;
-  var rep = REPOS.reduce(function(s, r) { return s + r.reports; }, 0);
-  var a = REPOS.reduce(function(s, r) { return s + r.active; }, 0);
+  // 顶层只报自己真正掌握的事实:仓库数、最近一次仓库级更新。
+  // 不聚合报告数/实验数——那些属于各仓库,由仓库页自报,顶层不复制。
+  var n = REPOS.length;
   var u = REPOS.reduce(function(m, r) { return r.lastUpdate > m ? r.lastUpdate : m; }, "");
   document.getElementById("stats").innerHTML =
-    '<div class="stat-item"><div class="stat-value">' + r + '</div><div class="stat-label">仓库</div></div>' +
-    '<div class="stat-item"><div class="stat-value">' + a + '</div><div class="stat-label">活跃</div></div>' +
-    '<div class="stat-item"><div class="stat-value">' + rep + '</div><div class="stat-label">报告</div></div>' +
+    '<div class="stat-item"><div class="stat-value">' + n + '</div><div class="stat-label">仓库</div></div>' +
     '<div class="stat-item"><div class="stat-value">' + u + '</div><div class="stat-label">最近更新</div></div>';
 }
 
@@ -435,14 +434,15 @@ function renderRepos() {
   if (REPOS.length === 0) { document.getElementById("empty").style.display = "block"; return; }
   document.getElementById("repos").innerHTML = REPOS.map(function(r) {
     var tags = (r.tags || []).map(function(t) { return '<span class="tag">' + t + '</span>'; }).join("");
-    var stats = (r.stats || []).map(function(s) { return '<span>' + s.label + ' <b>' + s.value + '</b></span>'; }).join('<span> &middot; </span>');
+    // 卡片底部只显式标注仓库最近一次更新——顶层确实持有的字段。
+    var meta = '<div class="repo-stats"><span>最近更新 <b>' + r.lastUpdate + '</b></span></div>';
     return '<a class="repo-card" href="' + r.path + '">' +
       '<div class="repo-card-inner">' +
         '<div class="repo-info">' +
           '<div class="repo-name"><span class="repo-dot"></span>' + r.name + '</div>' +
           '<div class="repo-desc">' + r.desc + '</div>' +
           (tags ? '<div class="repo-tags">' + tags + '</div>' : '') +
-          '<div class="repo-stats">' + stats + '</div>' +
+          meta +
         '</div>' +
         '<span class="repo-cta">进入仓库 ' + arrowSvg() + '</span>' +
       '</div>' +

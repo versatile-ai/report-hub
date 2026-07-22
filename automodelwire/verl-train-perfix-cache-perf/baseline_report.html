@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>verl 训练 Prefix-Cache 性能实验 — 基线数据报告</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --ink:#e6e9ef; --sub:#8b93a7; --line:#262b36;
+    --blue:#4c8eff; --green:#3ecf8e; --orange:#f5a623; --red:#ff6b6b; --purple:#a78bfa; --cyan:#22d3ee;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC",sans-serif;line-height:1.5}
+  .wrap{max-width:1240px;margin:0 auto;padding:32px 24px}
+  h1{font-size:24px;margin:0 0 4px}
+  h2{font-size:17px;margin:32px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);color:var(--blue)}
+  .meta{color:var(--sub);font-size:13px;margin-bottom:24px}
+  .meta b{color:var(--ink)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:8px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .kpi .v{font-size:26px;font-weight:700;margin-top:4px}
+  .kpi .l{font-size:12px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px}
+  .kpi .d{font-size:11px;color:var(--sub);margin-top:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:18px}
+  .card .t{font-size:14px;font-weight:600;margin-bottom:4px}
+  .card .n{font-size:12px;color:var(--sub);margin-bottom:14px}
+  .chart{position:relative;height:340px}
+  .chart.tall{height:380px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--sub);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr:hover td{background:#1d212b}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#1d212b;color:var(--sub);margin-right:6px}
+  .tag.ok{color:var(--green);background:rgba(62,207,142,.12)}
+  .tag.warn{color:var(--orange);background:rgba(245,166,35,.12)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:820px){.two{grid-template-columns:1fr}}
+  .note{font-size:12px;color:var(--sub);margin-top:10px;padding:10px;background:#1d212b;border-radius:6px}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>verl 训练 Prefix-Cache 性能实验 — 基线数据报告</h1>
+  <div class="meta">
+    实验目录 <b>wip-verl-train-perfix-cache-perf</b> · 基线实由姊妹实验 <b>verl_npu_qwen_with_prefix_sharing</b> 部署执行 ·
+    节点 <b>192.168.0.112 (Aura-88)</b> · 容器 <b>verl-qwen-prefix-baseline</b><br>
+    产物来源 <b>logs/baseline_rerun2/</b> (timing_records.rank0-7.json + step_profile.rank0.json + baseline_rerun2.log) ·
+    生成日期 <b>2026-07-22</b> · 采集轮次 <b>rerun2 (Fix3 主动落盘)</b>
+  </div>
+
+  <h2>① 实验配置速查</h2>
+  <div class="card">
+    <table>
+      <tr><th>项目</th><th>值</th><th>项目</th><th>值</th></tr>
+      <tr><td>模型</td><td>Qwen3-8B (dense, 36L, hidden 4096, 32 heads, GQA kv=8)</td><td>精度</td><td>BF16</td></tr>
+      <tr><td>后端</td><td>Megatron (transformer_engine)</td><td>RL 算法</td><td>GRPO</td></tr>
+      <tr><td>并行</td><td>TP=4, PP=1, EP=1, CP=1, DP=2 (单节点 8 卡)</td><td>Rollout TP</td><td>4</td></tr>
+      <tr><td>镜像</td><td>quay.io/ascend/verl:verl-9.0.0-910b-...-v0.8.0</td><td>硬件</td><td>Ascend 910B × 8 (单节点)</td></tr>
+      <tr><td>步数</td><td>TOTAL_STEPS=3 (smoke)</td><td>采集</td><td>无 warmup，3 步全采</td></tr>
+      <tr><td>每步 micro-batch</td><td>256 (infer) / 256 (actor_update)</td><td>每步 token</td><td>~623K–673K</td></tr>
+    </table>
+    <div class="note"><b>与设计文档偏差:</b> README 设计为 Qwen3.5-MoE / 32 卡 / aura:910b-cann9.0.0 镜像；实测为 Qwen3-8B dense / 8 卡 / v0.8.0 镜像。本报告数据以实测为准。</div>
+  </div>
+
+  <h2>② 核心指标 (KPI)</h2>
+  <div class="grid">
+    <div class="kpi"><div class="l">avg step time</div><div class="v" style="color:var(--blue)">625.6 s</div><div class="d">3 步均值 · 611.2 / 638.1 / 627.6</div></div>
+    <div class="kpi"><div class="l">avg throughput</div><div class="v" style="color:var(--green)">130.3 tok/s/GPU</div><div class="d">134.95 / 131.89 / 124.15</div></div>
+    <div class="kpi"><div class="l">avg update_actor</div><div class="v" style="color:var(--orange)">282.2 s</div><div class="d">占总步时 45.1% (最大开销)</div></div>
+    <div class="kpi"><div class="l">avg gen (rollout)</div><div class="v" style="color:var(--purple)">137.1 s</div><div class="d">21.9% · 波动大 (125→147)</div></div>
+    <div class="kpi"><div class="l">avg old_log_prob</div><div class="v" style="color:var(--cyan)">101.0 s</div><div class="d">16.2% · 极稳定</div></div>
+    <div class="kpi"><div class="l">avg ref</div><div class="v" style="color:var(--red)">98.8 s</div><div class="d">15.8%</div></div>
+    <div class="kpi"><div class="l">peak HBM (actor)</div><div class="v" style="color:var(--red)">29.5 GB</div><div class="d">/卡 · infer 阶段 11.2GB</div></div>
+    <div class="kpi"><div class="l">MFU (actor)</div><div class="v" style="color:var(--green)">4.27%</div><div class="d">4.34 / 4.38 / 4.07</div></div>
+  </div>
+
+  <h2>③ Batch 层级与 Forward/Backward/Update 计数</h2>
+  <div class="card">
+    <div class="t">三级 Batch 层级</div>
+    <div class="n">每步 64 prompts × rollout_n=8 = 512 trajectories；ppo_epochs=1 → 仅 1 个 mini batch；micro_batch_size_per_gpu=1</div>
+    <table>
+      <tr><th>层级</th><th>值</th><th>说明 / 验证</th></tr>
+      <tr><td>Global / Train batch (每步)</td><td>64 prompts × 8 = <b>512 trajectories</b></td><td>train_batch_size=64 + rollout_n=8</td></tr>
+      <tr><td>Mini batch</td><td><b>512 trajectories</b></td><td>ppo_mini_batch_size=64 (prompt 单位) + ppo_epochs=1 → 每步仅 1 个 mini batch</td></tr>
+      <tr><td>Micro batch (每 GPU / micro-step)</td><td><b>1 trajectory</b></td><td>ppo_micro_batch_size_per_gpu=1</td></tr>
+      <tr><td>num_micro_batches / mini batch</td><td><b>256</b></td><td>512 / (DP=2 × 1) = 256，与 timing 实测 n_micro_batch=256 ✓</td></tr>
+    </table>
+    <div class="note"><b>并行配置:</b> WORLD_SIZE=8, TP=4, PP=1, CP=1, EP=1 → <b>DP=2</b>。日志 DDP config 中 data_parallel_size=1 是分片字段 (sharding_strategy='no_shard')，非并行度；实际数据并行度 = world_size/(TP·PP·CP·EP) = 2。<b>token 自洽:</b> step1 = 512 × (prompt 86.7 + resp 1202) ≈ 660K = 实测 perf/total_num_tokens 659835 ✓</div>
+  </div>
+  <div class="two">
+    <div class="card">
+      <div class="t">每步 Forward / Backward / 参数更新 (按阶段)</div>
+      <div class="n">每步 4 个 Megatron 阶段；gen 是 vLLM rollout 不计入 Megatron forward。infer 阶段 forward_only=True、backward=0 (summary 实证)；backward 只在 actor_update。</div>
+      <table>
+        <tr><th>阶段</th><th>micro fwd</th><th>micro bwd</th><th>param update</th></tr>
+        <tr><td>old_log_prob (infer, fwd-only)</td><td>256</td><td>0</td><td>0</td></tr>
+        <tr><td>ref (infer, fwd-only)</td><td>256</td><td>0</td><td>0</td></tr>
+        <tr><td>actor_update (fwd+bwd)</td><td>256</td><td>256</td><td>1</td></tr>
+        <tr style="background:#1d212b"><td><b>每步合计</b></td><td><b>768</b></td><td><b>256</b></td><td><b>1</b></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="t">每步 Forward 占比 — train vs infer-only</div>
+      <div class="chart"><canvas id="c_fwd_breakdown"></canvas></div>
+      <div class="note"><b>关键:</b> forward 是 backward 的 <b>3 倍</b> (每步 768:256)，因为 old_log_prob + ref 两次额外前向只算 logp/KL 不产生梯度。512 trajectory 在 olp 与 ref 间重复前向 → 前缀缓存/复用的理想靶点。</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="t">3 步 smoke 累计计数</div>
+    <table>
+      <tr><th>项</th><th>计算</th><th>次数</th></tr>
+      <tr><td>forward (micro-batch 级)</td><td>infer 256×2×3 + actor 256×3</td><td><b>2304</b></td></tr>
+      <tr><td>　├ forward-only (infer: olp+ref)</td><td>256 × 2 × 3</td><td>1536</td></tr>
+      <tr><td>　└ train forward (actor)</td><td>256 × 3</td><td>768</td></tr>
+      <tr><td>backward (micro-batch 级)</td><td>256 × 3</td><td><b>768</b></td></tr>
+      <tr><td>参数更新 (optimizer step)</td><td>1 mini × 1 epoch × 3 步</td><td><b>3</b></td></tr>
+    </table>
+  </div>
+
+  <h2>④ 单步阶段耗时分解 (driver 视角)</h2>
+  <div class="card">
+    <div class="t">各阶段耗时堆叠 (秒) — 含 overhead (step − 各阶段和)</div>
+    <div class="n">update_actor 占近一半；overhead 来自数据加载/Ray 调度/ref 与 old_log_prob 之外的开销</div>
+    <div class="chart tall"><canvas id="c_stage"></canvas></div>
+  </div>
+
+  <h2>⑤ 单步总耗时与吞吐趋势</h2>
+  <div class="two">
+    <div class="card">
+      <div class="t">step 总耗时 (s) vs 吞吐 (tok/s/GPU)</div>
+      <div class="chart"><canvas id="c_step_thr"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="t">每步 token 总数与平均响应长度</div>
+      <div class="chart"><canvas id="c_tokens"></canvas></div>
+    </div>
+  </div>
+
+  <h2>⑥ 跨 rank 一致性 (8 卡)</h2>
+  <div class="two">
+    <div class="card">
+      <div class="t">各 rank infer 阶段 avg_total (s)</div>
+      <div class="n">infer = old_log_prob + ref 两次前向 · rank 间极均衡 (93.8–95.3)</div>
+      <div class="chart"><canvas id="c_rank_infer"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="t">各 rank actor_update: forward vs backward (s)</div>
+      <div class="n">前向 ~95s, 反向 ~175s, 反向占 64%</div>
+      <div class="chart"><canvas id="c_rank_actor"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="t">各 rank HBM 峰值 (GB) — infer vs actor_update</div>
+    <div class="n">actor 阶段峰值 28.8–29.5GB/卡 (64GB HBM，余量充足)；infer 阶段 10.7–11.2GB</div>
+    <div class="chart"><canvas id="c_rank_mem"></canvas></div>
+  </div>
+
+  <h2>⑦ Micro-batch 前向耗时分布</h2>
+  <div class="card">
+    <div class="t">单 micro-batch 前向时间分布 (ms, 0.30–0.45 区间, 30 bin)</div>
+    <div class="n">infer n=12288, actor n=6144 (8 rank × 3 步)。尾部少量离群点为 warmup 首 batch (max 2.74ms)，已计为 out_of_range。中位数 infer 0.360ms / actor 0.371ms。</div>
+    <div class="chart tall"><canvas id="c_hist"></canvas></div>
+  </div>
+  <div class="two">
+    <div class="card">
+      <div class="t">前向耗时百分位 (ms) — infer vs actor</div>
+      <div class="chart"><canvas id="c_pct"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="t">分布统计摘要</div>
+      <table>
+        <tr><th>stat</th><th>infer fwd</th><th>actor fwd</th></tr>
+        <tr><td>n</td><td>12288</td><td>6144</td></tr>
+        <tr><td>min</td><td>0.315</td><td>0.330</td></tr>
+        <tr><td>p25</td><td>0.350</td><td>0.361</td></tr>
+        <tr><td>p50</td><td>0.360</td><td>0.371</td></tr>
+        <tr><td>p75</td><td>0.369</td><td>0.381</td></tr>
+        <tr><td>p90</td><td>0.378</td><td>0.389</td></tr>
+        <tr><td>p95</td><td>0.384</td><td>0.395</td></tr>
+        <tr><td>p99</td><td>0.402</td><td>0.406</td></tr>
+        <tr><td>max</td><td>2.739</td><td>1.775</td></tr>
+        <tr><td>mean</td><td>0.363</td><td>0.373</td></tr>
+        <tr><td>std</td><td>0.066</td><td>0.041</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>⑧ 结论与下一步</h2>
+  <div class="card">
+    <div class="t">基线特征</div>
+    <ul style="font-size:13px;color:var(--sub);padding-left:20px">
+      <li><b style="color:var(--ink)">update_actor 是首要瓶颈</b> (282s/步, 45%)，其中反向 175s 占 actor 64% → 前缀缓存优化若能减少 actor 前向/反向 token 量，收益最大</li>
+      <li><b style="color:var(--ink)">gen (rollout) 波动大</b> (125–147s)，受 response_length (1136–1232) 与 vLLM 调度影响</li>
+      <li><b style="color:var(--ink)">old_log_prob / ref 高度稳定</b> (~100s)，是前缀合并/复用的理想靶点 (两阶段对同 batch 重复前向)</li>
+      <li><b style="color:var(--ink)">8 卡负载极均衡</b>，无 straggler；HBM 余量充足 (峰值 29.5/64GB)</li>
+      <li><b style="color:var(--ink)">MFU 仅 4.27%</b>，计算密度低，属于 RL 训练典型 (小 batch + 长序列 + 多次前向)</li>
+    </ul>
+    <div class="t" style="margin-top:14px">下一步</div>
+    <ul style="font-size:13px;color:var(--sub);padding-left:20px">
+      <li>当前为 <span class="tag warn">3 步 smoke</span>，需跑满 warmup10 + collect100 得稳态统计</li>
+      <li>依次铺开 G3 (前缀合并) / G4 (合并+prefix-sharing) 对比 G1 基线，验证 old_log_prob+ref 阶段加速</li>
+      <li>本目录未用 workflow template，建议规整为标准 5 件套结构</li>
+    </ul>
+    <div class="note"><b>采集可靠性教训:</b> timing 数据经 3 轮修复 (Fix1 rank 感知输出 → Fix2 删旧 hook → Fix3 主动落盘不靠 atexit) 才稳定落盘。Ray KILL worker 场景 atexit 不可靠，关键数据须主动落盘。</div>
+  </div>
+
+  <div class="meta" style="margin-top:24px;text-align:center">
+    数据源: 192.168.0.112 /data/l00619320/workspace/2026_0721_1400_verl_qwen_prefix_sharing/logs/baseline_rerun2/ ·
+    可视化: Chart.js 4.4 · 生成: Claude Code
+  </div>
+</div>
+
+<script>
+// ── 数据 (全部来自一手日志/产物, 2026-07-22 rerun2) ──
+const STEPS = [
+  {step:1, gen:125.080, old_log_prob:101.002, ref:97.201, adv:0.032, update_actor:281.281, update_weights:6.249, step:611.182, throughput:134.951, total_tokens:659835, mfu:0.0434, mem_alloc:22.94, resp_mean:1202.07, prompt_mean:86.67},
+  {step:2, gen:147.088, old_log_prob:100.508, ref:99.986, adv:0.031, update_actor:283.534, update_weights:6.655, step:638.079, throughput:131.890, total_tokens:673250, mfu:0.0438, mem_alloc:23.82, resp_mean:1232.24, prompt_mean:82.70},
+  {step:3, gen:139.059, old_log_prob:101.381, ref:99.310, adv:0.032, update_actor:281.891, update_weights:5.601, step:627.553, throughput:124.154, total_tokens:623308, mfu:0.0407, mem_alloc:23.82, resp_mean:1135.96, prompt_mean:81.44},
+];
+
+const RANKS = [
+  {r:0, infer:95.32, infer_mem:11.19, actor:271.43, actor_mem:29.55, actor_fwd:96.35, actor_bwd:175.08},
+  {r:1, infer:94.98, infer_mem:11.08, actor:271.52, actor_mem:29.39, actor_fwd:96.63, actor_bwd:174.88},
+  {r:2, infer:94.97, infer_mem:11.08, actor:271.67, actor_mem:29.41, actor_fwd:96.21, actor_bwd:175.47},
+  {r:3, infer:94.58, infer_mem:11.08, actor:271.04, actor_mem:29.41, actor_fwd:95.53, actor_bwd:175.51},
+  {r:4, infer:94.40, infer_mem:10.74, actor:269.76, actor_mem:28.85, actor_fwd:94.91, actor_bwd:174.85},
+  {r:5, infer:94.02, infer_mem:10.75, actor:269.77, actor_mem:28.88, actor_fwd:94.37, actor_bwd:175.40},
+  {r:6, infer:94.07, infer_mem:10.75, actor:270.00, actor_mem:28.82, actor_fwd:94.96, actor_bwd:175.04},
+  {r:7, infer:93.82, infer_mem:10.75, actor:269.52, actor_mem:28.82, actor_fwd:94.19, actor_bwd:175.34},
+];
+
+// zoomed histograms (0.30–0.45ms, 30 bins)
+const INFER_HIST = {edges:[0.3,0.305,0.31,0.315,0.32,0.325,0.33,0.335,0.34,0.345,0.35,0.355,0.36,0.365,0.37,0.375,0.38,0.385,0.39,0.395,0.4,0.405,0.41,0.415,0.42,0.425,0.43,0.435,0.44,0.445,0.45],counts:[0,0,1,3,8,95,258,521,846,1259,1544,1643,1791,1502,1063,747,433,244,148,50,35,30,21,5,4,0,0,0,0,0],oor:37};
+const ACTOR_HIST = {edges:[0.3,0.305,0.31,0.315,0.32,0.325,0.33,0.335,0.34,0.345,0.35,0.355,0.36,0.365,0.37,0.375,0.38,0.385,0.39,0.395,0.4,0.405,0.41,0.415,0.42,0.425,0.43,0.435,0.44,0.445,0.45],counts:[0,0,0,0,0,0,8,62,152,200,362,631,760,782,774,782,625,431,266,171,64,32,15,7,3,0,0,0,0,0],oor:17};
+
+const PCT = {
+  labels:['min','p25','p50','p75','p90','p95','p99','max'],
+  infer:[0.315,0.350,0.360,0.369,0.378,0.384,0.402,2.739],
+  actor:[0.330,0.361,0.371,0.381,0.389,0.395,0.406,1.775],
+};
+
+const C = {
+  blue:'#4c8eff', green:'#3ecf8e', orange:'#f5a623', red:'#ff6b6b',
+  purple:'#a78bfa', cyan:'#22d3ee', grey:'#8b93a7', ink:'#e6e9ef',
+  grid:'#262b36'
+};
+Chart.defaults.color = C.grey;
+Chart.defaults.borderColor = C.grid;
+Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,sans-serif';
+
+function gridOpts(){return {grid:{color:C.grid},ticks:{color:C.grey}}}
+function base(extra){return Object.assign({responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.ink,boxWidth:12,font:{size:11}}}},scales:{x:gridOpts(),y:gridOpts()}}, extra||{})}
+
+// ③ stage stacked
+(() => {
+  const labels = STEPS.map(s=>'step '+s.step);
+  const overhead = STEPS.map(s=>+(s.step - s.gen - s.old_log_prob - s.ref - s.adv - s.update_actor - s.update_weights).toFixed(2));
+  new Chart(document.getElementById('c_stage'), {
+    type:'bar',
+    data:{labels, datasets:[
+      {label:'gen',data:STEPS.map(s=>s.gen),backgroundColor:C.purple},
+      {label:'old_log_prob',data:STEPS.map(s=>s.old_log_prob),backgroundColor:C.cyan},
+      {label:'ref',data:STEPS.map(s=>s.ref),backgroundColor:C.red},
+      {label:'update_actor',data:STEPS.map(s=>s.update_actor),backgroundColor:C.orange},
+      {label:'update_weights',data:STEPS.map(s=>s.update_weights),backgroundColor:C.blue},
+      {label:'overhead',data:overhead,backgroundColor:C.grey},
+    ]},
+    options:base({scales:{x:{...gridOpts(),stacked:true},y:{...gridOpts(),stacked:true,title:{display:true,text:'秒 (s)',color:C.grey}}}})
+  });
+})();
+
+// ④ step + throughput
+(() => {
+  const labels = STEPS.map(s=>'step '+s.step);
+  new Chart(document.getElementById('c_step_thr'), {
+    data:{labels, datasets:[
+      {type:'bar',label:'step 总耗时 (s)',data:STEPS.map(s=>s.step),backgroundColor:C.blue,yAxisID:'y'},
+      {type:'line',label:'throughput (tok/s/GPU)',data:STEPS.map(s=>s.throughput),borderColor:C.green,backgroundColor:C.green,yAxisID:'y1',tension:.3},
+    ]},
+    options:base({scales:{
+      x:gridOpts(),
+      y:{...gridOpts(),position:'left',title:{display:true,text:'s',color:C.grey}},
+      y1:{...gridOpts(),position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'tok/s/GPU',color:C.grey}}
+    }})
+  });
+})();
+
+// ④ tokens + resp
+(() => {
+  const labels = STEPS.map(s=>'step '+s.step);
+  new Chart(document.getElementById('c_tokens'), {
+    data:{labels, datasets:[
+      {type:'bar',label:'total tokens',data:STEPS.map(s=>s.total_tokens),backgroundColor:C.cyan,yAxisID:'y'},
+      {type:'line',label:'avg response len',data:STEPS.map(s=>s.resp_mean),borderColor:C.orange,backgroundColor:C.orange,yAxisID:'y1',tension:.3},
+    ]},
+    options:base({scales:{
+      x:gridOpts(),
+      y:{...gridOpts(),position:'left',title:{display:true,text:'tokens',color:C.grey}},
+      y1:{...gridOpts(),position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'resp chars',color:C.grey}}
+    }})
+  });
+})();
+
+// ⑤ rank infer
+(() => {
+  new Chart(document.getElementById('c_rank_infer'), {
+    type:'bar',
+    data:{labels:RANKS.map(r=>'rank'+r.r), datasets:[{label:'infer avg_total (s)',data:RANKS.map(r=>r.infer),backgroundColor:C.cyan}]},
+    options:base({plugins:{legend:{display:false}},scales:{x:gridOpts(),y:{...gridOpts(),title:{display:true,text:'s',color:C.grey},min:92,max:96}}})
+  });
+})();
+
+// ⑤ rank actor fwd/bwd
+(() => {
+  new Chart(document.getElementById('c_rank_actor'), {
+    type:'bar',
+    data:{labels:RANKS.map(r=>'rank'+r.r), datasets:[
+      {label:'forward (s)',data:RANKS.map(r=>r.actor_fwd),backgroundColor:C.blue},
+      {label:'backward (s)',data:RANKS.map(r=>r.actor_bwd),backgroundColor:C.orange},
+    ]},
+    options:base({scales:{x:{...gridOpts(),stacked:true},y:{...gridOpts(),stacked:true,title:{display:true,text:'s',color:C.grey}}}})
+  });
+})();
+
+// ⑤ rank mem
+(() => {
+  new Chart(document.getElementById('c_rank_mem'), {
+    type:'bar',
+    data:{labels:RANKS.map(r=>'rank'+r.r), datasets:[
+      {label:'infer peak (GB)',data:RANKS.map(r=>r.infer_mem),backgroundColor:C.cyan},
+      {label:'actor peak (GB)',data:RANKS.map(r=>r.actor_mem),backgroundColor:C.red},
+    ]},
+    options:base({scales:{x:gridOpts(),y:{...gridOpts(),title:{display:true,text:'GB',color:C.grey}}}})
+  });
+})();
+
+// ⑥ histogram
+(() => {
+  const labels = INFER_HIST.edges.slice(1).map((e,i)=>e.toFixed(3));
+  new Chart(document.getElementById('c_hist'), {
+    type:'bar',
+    data:{labels, datasets:[
+      {label:`infer fwd (n=12288, oor=${INFER_HIST.oor})`,data:INFER_HIST.counts,backgroundColor:C.cyan},
+      {label:`actor fwd (n=6144, oor=${ACTOR_HIST.oor})`,data:ACTOR_HIST.counts,backgroundColor:C.orange},
+    ]},
+    options:base({scales:{x:gridOpts(),y:{...gridOpts(),type:'logarithmic',title:{display:true,text:'count (log)',color:C.grey}}}})
+  });
+})();
+
+// ③ forward breakdown (train vs infer-only, per step)
+(() => {
+  const labels = STEPS.map(s=>'step '+s.step);
+  new Chart(document.getElementById('c_fwd_breakdown'), {
+    type:'bar',
+    data:{labels, datasets:[
+      {label:'train forward (actor)',data:STEPS.map(()=>256),backgroundColor:C.orange},
+      {label:'forward-only (olp+ref)',data:STEPS.map(()=>512),backgroundColor:C.cyan},
+    ]},
+    options:base({scales:{x:{...gridOpts(),stacked:true},y:{...gridOpts(),stacked:true,title:{display:true,text:'micro-batch forward / 步',color:C.grey}}}})
+  });
+})();
+
+// ⑥ percentile
+(() => {
+  new Chart(document.getElementById('c_pct'), {
+    type:'bar',
+    data:{labels:PCT.labels, datasets:[
+      {label:'infer fwd (ms)',data:PCT.infer,backgroundColor:C.cyan},
+      {label:'actor fwd (ms)',data:PCT.actor,backgroundColor:C.orange},
+    ]},
+    options:base({scales:{x:gridOpts(),y:{...gridOpts(),type:'logarithmic',title:{display:true,text:'ms (log)',color:C.grey}}}})
+  });
+})();
+</script>
+</body>
+</html>
