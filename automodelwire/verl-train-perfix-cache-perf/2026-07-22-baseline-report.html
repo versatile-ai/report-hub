@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="verl GRPO 训练 Prefix-Cache 性能基线数据报告 — Qwen3-8B dense · 单节点 8 卡 · Batch 层级 · Forward/Backward/Update 计数 · 阶段耗时分解 · 8 卡一致性 · micro-batch 前向耗时分布 · 采集可靠性教训。">
+<title>verl 训练 Prefix-Cache 性能基线 — Baseline Report (2026-07-22)</title>
+<style>
+:root {
+  /* 深态统一 token —— 与 design-guide.md / phase-report.html / stage-report.html 一致 */
+  --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+  --text:#E6EDF3; --muted:#8B949E; --tertiary:#7A8296;
+  --accent:#A78BFA; --accent-hover:#C4B5FD;
+  --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+  --code-bg:#010409;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); line-height:1.65; font-size:14px; padding:24px 32px 80px; max-width:1100px; margin:0 auto; }
+/* Display 角色:标题、数值、日期、tag 用等宽 */
+h1,h2,.metric-card .value,.tag,.breadcrumb,.toc b,code,pre,.mono { font-family:'SF Mono','Fira Code',Consolas,monospace; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* Breadcrumb */
+.breadcrumb { font-size:12px; color:var(--tertiary); margin-bottom:18px; letter-spacing:0.2px; }
+.breadcrumb a { color:var(--accent); }
+.breadcrumb a:hover { color:var(--accent-hover); text-decoration:none; }
+.breadcrumb .sep { color:var(--border); margin:0 6px; user-select:none; }
+.breadcrumb .current { color:var(--muted); }
+
+header { background:linear-gradient(180deg,#0f1923 0%,var(--bg) 100%); padding:28px 32px 24px; border:1px solid var(--border); border-radius:6px; margin-bottom:24px; }
+header h1 { font-size:23px; font-weight:600; color:#E8EDF2; margin-bottom:8px; letter-spacing:-0.3px; line-height:1.3; }
+header .status { display:inline-block; padding:3px 10px; border-radius:3px; font-size:11px; font-weight:600; background:rgba(167,139,250,0.15); color:var(--accent); margin-left:10px; vertical-align:middle; }
+header .meta { color:var(--muted); margin-top:8px; font-size:13px; line-height:1.7; }
+header .meta b { color:var(--text); font-weight:500; }
+
+/* TOC */
+.toc { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:14px 20px; margin-bottom:32px; font-size:13px; }
+.toc b { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; display:block; margin-bottom:8px; }
+.toc ol { padding-left:22px; columns:2; }
+.toc li { margin:4px 0; break-inside:avoid; }
+.toc a { color:var(--accent); }
+
+section { margin-bottom:48px; }
+section h2 { font-size:19px; font-weight:600; color:var(--text); margin:0 0 20px; padding-bottom:8px; border-bottom:1px solid var(--border); letter-spacing:-0.2px; }
+section h3 { font-size:15px; font-weight:600; color:var(--accent); margin:24px 0 12px; font-family:-apple-system,'SF Pro Text',sans-serif; }
+section p { margin:8px 0; }
+
+/* Metrics grid */
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:24px; }
+.metric-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:16px; }
+.metric-card .value { font-size:24px; font-weight:700; color:var(--accent); line-height:1.2; }
+.metric-card .label { font-size:11px; color:var(--muted); margin-top:6px; text-transform:uppercase; letter-spacing:0.5px; }
+.metric-card .sub { font-size:11px; color:var(--tertiary); margin-top:4px; font-family:'SF Mono',Consolas,monospace; }
+.metric-card.good .value { color:var(--green); }
+.metric-card.warn .value { color:var(--yellow); }
+.metric-card.bad  .value { color:var(--red); }
+.metric-card.info .value { color:var(--info); }
+
+/* Tables */
+table { width:100%; border-collapse:collapse; margin:12px 0 20px; font-size:13px; }
+th { background:var(--surface-2); color:var(--accent); text-align:left; padding:8px 10px; font-weight:600; border:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+td { padding:8px 10px; border:1px solid var(--border); vertical-align:top; }
+tr:nth-child(even) td { background:var(--surface); }
+td.num { text-align:right; font-variant-numeric:tabular-nums; font-family:'SF Mono',Consolas,monospace; }
+td.ok { color:var(--green); font-weight:600; }
+td.warn { color:var(--yellow); font-weight:600; }
+td.bad { color:var(--red); font-weight:600; }
+td.dim { color:var(--muted); }
+table.compact td, table.compact th { padding:5px 8px; font-size:12px; }
+
+/* Note / emphasis block */
+.note { font-size:12px; color:var(--muted); margin:12px 0 0; padding:10px 14px; background:var(--surface); border-left:3px solid var(--accent); border-radius:0 6px 6px 0; line-height:1.6; }
+.note b { color:var(--text); }
+.note.warn { border-left-color:var(--yellow); }
+.note.bad  { border-left-color:var(--red); }
+.note.ok   { border-left-color:var(--green); }
+
+/* Tags */
+.tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:600; margin-right:4px; }
+.tag-green  { background:rgba(63,185,80,0.15);  color:var(--green); }
+.tag-yellow { background:rgba(210,153,34,0.15); color:var(--yellow); }
+.tag-red    { background:rgba(248,81,73,0.15);  color:var(--red); }
+.tag-info   { background:rgba(121,192,255,0.15); color:var(--info); }
+
+/* Lists */
+ul.bullets { font-size:13px; color:var(--muted); padding-left:22px; margin:8px 0; }
+ul.bullets li { margin:6px 0; }
+ul.bullets b { color:var(--text); font-weight:600; }
+
+/* Code blocks */
+pre { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:14px; overflow-x:auto; font-size:12px; line-height:1.5; margin:12px 0; }
+code { background:#1f2937; color:var(--info); padding:1px 5px; border-radius:3px; font-size:12px; }
+pre code { background:none; color:var(--text); padding:0; }
+
+/* Horizontal bar (histogram) */
+.hbar { display:flex; align-items:center; gap:8px; }
+.hbar span { display:block; height:10px; border-radius:2px; min-width:1px; }
+.hbar b { font-size:11px; color:var(--muted); font-family:'SF Mono',Consolas,monospace; font-weight:600; }
+
+/* Stacked stage bar */
+.stagebar { display:flex; height:22px; border:1px solid var(--border); border-radius:4px; overflow:hidden; margin:6px 0 14px; background:var(--surface-2); }
+.stagebar span { display:block; height:100%; transition:none; }
+.legend { display:flex; flex-wrap:wrap; gap:14px; font-size:11px; color:var(--muted); margin:10px 0 4px; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+
+footer { text-align:center; padding:24px; color:var(--muted); font-size:12px; border-top:1px solid var(--border); margin-top:48px; line-height:1.8; }
+footer a { color:var(--accent); }
+
+@media (prefers-reduced-motion:reduce) { * { transition:none!important; animation:none!important; } }
+@media print { body { background:#fff; color:#111; } header { background:#fff; } }
+@media (max-width:768px) { body { padding:16px 18px 60px; } header { padding:20px; } h1,header h1 { font-size:19px; } .toc ol { columns:1; } }
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-train-perfix-cache-perf">verl 训练 Prefix-Cache 性能基线</a><span class="sep">/</span>
+  <span class="current">Baseline Report · 2026-07-22</span>
+</nav>
+
+<header>
+  <h1>verl 训练 Prefix-Cache 性能实验 — 基线数据报告<span class="status">Baseline · 3-step smoke</span></h1>
+  <div class="meta">
+    实验目录 <b>wip-verl-train-perfix-cache-perf</b> · 基线由姊妹实验 <b>verl_npu_qwen_with_prefix_sharing</b> 部署执行 ·
+    节点 <b>192.168.0.112 (Aura-88)</b> · 容器 <b>verl-qwen-prefix-baseline</b><br>
+    产物来源 <b>logs/baseline_rerun2/</b> (timing_records.rank0-7.json + step_profile.rank0.json + baseline_rerun2.log) ·
+    生成日期 <b>2026-07-22</b> · 采集轮次 <b>rerun2 (Fix3 主动落盘)</b>
+  </div>
+</header>
+
+<nav class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#config">① 实验配置速查</a></li>
+    <li><a href="#kpi">② 核心指标 KPI</a></li>
+    <li><a href="#batch">③ Batch 层级与 Fwd/Bwd/Update 计数</a></li>
+    <li><a href="#stage">④ 单步阶段耗时分解</a></li>
+    <li><a href="#trend">⑤ 单步总耗时与吞吐趋势</a></li>
+    <li><a href="#rank">⑥ 跨 rank 一致性 (8 卡)</a></li>
+    <li><a href="#fwd-dist">⑦ Micro-batch 前向耗时分布</a></li>
+    <li><a href="#conclusion">⑧ 结论与下一步</a></li>
+  </ol>
+</nav>
+
+<!-- ====== ① CONFIG ====== -->
+<section id="config">
+  <h2>① 实验配置速查</h2>
+  <table>
+    <tr><th>项目</th><th>值</th><th>项目</th><th>值</th></tr>
+    <tr><td>模型</td><td>Qwen3-8B (dense, 36L, hidden 4096, 32 heads, GQA kv=8)</td><td>精度</td><td>BF16</td></tr>
+    <tr><td>后端</td><td>Megatron (transformer_engine)</td><td>RL 算法</td><td>GRPO</td></tr>
+    <tr><td>并行</td><td>TP=4, PP=1, EP=1, CP=1, DP=2 (单节点 8 卡)</td><td>Rollout TP</td><td>4</td></tr>
+    <tr><td>镜像</td><td><code>quay.io/ascend/verl:verl-9.0.0-910b-...-v0.8.0</code></td><td>硬件</td><td>Ascend 910B × 8 (单节点)</td></tr>
+    <tr><td>步数</td><td>TOTAL_STEPS=3 (smoke)</td><td>采集</td><td>无 warmup,3 步全采</td></tr>
+    <tr><td>每步 micro-batch</td><td>256 (infer) / 256 (actor_update)</td><td>每步 token</td><td>~623K–673K</td></tr>
+  </table>
+  <div class="note warn"><b>与设计文档偏差:</b> README 设计为 Qwen3.5-MoE / 32 卡 / aura:910b-cann9.0.0 镜像;实测为 Qwen3-8B dense / 8 卡 / v0.8.0 镜像。本报告数据以实测为准。<b>本实验为纯文本语言模型,不含多模态数据。</b></div>
+</section>
+
+<!-- ====== ② KPI ====== -->
+<section id="kpi">
+  <h2>② 核心指标 (KPI)</h2>
+  <div class="metrics">
+    <div class="metric-card warn"><div class="value">625.6 s</div><div class="label">avg step time</div><div class="sub">3 步均值 · 611.2 / 638.1 / 627.6</div></div>
+    <div class="metric-card good"><div class="value">130.3</div><div class="label">avg throughput (tok/s/GPU)</div><div class="sub">134.95 / 131.89 / 124.15</div></div>
+    <div class="metric-card bad"><div class="value">282.2 s</div><div class="label">avg update_actor</div><div class="sub">占总步时 45.1% · 最大开销</div></div>
+    <div class="metric-card info"><div class="value">137.1 s</div><div class="label">avg gen (rollout)</div><div class="sub">21.9% · 波动大 (125→147)</div></div>
+    <div class="metric-card info"><div class="value">101.0 s</div><div class="label">avg old_log_prob</div><div class="sub">16.2% · 极稳定</div></div>
+    <div class="metric-card info"><div class="value">98.8 s</div><div class="label">avg ref</div><div class="sub">15.8%</div></div>
+    <div class="metric-card good"><div class="value">29.5 GB</div><div class="label">peak HBM (actor)</div><div class="sub">/卡 · infer 阶段 11.2GB</div></div>
+    <div class="metric-card warn"><div class="value">4.27%</div><div class="label">MFU (actor)</div><div class="sub">4.34 / 4.38 / 4.07</div></div>
+  </div>
+</section>
+
+<!-- ====== ③ BATCH / COUNTS ====== -->
+<section id="batch">
+  <h2>③ Batch 层级与 Forward/Backward/Update 计数</h2>
+
+  <h3>三级 Batch 层级</h3>
+  <p style="color:var(--muted);font-size:13px;">每步 64 prompts × rollout_n=8 = 512 trajectories;ppo_epochs=1 → 仅 1 个 mini batch;micro_batch_size_per_gpu=1</p>
+  <table>
+    <tr><th>层级</th><th>值</th><th>说明 / 验证</th></tr>
+    <tr><td>Global / Train batch (每步)</td><td class="num">64 prompts × 8 = <b>512 trajectories</b></td><td class="dim">train_batch_size=64 + rollout_n=8</td></tr>
+    <tr><td>Mini batch</td><td class="num"><b>512 trajectories</b></td><td class="dim">ppo_mini_batch_size=64 (prompt 单位) + ppo_epochs=1 → 每步仅 1 个 mini batch</td></tr>
+    <tr><td>Micro batch (每 GPU / micro-step)</td><td class="num"><b>1 trajectory</b></td><td class="dim">ppo_micro_batch_size_per_gpu=1</td></tr>
+    <tr><td>num_micro_batches / mini batch</td><td class="num"><b>256</b></td><td class="dim">512 / (DP=2 × 1) = 256,与 timing 实测 n_micro_batch=256 ✓</td></tr>
+  </table>
+  <div class="note"><b>并行配置:</b> WORLD_SIZE=8, TP=4, PP=1, CP=1, EP=1 → <b>DP=2</b>。日志 DDP config 中 data_parallel_size=1 是分片字段 (sharding_strategy='no_shard'),非并行度;实际数据并行度 = world_size/(TP·PP·CP·EP) = 2。<b>token 自洽:</b> step1 = 512 × (prompt 86.7 + resp 1202) ≈ 660K = 实测 perf/total_num_tokens 659835 ✓</div>
+
+  <h3>每步 Forward / Backward / 参数更新 (按阶段)</h3>
+  <p style="color:var(--muted);font-size:13px;">每步 4 个 Megatron 阶段;gen 是 vLLM rollout 不计入 Megatron forward。infer 阶段 forward_only=True、backward=0 (summary 实证);backward 只在 actor_update。</p>
+  <div class="metrics" style="grid-template-columns:1fr 1fr;gap:18px;">
+    <table>
+      <tr><th>阶段</th><th>micro fwd</th><th>micro bwd</th><th>param update</th></tr>
+      <tr><td>old_log_prob (infer, fwd-only)</td><td class="num">256</td><td class="num">0</td><td class="num">0</td></tr>
+      <tr><td>ref (infer, fwd-only)</td><td class="num">256</td><td class="num">0</td><td class="num">0</td></tr>
+      <tr><td>actor_update (fwd+bwd)</td><td class="num">256</td><td class="num">256</td><td class="num">1</td></tr>
+      <tr><td><b>每步合计</b></td><td class="num ok"><b>768</b></td><td class="num warn"><b>256</b></td><td class="num"><b>1</b></td></tr>
+    </table>
+    <table>
+      <tr><th>每步 Forward 占比</th><th>micro-batch / 步</th></tr>
+      <tr><td>train forward (actor)</td><td class="num">256 (33%)</td></tr>
+      <tr><td>forward-only (olp + ref)</td><td class="num ok">512 (67%)</td></tr>
+      <tr><td><b>合计 forward</b></td><td class="num"><b>768</b></td></tr>
+      <tr><td>backward</td><td class="num dim">256</td></tr>
+    </table>
+  </div>
+  <div class="note ok"><b>关键:</b> forward 是 backward 的 <b>3 倍</b> (每步 768:256),因为 old_log_prob + ref 两次额外前向只算 logp/KL 不产生梯度。512 trajectory 在 olp 与 ref 间重复前向 → 前缀缓存/复用的理想靶点。</div>
+
+  <h3>3 步 smoke 累计计数</h3>
+  <table>
+    <tr><th>项</th><th>计算</th><th>次数</th></tr>
+    <tr><td>forward (micro-batch 级)</td><td class="dim">infer 256×2×3 + actor 256×3</td><td class="num ok"><b>2304</b></td></tr>
+    <tr><td class="dim">　├ forward-only (infer: olp+ref)</td><td class="dim">256 × 2 × 3</td><td class="num">1536</td></tr>
+    <tr><td class="dim">　└ train forward (actor)</td><td class="dim">256 × 3</td><td class="num">768</td></tr>
+    <tr><td>backward (micro-batch 级)</td><td class="dim">256 × 3</td><td class="num warn"><b>768</b></td></tr>
+    <tr><td>参数更新 (optimizer step)</td><td class="dim">1 mini × 1 epoch × 3 步</td><td class="num"><b>3</b></td></tr>
+  </table>
+</section>
+
+<!-- ====== ④ STAGE BREAKDOWN ====== -->
+<section id="stage">
+  <h2>④ 单步阶段耗时分解 (driver 视角)</h2>
+  <p style="color:var(--muted);font-size:13px;">update_actor 占近一半;overhead 来自数据加载/Ray 调度/ref 与 old_log_prob 之外的开销。下为各步阶段堆叠占比,悬停可见秒数。</p>
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>gen</span>
+    <span><i style="background:var(--info)"></i>old_log_prob</span>
+    <span><i style="background:var(--red)"></i>ref</span>
+    <span><i style="background:var(--tertiary)"></i>adv</span>
+    <span><i style="background:var(--yellow)"></i>update_actor</span>
+    <span><i style="background:var(--green)"></i>update_weights</span>
+    <span><i style="background:var(--border)"></i>overhead</span>
+  </div>
+  <div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:2px;">step 1 · 611.18s</div>
+  <div class="stagebar"><span style="width:20.47%;background:var(--accent)" title="gen 125.08s"></span><span style="width:16.53%;background:var(--info)" title="old_log_prob 101.00s"></span><span style="width:15.90%;background:var(--red)" title="ref 97.20s"></span><span style="width:0.01%;background:var(--tertiary)" title="adv 0.03s"></span><span style="width:46.02%;background:var(--yellow)" title="update_actor 281.28s"></span><span style="width:1.02%;background:var(--green)" title="update_weights 6.25s"></span><span style="width:0.06%;background:var(--border)" title="overhead 0.34s"></span></div>
+  <div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:2px;">step 2 · 638.08s</div>
+  <div class="stagebar"><span style="width:23.05%;background:var(--accent)" title="gen 147.09s"></span><span style="width:15.75%;background:var(--info)" title="old_log_prob 100.51s"></span><span style="width:15.67%;background:var(--red)" title="ref 99.99s"></span><span style="width:0.00%;background:var(--tertiary)" title="adv 0.03s"></span><span style="width:44.44%;background:var(--yellow)" title="update_actor 283.53s"></span><span style="width:1.04%;background:var(--green)" title="update_weights 6.66s"></span><span style="width:0.04%;background:var(--border)" title="overhead 0.28s"></span></div>
+  <div class="mono" style="font-size:11px;color:var(--muted);margin-bottom:2px;">step 3 · 627.55s</div>
+  <div class="stagebar"><span style="width:22.16%;background:var(--accent)" title="gen 139.06s"></span><span style="width:16.15%;background:var(--info)" title="old_log_prob 101.38s"></span><span style="width:15.82%;background:var(--red)" title="ref 99.31s"></span><span style="width:0.01%;background:var(--tertiary)" title="adv 0.03s"></span><span style="width:44.92%;background:var(--yellow)" title="update_actor 281.89s"></span><span style="width:0.89%;background:var(--green)" title="update_weights 5.60s"></span><span style="width:0.04%;background:var(--border)" title="overhead 0.28s"></span></div>
+
+  <h3>各阶段绝对耗时 (秒)</h3>
+  <table>
+    <tr><th>step</th><th>gen</th><th>old_log_prob</th><th>ref</th><th>adv</th><th>update_actor</th><th>update_weights</th><th>overhead</th><th>total</th></tr>
+    <tr><td>1</td><td class="num">125.08</td><td class="num">101.00</td><td class="num">97.20</td><td class="num">0.03</td><td class="num bad">281.28</td><td class="num">6.25</td><td class="num dim">0.34</td><td class="num"><b>611.18</b></td></tr>
+    <tr><td>2</td><td class="num">147.09</td><td class="num">100.51</td><td class="num">99.99</td><td class="num">0.03</td><td class="num bad">283.53</td><td class="num">6.66</td><td class="num dim">0.28</td><td class="num"><b>638.08</b></td></tr>
+    <tr><td>3</td><td class="num">139.06</td><td class="num">101.38</td><td class="num">99.31</td><td class="num">0.03</td><td class="num bad">281.89</td><td class="num">5.60</td><td class="num dim">0.28</td><td class="num"><b>627.55</b></td></tr>
+    <tr><td><b>均值</b></td><td class="num">137.08</td><td class="num">100.96</td><td class="num">98.83</td><td class="num">0.03</td><td class="num bad"><b>282.23</b></td><td class="num">6.17</td><td class="num dim">0.30</td><td class="num"><b>625.60</b></td></tr>
+  </table>
+</section>
+
+<!-- ====== ⑤ TREND ====== -->
+<section id="trend">
+  <h2>⑤ 单步总耗时与吞吐趋势</h2>
+  <table>
+    <tr><th>step</th><th>step 总耗时 (s)</th><th>throughput (tok/s/GPU)</th><th>total tokens</th><th>avg resp len</th><th>avg prompt len</th><th>MFU</th></tr>
+    <tr><td>1</td><td class="num">611.18</td><td class="num ok">134.95</td><td class="num">659,835</td><td class="num">1202.07</td><td class="num">86.67</td><td class="num">4.34%</td></tr>
+    <tr><td>2</td><td class="num warn">638.08</td><td class="num">131.89</td><td class="num">673,250</td><td class="num">1232.24</td><td class="num">82.70</td><td class="num">4.38%</td></tr>
+    <tr><td>3</td><td class="num">627.55</td><td class="num bad">124.15</td><td class="num">623,308</td><td class="num">1135.96</td><td class="num">81.44</td><td class="num bad">4.07%</td></tr>
+  </table>
+  <div class="note"><b>观察:</b> step 2 最长 (638s) 但 token 最多 (673K);step 3 吞吐最低 (124 tok/s/GPU),与 resp_len 骤降至 1136 相关。3 步样本不足以判定稳态趋势,需 warmup10 + collect100。</div>
+</section>
+
+<!-- ====== ⑥ RANK CONSISTENCY ====== -->
+<section id="rank">
+  <h2>⑥ 跨 rank 一致性 (8 卡)</h2>
+
+  <h3>各 rank 阶段耗时 (秒)</h3>
+  <table>
+    <tr><th>rank</th><th>infer (olp+ref)</th><th>actor fwd</th><th>actor bwd</th><th>actor 合计</th><th>bwd 占比</th></tr>
+    <tr><td>0</td><td class="num">95.32</td><td class="num">96.35</td><td class="num">175.08</td><td class="num">271.43</td><td class="num dim">64.5%</td></tr>
+    <tr><td>1</td><td class="num">94.98</td><td class="num">96.63</td><td class="num">174.88</td><td class="num">271.52</td><td class="num dim">64.4%</td></tr>
+    <tr><td>2</td><td class="num">94.97</td><td class="num">96.21</td><td class="num">175.47</td><td class="num">271.67</td><td class="num dim">64.6%</td></tr>
+    <tr><td>3</td><td class="num">94.58</td><td class="num">95.53</td><td class="num">175.51</td><td class="num">271.04</td><td class="num dim">64.8%</td></tr>
+    <tr><td>4</td><td class="num">94.40</td><td class="num">94.91</td><td class="num">174.85</td><td class="num">269.76</td><td class="num dim">64.8%</td></tr>
+    <tr><td>5</td><td class="num">94.02</td><td class="num">94.37</td><td class="num">175.40</td><td class="num">269.77</td><td class="num dim">65.0%</td></tr>
+    <tr><td>6</td><td class="num">94.07</td><td class="num">94.96</td><td class="num">175.04</td><td class="num">270.00</td><td class="num dim">64.8%</td></tr>
+    <tr><td>7</td><td class="num">93.82</td><td class="num">94.19</td><td class="num">175.34</td><td class="num">269.52</td><td class="num dim">65.0%</td></tr>
+    <tr><td><b>极差</b></td><td class="num ok">1.50</td><td class="num ok">2.44</td><td class="num ok">0.66</td><td class="num ok">2.15</td><td class="num dim">—</td></tr>
+  </table>
+  <div class="note ok"><b>负载极均衡:</b> 8 卡 infer 阶段耗时极差仅 1.50s (93.82–95.32),actor 合计极差 2.15s;无 straggler。前向 ~95s,反向 ~175s,反向占 actor 64%。</div>
+
+  <h3>各 rank HBM 峰值 (GB)</h3>
+  <table>
+    <tr><th>rank</th><th>infer peak</th><th>actor peak</th><th>rank</th><th>infer peak</th><th>actor peak</th></tr>
+    <tr><td>0</td><td class="num">11.19</td><td class="num bad">29.55</td><td>4</td><td class="num">10.74</td><td class="num">28.85</td></tr>
+    <tr><td>1</td><td class="num">11.08</td><td class="num">29.39</td><td>5</td><td class="num">10.75</td><td class="num">28.88</td></tr>
+    <tr><td>2</td><td class="num">11.08</td><td class="num">29.41</td><td>6</td><td class="num">10.75</td><td class="num">28.82</td></tr>
+    <tr><td>3</td><td class="num">11.08</td><td class="num">29.41</td><td>7</td><td class="num">10.75</td><td class="num">28.82</td></tr>
+  </table>
+  <div class="note"><b>显存余量充足:</b> actor 阶段峰值 28.8–29.5GB/卡 (64GB HBM),infer 阶段 10.7–11.2GB。前缀缓存优化引入的额外 KV/prefix 显存开销有充足预算。</div>
+</section>
+
+<!-- ====== ⑦ FORWARD DISTRIBUTION ====== -->
+<section id="fwd-dist">
+  <h2>⑦ Micro-batch 前向耗时分布</h2>
+  <p style="color:var(--muted);font-size:13px;">单 micro-batch 前向时间分布 (ms, 0.30–0.45 区间, 30 bin)。infer n=12288, actor n=6144 (8 rank × 3 步)。尾部少量离群点为 warmup 首 batch (max 2.74ms),已计为 out_of_range。中位数 infer 0.360ms / actor 0.371ms。条形按全局峰值 (1791) 归一化。</p>
+  <table class="compact">
+    <tr><th>bin 上沿 (ms)</th><th>infer fwd 计数</th><th>actor fwd 计数</th></tr>
+        <tr><td class="num">0.305</td><td><div class="hbar"><span style="width:0.0%;background:var(--info)"></span><b>0</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.310</td><td><div class="hbar"><span style="width:0.0%;background:var(--info)"></span><b>0</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.315</td><td><div class="hbar"><span style="width:0.1%;background:var(--info)"></span><b>1</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.320</td><td><div class="hbar"><span style="width:0.2%;background:var(--info)"></span><b>3</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.325</td><td><div class="hbar"><span style="width:0.4%;background:var(--info)"></span><b>8</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.330</td><td><div class="hbar"><span style="width:5.3%;background:var(--info)"></span><b>95</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.335</td><td><div class="hbar"><span style="width:14.4%;background:var(--info)"></span><b>258</b></div></td><td><div class="hbar"><span style="width:0.4%;background:var(--yellow)"></span><b>8</b></div></td></tr>
+        <tr><td class="num">0.340</td><td><div class="hbar"><span style="width:29.1%;background:var(--info)"></span><b>521</b></div></td><td><div class="hbar"><span style="width:3.5%;background:var(--yellow)"></span><b>62</b></div></td></tr>
+        <tr><td class="num">0.345</td><td><div class="hbar"><span style="width:47.2%;background:var(--info)"></span><b>846</b></div></td><td><div class="hbar"><span style="width:8.5%;background:var(--yellow)"></span><b>152</b></div></td></tr>
+        <tr><td class="num">0.350</td><td><div class="hbar"><span style="width:70.3%;background:var(--info)"></span><b>1259</b></div></td><td><div class="hbar"><span style="width:11.2%;background:var(--yellow)"></span><b>200</b></div></td></tr>
+        <tr><td class="num">0.355</td><td><div class="hbar"><span style="width:86.2%;background:var(--info)"></span><b>1544</b></div></td><td><div class="hbar"><span style="width:20.2%;background:var(--yellow)"></span><b>362</b></div></td></tr>
+        <tr><td class="num">0.360</td><td><div class="hbar"><span style="width:91.7%;background:var(--info)"></span><b>1643</b></div></td><td><div class="hbar"><span style="width:35.2%;background:var(--yellow)"></span><b>631</b></div></td></tr>
+        <tr><td class="num">0.365</td><td><div class="hbar"><span style="width:100.0%;background:var(--info)"></span><b>1791</b></div></td><td><div class="hbar"><span style="width:42.4%;background:var(--yellow)"></span><b>760</b></div></td></tr>
+        <tr><td class="num">0.370</td><td><div class="hbar"><span style="width:83.9%;background:var(--info)"></span><b>1502</b></div></td><td><div class="hbar"><span style="width:43.7%;background:var(--yellow)"></span><b>782</b></div></td></tr>
+        <tr><td class="num">0.375</td><td><div class="hbar"><span style="width:59.4%;background:var(--info)"></span><b>1063</b></div></td><td><div class="hbar"><span style="width:43.2%;background:var(--yellow)"></span><b>774</b></div></td></tr>
+        <tr><td class="num">0.380</td><td><div class="hbar"><span style="width:41.7%;background:var(--info)"></span><b>747</b></div></td><td><div class="hbar"><span style="width:43.7%;background:var(--yellow)"></span><b>782</b></div></td></tr>
+        <tr><td class="num">0.385</td><td><div class="hbar"><span style="width:24.2%;background:var(--info)"></span><b>433</b></div></td><td><div class="hbar"><span style="width:34.9%;background:var(--yellow)"></span><b>625</b></div></td></tr>
+        <tr><td class="num">0.390</td><td><div class="hbar"><span style="width:13.6%;background:var(--info)"></span><b>244</b></div></td><td><div class="hbar"><span style="width:24.1%;background:var(--yellow)"></span><b>431</b></div></td></tr>
+        <tr><td class="num">0.395</td><td><div class="hbar"><span style="width:8.3%;background:var(--info)"></span><b>148</b></div></td><td><div class="hbar"><span style="width:14.9%;background:var(--yellow)"></span><b>266</b></div></td></tr>
+        <tr><td class="num">0.400</td><td><div class="hbar"><span style="width:2.8%;background:var(--info)"></span><b>50</b></div></td><td><div class="hbar"><span style="width:9.5%;background:var(--yellow)"></span><b>171</b></div></td></tr>
+        <tr><td class="num">0.405</td><td><div class="hbar"><span style="width:2.0%;background:var(--info)"></span><b>35</b></div></td><td><div class="hbar"><span style="width:3.6%;background:var(--yellow)"></span><b>64</b></div></td></tr>
+        <tr><td class="num">0.410</td><td><div class="hbar"><span style="width:1.7%;background:var(--info)"></span><b>30</b></div></td><td><div class="hbar"><span style="width:1.8%;background:var(--yellow)"></span><b>32</b></div></td></tr>
+        <tr><td class="num">0.415</td><td><div class="hbar"><span style="width:1.2%;background:var(--info)"></span><b>21</b></div></td><td><div class="hbar"><span style="width:0.8%;background:var(--yellow)"></span><b>15</b></div></td></tr>
+        <tr><td class="num">0.420</td><td><div class="hbar"><span style="width:0.3%;background:var(--info)"></span><b>5</b></div></td><td><div class="hbar"><span style="width:0.4%;background:var(--yellow)"></span><b>7</b></div></td></tr>
+        <tr><td class="num">0.425</td><td><div class="hbar"><span style="width:0.2%;background:var(--info)"></span><b>4</b></div></td><td><div class="hbar"><span style="width:0.2%;background:var(--yellow)"></span><b>3</b></div></td></tr>
+        <tr><td class="num">0.430</td><td><div class="hbar"><span style="width:0.0%;background:var(--info)"></span><b>0</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.435</td><td><div class="hbar"><span style="width:0.0%;background:var(--info)"></span><b>0</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.440</td><td><div class="hbar"><span style="width:0.0%;background:var(--info)"></span><b>0</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.445</td><td><div class="hbar"><span style="width:0.0%;background:var(--info)"></span><b>0</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+        <tr><td class="num">0.450</td><td><div class="hbar"><span style="width:0.0%;background:var(--info)"></span><b>0</b></div></td><td><div class="hbar"><span style="width:0.0%;background:var(--yellow)"></span><b>0</b></div></td></tr>
+  </table>
+
+  <h3>前向耗时百分位与分布摘要 (ms)</h3>
+  <div class="metrics" style="grid-template-columns:1fr 1fr;gap:18px;">
+    <table>
+      <tr><th>stat</th><th>infer fwd</th><th>actor fwd</th></tr>
+      <tr><td>n</td><td class="num">12288</td><td class="num">6144</td></tr>
+      <tr><td>min</td><td class="num">0.315</td><td class="num">0.330</td></tr>
+      <tr><td>p25</td><td class="num">0.350</td><td class="num">0.361</td></tr>
+      <tr><td>p50</td><td class="num">0.360</td><td class="num">0.371</td></tr>
+      <tr><td>p75</td><td class="num">0.369</td><td class="num">0.381</td></tr>
+      <tr><td>p90</td><td class="num">0.378</td><td class="num">0.389</td></tr>
+      <tr><td>p95</td><td class="num">0.384</td><td class="num">0.395</td></tr>
+      <tr><td>p99</td><td class="num">0.402</td><td class="num">0.406</td></tr>
+      <tr><td>max</td><td class="num bad">2.739</td><td class="num warn">1.775</td></tr>
+      <tr><td>mean</td><td class="num">0.363</td><td class="num">0.373</td></tr>
+      <tr><td>std</td><td class="num">0.066</td><td class="num">0.041</td></tr>
+    </table>
+    <table>
+      <tr><th>out_of_range (尾部离群)</th><th>计数</th></tr>
+      <tr><td>infer (oor, max 2.739ms)</td><td class="num">37</td></tr>
+      <tr><td>actor (oor, max 1.775ms)</td><td class="num">17</td></tr>
+      <tr><td>合计</td><td class="num">54</td></tr>
+      <tr><td>占总样本</td><td class="num dim">0.29%</td></tr>
+    </table>
+  </div>
+  <div class="note"><b>解读:</b> 两分布形态接近,infer 略快且更集中 (std 0.066 受尾部离群点抬升),actor 中位高 11μs。离群点仅 0.29%,源自 warmup 首 batch,不影响稳态结论。micro-batch 前向单次 ~0.36ms,远非阶段耗时主因 — 阶段时长由 256 次 micro-batch 串行累加 + 通信/调度主导。</div>
+</section>
+
+<!-- ====== ⑧ CONCLUSION ====== -->
+<section id="conclusion">
+  <h2>⑧ 结论与下一步</h2>
+  <h3>基线特征</h3>
+  <ul class="bullets">
+    <li><b>update_actor 是首要瓶颈</b> (282s/步, 45%),其中反向 175s 占 actor 64% → 前缀缓存优化若能减少 actor 前向/反向 token 量,收益最大</li>
+    <li><b>gen (rollout) 波动大</b> (125–147s),受 response_length (1136–1232) 与 vLLM 调度影响</li>
+    <li><b>old_log_prob / ref 高度稳定</b> (~100s),是前缀合并/复用的理想靶点 (两阶段对同 batch 重复前向)</li>
+    <li><b>8 卡负载极均衡</b>,无 straggler;HBM 余量充足 (峰值 29.5/64GB)</li>
+    <li><b>MFU 仅 4.27%</b>,计算密度低,属于 RL 训练典型 (小 batch + 长序列 + 多次前向)</li>
+  </ul>
+  <h3>下一步</h3>
+  <ul class="bullets">
+    <li>当前为 <span class="tag tag-yellow">3 步 smoke</span>,需跑满 warmup10 + collect100 得稳态统计</li>
+    <li>依次铺开 G3 (前缀合并) / G4 (合并+prefix-sharing) 对比 G1 基线,验证 old_log_prob+ref 阶段加速</li>
+    <li>本目录未用 workflow template,建议规整为标准 5 件套结构</li>
+  </ul>
+  <div class="note warn"><b>采集可靠性教训:</b> timing 数据经 3 轮修复 (Fix1 rank 感知输出 → Fix2 删旧 hook → Fix3 主动落盘不靠 atexit) 才稳定落盘。Ray KILL worker 场景 atexit 不可靠,关键数据须主动落盘。</div>
+</section>
+
+<footer>
+  <a href="../index.html#verl-train-perfix-cache-perf">↑ 返回 AutoModelWire 实验索引</a> &nbsp;·&nbsp;
+  Generated 2026-07-22 · experiments/wip-verl-train-perfix-cache-perf · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a><br>
+  数据源: 192.168.0.112 /data/l00619320/workspace/2026_0721_1400_verl_qwen_prefix_sharing/logs/baseline_rerun2/ · 一手 timing_records / step_profile / baseline_rerun2.log
+</footer>
+
+</body>
+</html>
