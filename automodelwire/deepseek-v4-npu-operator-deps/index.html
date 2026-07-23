@@ -29,7 +29,7 @@ header p { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
 .tab.active { background: var(--c-vllm); color: #fff; border-color: var(--c-vllm); }
 .tab.active.diff { background: var(--changed); border-color: var(--changed); }
 
-main { padding: 16px 24px; max-width: 1680px; margin: 0 auto; }
+main { padding: 16px 24px; max-width: 1400px; margin: 0 auto; }
 
 /* Stats */
 .stats { display: flex; gap: 10px; margin-bottom: 12px; }
@@ -205,7 +205,7 @@ OPS.v023 = OPS.v020.filter(o => !['_C.npu_sparse_attn_sharedkv','_C.npu_sparse_a
 ]);
 
 // =================== RENDER ENGINE ===================
-const W = 1600, LAYER_H = 65, NODE_H = 38, OP_H = 20;
+const W = 1300, LAYER_H = 65, NODE_H = 38, OP_H = 20;
 
 const LAYERS = [
   { id:'vllm',  label:'vLLM Framework',           y:20,  color:'#4c6ef5' },
@@ -265,7 +265,7 @@ function compsHTML(ver) {
 
 var OP_ORDER = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
 
-function drawBlock(cats, startX, baseY, color, colsPerRow) {
+function drawBlock(cats, startX, baseY, color, colsPerRow, colW) {
   // 按 OP_ORDER 收集有数据的分类，每行 colsPerRow 个分类，自动换行
   var catEntries = [];
   OP_ORDER.forEach(function(cat) {
@@ -278,13 +278,13 @@ function drawBlock(cats, startX, baseY, color, colsPerRow) {
     var rowCats = catEntries.slice(i, i + colsPerRow);
     var maxOps = 1;
     rowCats.forEach(function(e) { maxOps = Math.max(maxOps, e.items.length); });
-    var rowH = 16 + maxOps * (OP_H + 4) + 12;  // 分类标签 + 算子行 + 行间距
+    var rowH = 16 + maxOps * (OP_H + 4) + 10;
 
     rowCats.forEach(function(entry, col) {
-      var cx = startX + col * 175;
+      var cx = startX + col * colW;
       html += '<text x="'+cx+'" y="'+(baseY+totalH+12)+'" fill="'+color+'" class="ocat">'+esc(entry.cat)+'</text>';
       entry.items.forEach(function(item, j) {
-        var name = item[0], ow = Math.min(name.length*6.8+16, 168);
+        var name = item[0], ow = Math.min(name.length*6.8+16, colW - 10);
         var oy = baseY + totalH + 16 + j*(OP_H+4);
         html += '<rect x="'+cx+'" y="'+oy+'" width="'+ow+'" height="'+OP_H+'" rx="3" fill="'+color+'18" stroke="'+color+'45" stroke-width="0.8" class="op-rect" data-op="'+esc(name)+'"/>';
         html += '<text x="'+(cx+4)+'" y="'+(oy+13)+'" fill="#1a1d23" class="on">'+esc(name)+'</text>';
@@ -306,26 +306,40 @@ function opsHTML(ops) {
   }
   var tnCat = grp(tnOps), atbCat = grp(atbOps);
 
-  // 双列布局：torch_npu 左侧 x=400，ATB 右侧 x=760，各 2 列/行避免重叠
-  var bLy = LAYERS[2].y;
-  var tnRes = drawBlock(tnCat, 400, bLy+6, '#e8590c', 2);
-  var atbRes = drawBlock(atbCat, 760, bLy+6, '#7950f2', 2);
+  // 算子区放在组件图下方，4 列/行撑满宽度
+  var colsPerRow = 4, colW = 295, startX = 50;
+  var opStartY = H + 30;
 
-  var maxY = bLy + 6 + Math.max(tnRes.height, atbRes.height);
-  return { html: tnRes.html + atbRes.html + '', maxY: maxY };
+  var html = '';
+  // toruch_npu 区域标题
+  html += '<rect x="20" y="'+opStartY+'" width="'+(W-40)+'" height="24" rx="4" fill="#e8590c15"/>';
+  html += '<text x="32" y="'+(opStartY+16)+'" fill="#e8590c" class="cn">torch_npu / op-plugin 算子路径</text>';
+
+  var tnRes = drawBlock(tnCat, startX, opStartY + 32, '#e8590c', colsPerRow, colW);
+  html += tnRes.html;
+
+  // ATB 区域标题
+  var atbY = opStartY + 32 + tnRes.height + 24;
+  html += '<rect x="20" y="'+atbY+'" width="'+(W-40)+'" height="24" rx="4" fill="#7950f215"/>';
+  html += '<text x="32" y="'+(atbY+16)+'" fill="#7950f2" class="cn">ATB / _C_ascend 算子路径</text>';
+
+  var atbRes = drawBlock(atbCat, startX, atbY + 32, '#7950f2', colsPerRow, colW);
+  html += atbRes.html;
+
+  var maxY = atbY + 32 + atbRes.height;
+  return { html: html, maxY: maxY };
 }
 
 function makeDiagram(ops, ver) {
   var opsRes = opsHTML(ops);
-  var dh = Math.max(H, opsRes.maxY + 40);
+  var dh = opsRes.maxY + 40;
 
   var html = '<svg viewBox="0 0 '+W+' '+dh+'" width="'+W+'" height="'+dh+'" xmlns="http://www.w3.org/2000/svg">';
   html += '<defs><marker id="ar" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#adb5bd"/></marker></defs>';
   html += '<rect width="'+W+'" height="'+dh+'" fill="#fafbfc"/>';
-  // Layer bands — 最后一个 bands (NPU Hardware) 扩展到全高
+  // 架构图层带（上方 6 层）
   LAYERS.forEach(function(l) {
-    var bh = (l.id === 'hw') ? Math.max(LAYER_H, dh - l.y - 10) : LAYER_H;
-    html += '<rect x="0" y="'+l.y+'" width="'+W+'" height="'+bh+'" fill="'+l.color+'0c" stroke="'+l.color+'28" stroke-width="1"/>';
+    html += '<rect x="0" y="'+l.y+'" width="'+W+'" height="'+LAYER_H+'" fill="'+l.color+'0c" stroke="'+l.color+'28" stroke-width="1"/>';
     html += '<text x="12" y="'+(l.y+16)+'" fill="'+l.color+'" class="lbl">'+esc(l.label)+'</text>';
   });
   html += compsHTML(ver);
