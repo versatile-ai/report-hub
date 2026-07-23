@@ -42,11 +42,35 @@ main { padding: 16px 24px; max-width: 1500px; margin: 0 auto; }
 .leg { display: flex; align-items: center; gap: 5px; }
 .leg-d { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 
-/* Diagram container */
-.diagram { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow-x: auto; padding: 20px; box-shadow: var(--shadow); min-height: 400px; }
-.diagram svg { display: block; min-width: 1200px; }
+/* Diagram container — viewport for zoom/pan */
+.diagram {
+  background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border);
+  box-shadow: var(--shadow); position: relative; overflow: hidden;
+  height: 620px; cursor: grab;
+}
+.diagram:active { cursor: grabbing; }
+.diagram svg {
+  display: block; position: absolute; top: 0; left: 0;
+  transform-origin: 0 0; user-select: none;
+}
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+
+/* Zoom controls */
+.zoom-bar {
+  position: absolute; bottom: 12px; right: 12px;
+  display: flex; gap: 2px; z-index: 50;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px; box-shadow: var(--shadow);
+}
+.zoom-btn {
+  width: 28px; height: 28px; border: none; background: transparent;
+  border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;
+  color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s;
+}
+.zoom-btn:hover { background: #f1f3f5; color: var(--text); }
+.zoom-level { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; padding: 0 4px; min-width: 38px; justify-content: center; font-variant-numeric: tabular-nums; }
 
 /* SVG styles */
 .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
@@ -96,11 +120,17 @@ main { padding: 16px 24px; max-width: 1500px; margin: 0 auto; }
   <div class="leg"><div class="leg-d" style="background:var(--c-cann)"></div>CANN Toolkit</div>
   <div class="leg"><div class="leg-d" style="background:var(--c-hw)"></div>NPU 硬件</div>
 </div>
-<div class="diagram">
+<div class="diagram" id="diagram-viewport">
   <div class="tab-content active" id="tab-v020"></div>
   <div class="tab-content" id="tab-v023"></div>
   <div class="tab-content" id="tab-v013"></div>
   <div class="tab-content" id="tab-diff"></div>
+  <div class="zoom-bar">
+    <button class="zoom-btn" title="缩小" id="zoom-out">−</button>
+    <span class="zoom-level" id="zoom-level">100%</span>
+    <button class="zoom-btn" title="放大" id="zoom-in">+</button>
+    <button class="zoom-btn" title="适应窗口" id="zoom-fit" style="font-size:12px">⊡</button>
+  </div>
 </div>
 </main>
 
@@ -361,6 +391,105 @@ function showDiffStats() {
     `<div class="stat"><div class="stat-v" style="color:var(--c-hw)">+A5 950PR</div><div class="stat-l">新硬件</div></div>`;
 }
 
+// =================== ZOOM / PAN ===================
+var zoomState = { scale: 1, tx: 20, ty: 20 };
+
+function getActiveSVG() {
+  var ct = document.querySelector('.tab-content.active');
+  return ct ? ct.querySelector('svg') : null;
+}
+
+function applyTransform(svg) {
+  if (!svg) return;
+  var s = zoomState;
+  svg.style.transform = 'translate('+s.tx+'px,'+s.ty+'px) scale('+s.scale+')';
+  document.getElementById('zoom-level').textContent = Math.round(s.scale*100)+'%';
+}
+
+function zoomTo(newScale, cx, cy) {
+  var viewport = document.getElementById('diagram-viewport');
+  var s = zoomState;
+  var prevScale = s.scale;
+  s.scale = Math.max(0.3, Math.min(3, newScale));
+  // Zoom toward cursor position
+  if (cx !== undefined) {
+    s.tx = cx - (cx - s.tx) * (s.scale / prevScale);
+    s.ty = cy - (cy - s.ty) * (s.scale / prevScale);
+  }
+  applyTransform(getActiveSVG());
+}
+
+function resetZoom() {
+  zoomState = { scale: 1, tx: 20, ty: 20 };
+  applyTransform(getActiveSVG());
+}
+
+function fitToScreen() {
+  var viewport = document.getElementById('diagram-viewport');
+  var svg = getActiveSVG();
+  if (!svg) return;
+  var vw = viewport.clientWidth - 40;
+  var vh = viewport.clientHeight - 20;
+  var sw = W, sh = H;
+  var s = Math.min(vw/sw, vh/sh, 1);
+  zoomState = { scale: s, tx: 20, ty: 10 };
+  applyTransform(svg);
+}
+
+// Pan tracking
+var panning = false, panStart = { x: 0, y: 0, tx: 0, ty: 0 };
+
+function setupZoomPan() {
+  var vp = document.getElementById('diagram-viewport');
+
+  // Mouse wheel zoom
+  vp.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var rect = vp.getBoundingClientRect();
+    var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    var delta = e.deltaY > 0 ? 0.9 : 1.1;
+    zoomTo(zoomState.scale * delta, cx, cy);
+  }, { passive: false });
+
+  // Pan: mouse down
+  vp.addEventListener('mousedown', function(e) {
+    if (e.target.closest('.zoom-bar')) return;
+    panning = true;
+    panStart = { x: e.clientX, y: e.clientY, tx: zoomState.tx, ty: zoomState.ty };
+    vp.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  // Pan: mouse move
+  window.addEventListener('mousemove', function(e) {
+    if (!panning) return;
+    zoomState.tx = panStart.tx + (e.clientX - panStart.x);
+    zoomState.ty = panStart.ty + (e.clientY - panStart.y);
+    applyTransform(getActiveSVG());
+  });
+
+  // Pan: mouse up
+  window.addEventListener('mouseup', function() {
+    if (panning) {
+      panning = false;
+      document.getElementById('diagram-viewport').style.cursor = 'grab';
+    }
+  });
+
+  // Zoom buttons
+  document.getElementById('zoom-in').addEventListener('click', function() {
+    var vp = document.getElementById('diagram-viewport');
+    var rect = vp.getBoundingClientRect();
+    zoomTo(zoomState.scale * 1.25, rect.width/2, rect.height/2);
+  });
+  document.getElementById('zoom-out').addEventListener('click', function() {
+    var vp = document.getElementById('diagram-viewport');
+    var rect = vp.getBoundingClientRect();
+    zoomTo(zoomState.scale / 1.25, rect.width/2, rect.height/2);
+  });
+  document.getElementById('zoom-fit').addEventListener('click', fitToScreen);
+}
+
 // =================== INIT ===================
 function init() {
   drawDiagram('tab-v020', OPS.v020, 'v020');
@@ -368,6 +497,7 @@ function init() {
   drawDiagram('tab-v013', OPS.v013, 'v013');
   drawDiff();
   showStats('v020', OPS.v020);
+  setupZoomPan();
 
   // Tooltip
   const tip = document.getElementById('ttip');
@@ -393,12 +523,17 @@ function init() {
       document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
       const target = tab.dataset.tab;
       document.getElementById('tab-'+target).classList.add('active');
+      // Reset zoom for new tab
+      resetZoom();
       if (target==='v020') showStats('v020',OPS.v020);
       else if (target==='v023') showStats('v023',OPS.v023);
       else if (target==='v013') showStats('v013',OPS.v013);
       else showDiffStats();
     });
   });
+
+  // Initial fit
+  setTimeout(fitToScreen, 100);
 }
 // Init when DOM is ready (works regardless of script position)
 if (document.readyState === 'loading') {
