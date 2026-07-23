@@ -246,6 +246,75 @@ footer a { color:var(--accent); }
   </div>
   <div class="stagebar"><span style="width:23.47%;background:var(--accent)" title="gen 150.3s"></span><span style="width:15.76%;background:var(--info)" title="old_log_prob 100.9s"></span><span style="width:15.47%;background:var(--red)" title="ref 99.0s"></span><span style="width:44.33%;background:var(--yellow)" title="update_actor 283.8s"></span><span style="width:0.89%;background:var(--green)" title="update_weights 5.7s"></span></div>
 
+  <h3>各 micro_batch 阶段耗时堆叠对比</h3>
+  <svg viewBox="0 0 720 380" style="width:100%;max-width:720px;margin:12px 0;" aria-label="Step time breakdown by micro_batch size. update_actor dominates and shrinks from 284s to 68s as micro_batch increases." role="img">
+    <defs>
+      <linearGradient id="gGen" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#A78BFA"/><stop offset="100%" stop-color="#7C5CE7"/></linearGradient>
+      <linearGradient id="gOlp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#79C0FF"/><stop offset="100%" stop-color="#4DA6E8"/></linearGradient>
+      <linearGradient id="gRef" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F87171"/><stop offset="100%" stop-color="#E04545"/></linearGradient>
+      <linearGradient id="gAct" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#D29922"/><stop offset="100%" stop-color="#B8860B"/></linearGradient>
+      <linearGradient id="gWgt" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3FB950"/><stop offset="100%" stop-color="#2D8A3E"/></linearGradient>
+    </defs>
+    <!-- grid lines -->
+    <g stroke="#21262D" stroke-width="1">
+      <line x1="80" y1="78" x2="680" y2="78"/><text x="72" y="83" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">600s</text>
+      <line x1="80" y1="125" x2="680" y2="125"/><text x="72" y="130" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">500s</text>
+      <line x1="80" y1="172" x2="680" y2="172"/><text x="72" y="177" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">400s</text>
+      <line x1="80" y1="219" x2="680" y2="219"/><text x="72" y="224" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">300s</text>
+      <line x1="80" y1="266" x2="680" y2="266"/><text x="72" y="271" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">200s</text>
+      <line x1="80" y1="313" x2="680" y2="313"/><text x="72" y="318" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">100s</text>
+    </g>
+    <!-- Y axis -->
+    <line x1="80" y1="30" x2="80" y2="350" stroke="#30363D" stroke-width="1.5"/>
+    <line x1="80" y1="350" x2="680" y2="350" stroke="#30363D" stroke-width="1.5"/>
+    <!-- mb=1 (x:100-190) -->
+    <rect x="100" y="347" width="90" height="3" fill="url(#gWgt)" rx="1"><title>update_weights 5.7s</title></rect>
+    <rect x="100" y="218" width="90" height="129" fill="url(#gAct)" rx="1"><title>update_actor 283.8s</title></rect>
+    <rect x="100" y="173" width="90" height="45" fill="url(#gRef)" rx="1"><title>ref 99.0s</title></rect>
+    <rect x="100" y="127" width="90" height="46" fill="url(#gOlp)" rx="1"><title>old_log_prob 100.9s</title></rect>
+    <rect x="100" y="58" width="90" height="69" fill="url(#gGen)" rx="1"><title>gen 150.3s</title></rect>
+    <text x="145" y="48" fill="#E6EDF3" font-size="13" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">640s</text>
+    <text x="145" y="373" fill="#8B949E" font-size="12" text-anchor="middle" font-family="SF Mono,Consolas,monospace">mb=1</text>
+    <!-- mb=2 (x:245-335) -->
+    <rect x="245" y="347" width="90" height="3" fill="url(#gWgt)" rx="1"><title>update_weights 7.0s</title></rect>
+    <rect x="245" y="279" width="90" height="68" fill="url(#gAct)" rx="1"><title>update_actor 149.3s</title></rect>
+    <rect x="245" y="233" width="90" height="46" fill="url(#gRef)" rx="1"><title>ref 100.7s</title></rect>
+    <rect x="245" y="186" width="90" height="47" fill="url(#gOlp)" rx="1"><title>old_log_prob 102.0s</title></rect>
+    <rect x="245" y="117" width="90" height="69" fill="url(#gGen)" rx="1"><title>gen 150.6s</title></rect>
+    <text x="290" y="107" fill="#E6EDF3" font-size="13" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">510s</text>
+    <text x="290" y="373" fill="#8B949E" font-size="12" text-anchor="middle" font-family="SF Mono,Consolas,monospace">mb=2</text>
+    <!-- mb=4 (x:390-480) -->
+    <rect x="390" y="347" width="90" height="3" fill="url(#gWgt)" rx="1"><title>update_weights 6.7s</title></rect>
+    <rect x="390" y="307" width="90" height="40" fill="url(#gAct)" rx="1"><title>update_actor 87.2s</title></rect>
+    <rect x="390" y="262" width="90" height="45" fill="url(#gRef)" rx="1"><title>ref 98.9s</title></rect>
+    <rect x="390" y="216" width="90" height="46" fill="url(#gOlp)" rx="1"><title>old_log_prob 101.0s</title></rect>
+    <rect x="390" y="148" width="90" height="68" fill="url(#gGen)" rx="1"><title>gen 147.9s</title></rect>
+    <text x="435" y="138" fill="#E6EDF3" font-size="13" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">442s</text>
+    <text x="435" y="373" fill="#8B949E" font-size="12" text-anchor="middle" font-family="SF Mono,Consolas,monospace">mb=4</text>
+    <!-- mb=8 (x:535-625) -->
+    <rect x="535" y="347" width="90" height="3" fill="url(#gWgt)" rx="1"><title>update_weights 6.6s</title></rect>
+    <rect x="535" y="316" width="90" height="31" fill="url(#gAct)" rx="1"><title>update_actor 67.7s</title></rect>
+    <rect x="535" y="271" width="90" height="45" fill="url(#gRef)" rx="1"><title>ref 98.5s</title></rect>
+    <rect x="535" y="225" width="90" height="46" fill="url(#gOlp)" rx="1"><title>old_log_prob 100.5s</title></rect>
+    <rect x="535" y="158" width="90" height="67" fill="url(#gGen)" rx="1"><title>gen 147.7s</title></rect>
+    <text x="580" y="148" fill="#3FB950" font-size="13" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">422s</text>
+    <text x="580" y="373" fill="#8B949E" font-size="12" text-anchor="middle" font-family="SF Mono,Consolas,monospace">mb=8</text>
+    <!-- legend -->
+    <g transform="translate(140,390)">
+      <rect x="0" y="0" width="14" height="14" rx="2" fill="url(#gGen)"/><text x="18" y="12" fill="#C4B5FD" font-size="11" font-family="SF Mono,Consolas,monospace">gen</text>
+      <rect x="70" y="0" width="14" height="14" rx="2" fill="url(#gOlp)"/><text x="88" y="12" fill="#79C0FF" font-size="11" font-family="SF Mono,Consolas,monospace">old_log_prob</text>
+      <rect x="195" y="0" width="14" height="14" rx="2" fill="url(#gRef)"/><text x="213" y="12" fill="#F87171" font-size="11" font-family="SF Mono,Consolas,monospace">ref</text>
+      <rect x="270" y="0" width="14" height="14" rx="2" fill="url(#gAct)"/><text x="288" y="12" fill="#D29922" font-size="11" font-family="SF Mono,Consolas,monospace">update_actor</text>
+      <rect x="400" y="0" width="14" height="14" rx="2" fill="url(#gWgt)"/><text x="418" y="12" fill="#3FB950" font-size="11" font-family="SF Mono,Consolas,monospace">weights</text>
+    </g>
+    <!-- arrow annotation -->
+    <g stroke="#D29922" stroke-width="1.5" fill="none">
+      <path d="M 200,280 Q 230,260 245,260" stroke-dasharray="3,2"/>
+    </g>
+    <text x="90" y="285" fill="#D29922" font-size="10" font-family="-apple-system,sans-serif">update_actor</text>
+    <text x="90" y="297" fill="#D29922" font-size="10" font-family="-apple-system,sans-serif">−76% ↓</text>
+  </svg>
+
   <div class="note ok"><b>前缀优化靶点确认:</b> old_log_prob + ref 两项前向-only 阶段合计 31.3%，对同一 batch 重复前向 512 trajectory；update_actor 占 44.3% 为主要瓶颈。前缀缓存/复用可同时作用于这三阶段——理论上限 = old_logp+ref+actor_fwd 占比 ≈ 90%（需长 prompt 数据集）。</div>
 </section>
 
@@ -263,7 +332,53 @@ footer a { color:var(--accent); }
     <tr><td>8</td><td class="num">421.5</td><td class="num">416.8</td><td class="num dim">+1.1%</td><td class="num ok">67.7→53.4 (-21.1%)</td><td class="num warn">2.39%</td><td class="ok">✅</td></tr>
   </table>
 
-  <h3>关键观察</h3>
+  
+  <h3>Baseline vs PS 单步耗时对比</h3>
+  <svg viewBox="0 0 640 340" style="width:100%;max-width:640px;margin:12px 0;" aria-label="Baseline vs PrefixSharing step time comparison" role="img">
+    <defs>
+      <linearGradient id="barBL2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#475569"/><stop offset="100%" stop-color="#334155"/></linearGradient>
+      <linearGradient id="barPS2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#A78BFA"/><stop offset="100%" stop-color="#7C5CE7"/></linearGradient>
+    </defs>
+    <!-- gridlines -->
+    <g stroke="#21262D" stroke-width="1">
+      <line x1="80" y1="56" x2="600" y2="56"/><text x="72" y="61" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">600s</text>
+      <line x1="80" y1="103" x2="600" y2="103"/><text x="72" y="108" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">500s</text>
+      <line x1="80" y1="149" x2="600" y2="149"/><text x="72" y="154" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">400s</text>
+      <line x1="80" y1="196" x2="600" y2="196"/><text x="72" y="201" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">300s</text>
+      <line x1="80" y1="243" x2="600" y2="243"/><text x="72" y="248" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">200s</text>
+      <line x1="80" y1="290" x2="600" y2="290"/><text x="72" y="295" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">100s</text>
+    </g>
+    <line x1="80" y1="30" x2="80" y2="310" stroke="#30363D" stroke-width="1.5"/>
+    <line x1="80" y1="310" x2="600" y2="310" stroke="#30363D" stroke-width="1.5"/>
+    <!-- mb=2: baseline=510s(207px) PS=438s(176px) scale=310px/700s -->
+    <rect x="100" y="103" width="60" height="207" fill="url(#barBL2)" rx="2"><title>baseline mb=2: 509.9s</title></rect>
+    <rect x="165" y="134" width="60" height="176" fill="url(#barPS2)" rx="2"><title>PS mb=2: 438.3s</title></rect>
+    <text x="130" y="93" fill="#E6EDF3" font-size="12" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">510s</text>
+    <text x="195" y="124" fill="#A78BFA" font-size="12" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">438s</text>
+    <text x="195" y="114" fill="#3FB950" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">-16.3%</text>
+    <text x="160" y="330" fill="#8B949E" font-size="11" text-anchor="middle" font-family="SF Mono,Consolas,monospace">mb=2</text>
+    <!-- mb=4: baseline=442s(173px) PS=417s(163px) -->
+    <rect x="270" y="137" width="60" height="173" fill="url(#barBL2)" rx="2"><title>baseline mb=4: 442.0s</title></rect>
+    <rect x="335" y="147" width="60" height="163" fill="url(#barPS2)" rx="2"><title>PS mb=4: 417.3s</title></rect>
+    <text x="300" y="127" fill="#E6EDF3" font-size="12" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">442s</text>
+    <text x="365" y="137" fill="#A78BFA" font-size="12" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">417s</text>
+    <text x="365" y="128" fill="#D29922" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">-5.9%</text>
+    <text x="330" y="330" fill="#8B949E" font-size="11" text-anchor="middle" font-family="SF Mono,Consolas,monospace">mb=4</text>
+    <!-- mb=8: baseline=422s(165px) PS=417s(163px) -->
+    <rect x="440" y="145" width="60" height="165" fill="url(#barBL2)" rx="2"><title>baseline mb=8: 421.5s</title></rect>
+    <rect x="505" y="147" width="60" height="163" fill="url(#barPS2)" rx="2"><title>PS mb=8: 416.8s</title></rect>
+    <text x="470" y="135" fill="#E6EDF3" font-size="12" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">422s</text>
+    <text x="535" y="137" fill="#A78BFA" font-size="12" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">417s</text>
+    <text x="535" y="128" fill="#8B949E" font-size="11" text-anchor="middle" font-family="SF Mono,Consolas,monospace">-1.1%</text>
+    <text x="500" y="330" fill="#8B949E" font-size="11" text-anchor="middle" font-family="SF Mono,Consolas,monospace">mb=8</text>
+    <!-- legend -->
+    <g transform="translate(80,8)">
+      <rect x="0" y="0" width="14" height="14" rx="2" fill="url(#barBL2)"/><text x="18" y="12" fill="#8B949E" font-size="11" font-family="SF Mono,Consolas,monospace">baseline</text>
+      <rect x="100" y="0" width="14" height="14" rx="2" fill="url(#barPS2)"/><text x="118" y="12" fill="#C4B5FD" font-size="11" font-family="SF Mono,Consolas,monospace">PrefixSharing</text>
+    </g>
+  </svg>
+
+<h3>关键观察</h3>
   <ul class="bullets">
     <li><b>mb=1 PS 未生效</b>: <code>min_group_size=2</code> → 每 micro-batch 仅 1 trajectory，永不满足 PS 前置条件。630s vs 640s 的 ±1.5% 差异是噪声（PS 框架开销≈0）</li>
     <li><b>mb=2 加速最大 (16.3%)</b>: update_actor 从 149.3s 降至 79.6s（-46.7%），但匹配率仅 1.28%——加速远超匹配率对应的 token 节省 → <b>暗示 PS 改动了 micro-batch 结构导致计算量减少</b>（非纯 KV 复用）</li>
@@ -335,7 +450,63 @@ footer a { color:var(--accent); }
   </table>
   <div class="note ok"><b>机制修复成功:</b> 复用 token 均值 100.8 ≈ prompt 均长 84，证明复用的是完整 prompt 主体（非 chat 模板）。dispatch 打包效率达理论值 72%（4.73%/6.6%）。<b>但无净加速</b>——step 反略慢 2.5s。原因见 5.5。</div>
 
-  <h3>5.5 第二层上限: GSM8K prompt 太短</h3>
+  
+  <h3>匹配率提升：dispatch 修复前后对比</h3>
+  <svg viewBox="0 0 600 300" style="width:100%;max-width:600px;margin:12px 0;" aria-label="Matching rate before and after dispatch fix. Rate improved from 1.28 percent to 4.73 percent, reaching 72 percent of theoretical ceiling at 6.6 percent." role="img">
+    <defs>
+      <linearGradient id="barOld" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F85149"/><stop offset="100%" stop-color="#C23B3B"/></linearGradient>
+      <linearGradient id="barNew" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3FB950"/><stop offset="100%" stop-color="#2D8A3E"/></linearGradient>
+      <linearGradient id="barMax" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#A78BFA"/><stop offset="100%" stop-color="#7C5CE7"/></linearGradient>
+      <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#A78BFA" stroke-width="2" opacity="0.3"/>
+      </pattern>
+    </defs>
+    <!-- grid -->
+    <g stroke="#21262D" stroke-width="1">
+      <line x1="100" y1="55" x2="550" y2="55"/><text x="92" y="60" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">8%</text>
+      <line x1="100" y1="115" x2="550" y2="115"/><text x="92" y="120" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">6%</text>
+      <line x1="100" y1="175" x2="550" y2="175"/><text x="92" y="180" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">4%</text>
+      <line x1="100" y1="235" x2="550" y2="235"/><text x="92" y="240" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">2%</text>
+      <line x1="100" y1="265" x2="550" y2="265"/><text x="92" y="270" fill="#8B949E" font-size="11" text-anchor="end" font-family="SF Mono,Consolas,monospace">0%</text>
+    </g>
+    <line x1="100" y1="30" x2="100" y2="270" stroke="#30363D" stroke-width="1.5"/>
+    <line x1="100" y1="270" x2="550" y2="270" stroke="#30363D" stroke-width="1.5"/>
+    <!-- scale: 240px = 8%, 30px per 1% -->
+    <!-- 1.28% = 38.4px from bottom -->
+    <rect x="120" y="232" width="80" height="38" fill="url(#barOld)" rx="2"><title>before fix: 1.28% matching rate</title></rect>
+    <text x="160" y="223" fill="#F85149" font-size="13" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">1.28%</text>
+    <text x="160" y="288" fill="#8B949E" font-size="11" text-anchor="middle" font-family="SF Mono,Consolas,monospace">修复前</text>
+    <text x="160" y="300" fill="#8B949E" font-size="10" text-anchor="middle" font-family="-apple-system,sans-serif">dispatch 散</text>
+    <!-- 4.73% = 141.9px from bottom -->
+    <rect x="250" y="128" width="80" height="142" fill="url(#barNew)" rx="2"><title>after fix: 4.73% matching rate</title></rect>
+    <text x="290" y="118" fill="#3FB950" font-size="13" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">4.73%</text>
+    <text x="290" y="288" fill="#8B949E" font-size="11" text-anchor="middle" font-family="SF Mono,Consolas,monospace">修复后</text>
+    <text x="290" y="300" fill="#8B949E" font-size="10" text-anchor="middle" font-family="-apple-system,sans-serif">dispatch 分组</text>
+    <!-- 6.6% theoretical max -->
+    <rect x="380" y="72" width="80" height="198" fill="url(#hatch)" stroke="#A78BFA" stroke-width="1" stroke-dasharray="4,3" rx="2"><title>theoretical ceiling: 6.6% (prompt/total)</title></rect>
+    <rect x="380" y="72" width="80" height="198" fill="url(#barMax)" opacity="0.15" rx="2"/>
+    <text x="420" y="63" fill="#A78BFA" font-size="13" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">6.6%</text>
+    <text x="420" y="288" fill="#8B949E" font-size="11" text-anchor="middle" font-family="SF Mono,Consolas,monospace">理论上限</text>
+    <text x="420" y="300" fill="#8B949E" font-size="10" text-anchor="middle" font-family="-apple-system,sans-serif">prompt/(prompt+resp)</text>
+    <!-- 3.7x annotation -->
+    <g>
+      <line x1="200" y1="215" x2="250" y2="190" stroke="#3FB950" stroke-width="1.5"/>
+      <polygon points="246,186 250,190 244,194" fill="#3FB950"/>
+      <text x="226" y="210" fill="#3FB950" font-size="12" text-anchor="middle" font-weight="700" font-family="SF Mono,Consolas,monospace">3.7x</text>
+    </g>
+    <!-- 72% annotation -->
+    <g>
+      <text x="420" y="95" fill="#D29922" font-size="10" text-anchor="middle" font-family="-apple-system,sans-serif">达成 72%</text>
+    </g>
+    <!-- legend -->
+    <g transform="translate(100,8)">
+      <rect x="0" y="0" width="14" height="14" rx="2" fill="url(#barOld)"/><text x="18" y="12" fill="#F87171" font-size="11" font-family="SF Mono,Consolas,monospace">修复前 (dispatch 散)</text>
+      <rect x="190" y="0" width="14" height="14" rx="2" fill="url(#barNew)"/><text x="208" y="12" fill="#3FB950" font-size="11" font-family="SF Mono,Consolas,monospace">修复后 (dispatch 分组)</text>
+      <rect x="370" y="0" width="14" height="14" rx="2" fill="url(#barMax)" opacity="0.3"/><text x="388" y="12" fill="#C4B5FD" font-size="11" font-family="SF Mono,Consolas,monospace">理论上限 (GSM8K)</text>
+    </g>
+  </svg>
+
+<h3>5.5 第二层上限: GSM8K prompt 太短</h3>
   <p style="color:var(--muted);font-size:13px;">
     L14 早期用 <code>max_prompt_length=1024</code>（配置 padding 上限）估算 ~33% 匹配率，<b>错把上限当实际</b>:
   </p>
