@@ -359,9 +359,130 @@ function opsHTML(ops) {
   return { html: html, maxY: maxY };
 }
 
+// 同名算子的跨硬件实现细节
+function hardwareImplSection(baseY) {
+  var x0 = 30, w = W - 60, y = baseY, gap = 16, html = '';
+
+  // ── 标题栏 ──
+  html += '<rect x="'+x0+'" y="'+y+'" width="'+w+'" height="28" rx="5" fill="#f1f3f5" stroke="#dee2e6" stroke-width="1"/>';
+  html += '<text x="'+(x0+14)+'" y="'+(y+19)+'" fill="#1a1d23" class="cn">同名算子的跨硬件实现 — op-plugin 代码一致，底层 ACLNN Kernel 因 NPU 代际而不同</text>';
+  y += 28 + gap;
+
+  // ── 架构流程图 ──
+  var flowX = x0 + 10, flowW = w - 20;
+  var boxH = 34, boxWid = 260;
+  var topX = flowX + (flowW - boxWid) / 2;
+
+  // op-plugin 盒
+  html += '<rect x="'+topX+'" y="'+y+'" width="'+boxWid+'" height="'+boxH+'" rx="5" fill="#2b8a3e15" stroke="#2b8a3e" stroke-width="1.2"/>';
+  html += '<text x="'+(topX+boxWid/2)+'" y="'+(y+14)+'" fill="#2b8a3e" class="cn" text-anchor="middle">op-plugin C++</text>';
+  html += '<text x="'+(topX+boxWid/2)+'" y="'+(y+28)+'" fill="#868e96" class="cv" text-anchor="middle">开源 · 统一接口 · 参数校验</text>';
+
+  // 向下箭头
+  var midX = topX + boxWid/2;
+  html += '<line x1="'+midX+'" y1="'+(y+boxH)+'" x2="'+midX+'" y2="'+(y+boxH+26)+'" stroke="#868e96" stroke-width="1" marker-end="url(#ar)"/>';
+  html += '<text x="'+(midX+8)+'" y="'+(y+boxH+18)+'" fill="#5f6672" class="on">aclnnXxx() 调用</text>';
+
+  // CANN Runtime 盒
+  y += boxH + 26;
+  var midW = 320;
+  var midX2 = flowX + (flowW - midW) / 2;
+  html += '<rect x="'+midX2+'" y="'+y+'" width="'+midW+'" height="'+boxH+'" rx="5" fill="#862e9c12" stroke="#862e9c" stroke-width="1.2"/>';
+  html += '<text x="'+(midX2+midW/2)+'" y="'+(y+14)+'" fill="#862e9c" class="cn" text-anchor="middle">CANN Runtime</text>';
+  html += '<text x="'+(midX2+midW/2)+'" y="'+(y+28)+'" fill="#868e96" class="cv" text-anchor="middle">检测 NPU 型号 → 自动分发到对应 Kernel</text>';
+
+  // 分叉到三个硬件盒
+  y += boxH;
+  var hwBoxes = [
+    { n:'Ascend 910B (A2)',  v:'Da Vinci · Vec Core',  extra:'' },
+    { n:'Ascend 910C (A3)',  v:'Da Vinci · Vec Core',  extra:'' },
+    { n:'Ascend 950PR (A5)', v:'Da Vinci · FP8 TC',    extra:'' },
+  ];
+  var hwW = 160, hwGap = 50;
+  var totalHW = hwBoxes.length * hwW + (hwBoxes.length - 1) * hwGap;
+  var hwStartX = flowX + (flowW - totalHW) / 2;
+  var branchY = y + 24;
+
+  // 主干垂直线
+  var canMidX = midX2 + midW/2;
+  html += '<line x1="'+canMidX+'" y1="'+y+'" x2="'+canMidX+'" y2="'+branchY+'" stroke="#868e96" stroke-width="1"/>';
+  // 水平横线
+  html += '<line x1="'+(hwStartX+hwW/2)+'" y1="'+branchY+'" x2="'+(hwStartX+totalHW-hwW/2)+'" y2="'+branchY+'" stroke="#868e96" stroke-width="1"/>';
+
+  hwBoxes.forEach(function(hw, i) {
+    var hx = hwStartX + i * (hwW + hwGap);
+    // 垂直线到盒
+    html += '<line x1="'+(hx+hwW/2)+'" y1="'+branchY+'" x2="'+(hx+hwW/2)+'" y2="'+(branchY+14)+'" stroke="#868e96" stroke-width="1"/>';
+    html += '<rect x="'+hx+'" y="'+(branchY+14)+'" width="'+hwW+'" height="'+boxH+'" rx="5" fill="#49505710" stroke="#495057" stroke-width="1.2"/>';
+    html += '<text x="'+(hx+hwW/2)+'" y="'+(branchY+14+14)+'" fill="#1a1d23" class="cn" text-anchor="middle">'+hw.n+'</text>';
+    html += '<text x="'+(hx+hwW/2)+'" y="'+(branchY+14+28)+'" fill="#868e96" class="cv" text-anchor="middle">'+hw.v+'</text>';
+  });
+
+  y = branchY + 14 + boxH + 6;
+  html += '<text x="'+(flowX+flowW/2)+'" y="'+(y+12)+'" fill="#5f6672" class="on" text-anchor="middle">三套独立 ACLNN Kernel 二进制 — 编译自不同 Da Vinci 指令集，同一 aclnn 接口、不同底层实现</text>';
+  y += 28;
+
+  // ── 分隔线 ──
+  html += '<line x1="'+x0+'" y1="'+y+'" x2="'+(x0+w)+'" y2="'+y+'" stroke="#dee2e6" stroke-width="0.8" stroke-dasharray="4,3"/>';
+  y += 16;
+
+  // ── 精度差异分析 ──
+  html += '<text x="'+(x0+6)+'" y="'+(y+14)+'" fill="#1a1d23" class="cn">精度差异来源</text>';
+  y += 24;
+
+  var tColX = [x0+4, x0+222, x0+530];
+  var tColW = [210, 300, 190];
+  // 表头
+  html += '<rect x="'+tColX[0]+'" y="'+y+'" width="'+(tColW[0]+tColW[1]+tColW[2])+'" height="20" rx="2" fill="#e9ecef"/>';
+  html += '<text x="'+(tColX[0]+6)+'" y="'+(y+14)+'" fill="#495057" class="on" font-weight="700">差异来源</text>';
+  html += '<text x="'+(tColX[1]+6)+'" y="'+(y+14)+'" fill="#495057" class="on" font-weight="700">原因</text>';
+  html += '<text x="'+(tColX[2]+6)+'" y="'+(y+14)+'" fill="#495057" class="on" font-weight="700">典型量级</text>';
+  y += 20;
+
+  var trows = [
+    ['计算单元差异','A2/A3 Vector Core vs A5 FP8 Tensor Core','取决于精度格式 (FP16/FP8)'],
+    ['累加顺序不同','不同 NPU tile size → reduction tree 结构不同 → 浮点累加顺序不同','FP16: ~1e-4 ~ 1e-5'],
+    ['CANN 版本差异','同硬件不同 CANN 版本，kernel 优化策略不同','取决于具体算子'],
+    ['量化路径差异','A3 INT8 vs A5 MXFP8 — 完全不同的数值表示','可达 1e-2 量级'],
+  ];
+
+  trows.forEach(function(row, ri) {
+    var bg = ri % 2 === 0 ? '#fff' : '#f8f9fb';
+    html += '<rect x="'+tColX[0]+'" y="'+y+'" width="'+(tColW[0]+tColW[1]+tColW[2])+'" height="22" rx="1" fill="'+bg+'"/>';
+    html += '<text x="'+(tColX[0]+6)+'" y="'+(y+15)+'" fill="#1a1d23" class="on">'+row[0]+'</text>';
+    html += '<text x="'+(tColX[1]+6)+'" y="'+(y+15)+'" fill="#5f6672" class="on">'+row[1]+'</text>';
+    html += '<text x="'+(tColX[2]+6)+'" y="'+(y+15)+'" fill="#868e96" class="on">'+row[2]+'</text>';
+    y += 22;
+  });
+
+  y += 4;
+  // ── 分隔线 ──
+  html += '<line x1="'+x0+'" y1="'+y+'" x2="'+(x0+w)+'" y2="'+y+'" stroke="#dee2e6" stroke-width="0.8" stroke-dasharray="4,3"/>';
+  y += 16;
+
+  // ── 工程实践 ──
+  html += '<text x="'+(x0+6)+'" y="'+(y+14)+'" fill="#1a1d23" class="cn">工程实践建议</text>';
+  y += 24;
+
+  var practices = [
+    '<tspan fill="#2b8a3e" font-weight="700">同代对齐</tspan> — 部署前在同一 CANN 版本 + 相同 NPU 硬件上做精度校验（同一 baseline）',
+    '<tspan fill="#f08c00" font-weight="700">跨代迁移</tspan> — A2→A3 需回归测试；A3→A5 涉及量化策略变更（INT8→MXFP8），需重新标定精度',
+    '<tspan fill="#c92a2a" font-weight="700">禁止混部</tspan> — A3 和 A5 不要混部同一模型服务，精度不一致会导致用户可感知的输出漂移',
+  ];
+
+  practices.forEach(function(p) {
+    html += '<text x="'+(x0+10)+'" y="'+(y+12)+'" fill="#5f6672" class="on">• '+p+'</text>';
+    y += 20;
+  });
+
+  y += 12;
+  return { html: html, height: y - baseY };
+}
+
 function makeDiagram(ops, ver) {
   var opsRes = opsHTML(ops);
-  var dh = opsRes.maxY + 40;
+  var hwRes = hardwareImplSection(opsRes.maxY + 16);
+  var dh = opsRes.maxY + 16 + hwRes.height + 40;
 
   var html = '<svg viewBox="0 0 '+W+' '+dh+'" width="'+W+'" height="'+dh+'" xmlns="http://www.w3.org/2000/svg">';
   html += '<defs><marker id="ar" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#adb5bd"/></marker></defs>';
@@ -373,6 +494,7 @@ function makeDiagram(ops, ver) {
   });
   html += compsHTML(ver);
   html += opsRes.html;
+  html += hwRes.html;
   html += '</svg>';
 
   return { svg: html, height: dh };
