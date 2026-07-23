@@ -182,7 +182,6 @@ OPS.v023 = OPS.v023.map(o => {
 
 // =================== RENDER ENGINE ===================
 const W = 1300, LAYER_H = 65, NODE_H = 38, OP_H = 20;
-const NS = 'http://www.w3.org/2000/svg';
 
 const LAYERS = [
   { id:'vllm',  label:'vLLM Framework',           y:20,  color:'#4c6ef5' },
@@ -194,186 +193,148 @@ const LAYERS = [
 ];
 const H = LAYERS[5].y + 60;
 
-// Component nodes per layer
-function comps(ver) {
-  return [
-    { id:'vllm',   l:'vllm', x:80,w:110, n:'vLLM',        v:'v'+ver.substring(1) },
-    { id:'va',     l:'asc',  x:80,w:140, n:'vllm-ascend', v:VA[ver] },
-    { id:'tn',     l:'bind', x:80,w:280, n:'torch_npu',   v:TN[ver],  d:'torch_npu.npu_* 算子 (~25个)' },
-    { id:'atb',    l:'bind', x:420,w:250, n:'ATB',        v:CANN[ver],d:'_C_ascend.* 算子 (~18个)' },
-    { id:'opp',    l:'impl', x:80,w:280, n:'op-plugin',   v:CANN[ver],d:'C++ 实现 → aclnnXxx()' },
-    { id:'aclnn',  l:'impl', x:420,w:250, n:'ACLNN',      v:CANN[ver],d:'libaclnn.so (CANN 闭源)' },
-    { id:'cann',   l:'cann', x:80,w:590, n:'CANN toolkit',v:CANN[ver],d:'ascend-cann-toolkit + ascend-cann-ops' },
-    { id:'hw-a3',  l:'hw',   x:80,w:280, n:'Ascend A3',   v:'910C' },
-    { id:'hw-a5',  l:'hw',   x:400,w:280, n:'Ascend A5',  v:'950PR (v0.23+)', d: ver === 'v023' ? 'FP8 / MXFP8' : null },
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function compsHTML(ver) {
+  var rows = '';
+  var cs = [
+    { x:80,w:110, n:'vLLM',        v:'vLLM '+VA[ver].substring(1), l:0 },
+    { x:80,w:140, n:'vllm-ascend', v:VA[ver], l:1 },
+    { x:80,w:300, n:'torch_npu',   v:TN[ver],  d:'torch_npu.npu_* (~25 ops)', l:2 },
+    { x:430,w:280, n:'ATB (_C_ascend)', v:CANN[ver], d:'torch.ops._C_ascend.* (~18 ops)', l:2 },
+    { x:80,w:300, n:'op-plugin',   v:CANN[ver], d:'C++ → aclnnXxx()', l:3 },
+    { x:430,w:280, n:'ACLNN (闭源)', v:CANN[ver], d:'libaclnn.so', l:3 },
+    { x:80,w:630, n:'CANN toolkit', v:CANN[ver], d:'ascend-cann-toolkit + ascend-cann-ops', l:4 },
+    { x:80,w:300, n:'Ascend A3',    v:'910C', l:5 },
   ];
+  if (ver === 'v023') cs.push({ x:430,w:280, n:'Ascend A5', v:'950PR', d:'FP8 / MXFP8', l:5 });
+
+  cs.forEach(function(c) {
+    var ly = LAYERS[c.l], gy = ly.y + 24;
+    rows += '<rect x="'+c.x+'" y="'+gy+'" width="'+c.w+'" height="'+NODE_H+'" rx="5" fill="#fff" stroke="'+ly.color+'" stroke-width="1.5" class="node-rect"/>';
+    rows += '<text x="'+(c.x+8)+'" y="'+(gy+15)+'" fill="#1a1d23" class="cn">'+esc(c.n)+'</text>';
+    rows += '<text x="'+(c.x+8)+'" y="'+(gy+29)+'" fill="'+ly.color+'" class="cv">'+esc(c.v)+'</text>';
+    if (c.d) rows += '<text x="'+(c.x+c.w-8)+'" y="'+(gy+22)+'" fill="#9399a3" class="cd" text-anchor="end">'+esc(c.d)+'</text>';
+  });
+
+  // Connection lines
+  var conns = [
+    [80+55,44+38, 80+70,119+24],
+    [80+70,119+38, 80+150,204+24],
+    [80+70,119+38, 430+140,204+24],
+    [80+150,204+38, 80+150,319+24],
+    [430+140,204+38, 430+140,319+24],
+    [80+150,319+38, 80+315,434+24],
+    [430+140,319+38, 80+315,434+24],
+    [80+315,434+38, 80+150,524+24],
+  ];
+  if (ver === 'v023') conns.push([80+315,434+38, 430+140,524+24]);
+  conns.forEach(function(c) {
+    rows += '<line x1="'+c[0]+'" y1="'+c[1]+'" x2="'+c[2]+'" y2="'+c[3]+'" class="conn" stroke-dasharray="4,2" marker-end="url(#ar)"/>';
+  });
+
+  return rows;
 }
 
-// Connections between component nodes
-const CONNS = [
-  ['vllm','va'], ['va','tn'], ['va','atb'],
-  ['tn','opp'], ['atb','aclnn'], ['opp','cann'], ['aclnn','cann'],
-  ['cann','hw-a3'], ['cann','hw-a5'],
-];
+function opsHTML(ops) {
+  var rows = '';
+  // Separate by source
+  var tnOps = ops.filter(function(o){return o[1]==='op-plugin'||o[1]==='vllm-ascend';});
+  var atbOps = ops.filter(function(o){return o[1]==='ATB';});
+  var order = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
 
-function mk(tag, attrs) {
-  const el = document.createElementNS(NS, tag);
-  Object.entries(attrs).forEach(([k,v]) => { if (v != null) el.setAttribute(k, v); });
-  return el;
+  function grp(list) {
+    var m = {};
+    list.forEach(function(o){ var c=o[2]; if(!m[c])m[c]=[]; m[c].push(o); });
+    return m;
+  }
+  var tnCat = grp(tnOps), atbCat = grp(atbOps);
+
+  function drawBlock(cats, startX, baseY, color) {
+    var cx = startX, html = '';
+    order.forEach(function(cat) {
+      var items = cats[cat];
+      if (!items || items.length===0) return;
+      html += '<text x="'+cx+'" y="'+(baseY-2)+'" fill="'+color+'" class="ocat">'+esc(cat)+'</text>';
+      items.forEach(function(item, i) {
+        var name = item[0], ow = Math.min(name.length*6.8+16, 175);
+        var oy = baseY + 2 + i*(OP_H+4);
+        html += '<rect x="'+cx+'" y="'+oy+'" width="'+ow+'" height="'+OP_H+'" rx="3" fill="'+color+'18" stroke="'+color+'45" stroke-width="0.8" class="op-rect"/>';
+        html += '<text x="'+(cx+4)+'" y="'+(oy+13)+'" fill="#1a1d23" class="on">'+esc(name)+'</text>';
+      });
+      cx += 175;
+    });
+    return html;
+  }
+
+  var bLy = LAYERS[2].y;
+  rows += drawBlock(tnCat, 760, bLy+6, '#e8590c');
+  rows += drawBlock(atbCat, 760, bLy+36, '#7950f2');
+  return rows;
+}
+
+function makeDiagram(ops, ver) {
+  var html = '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" xmlns="http://www.w3.org/2000/svg">';
+  html += '<defs><marker id="ar" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#adb5bd"/></marker></defs>';
+  html += '<rect width="'+W+'" height="'+H+'" fill="#fafbfc"/>';
+  // Layer bands
+  LAYERS.forEach(function(l) {
+    html += '<rect x="0" y="'+l.y+'" width="'+W+'" height="'+LAYER_H+'" fill="'+l.color+'0c" stroke="'+l.color+'28" stroke-width="1"/>';
+    html += '<text x="12" y="'+(l.y+16)+'" fill="'+l.color+'" class="lbl">'+esc(l.label)+'</text>';
+  });
+  html += compsHTML(ver);
+  html += opsHTML(ops);
+  html += '</svg>';
+  return html;
 }
 
 function drawDiagram(containerId, ops, ver) {
-  const ct = document.getElementById(containerId);
-  const svg = mk('svg', { viewBox: `0 0 ${W} ${H}`, width:'100%', height:H });
-
-  // Arrow marker
-  const defs = mk('defs');
-  const m = mk('marker', { id:'ar', viewBox:'0 0 6 6', refX:'5', refY:'3', markerWidth:'5', markerHeight:'5', orient:'auto' });
-  m.appendChild(mk('path', { d:'M0,0 L6,3 L0,6', fill:'#adb5bd' }));
-  defs.appendChild(m); svg.appendChild(defs);
-
-  // Background
-  svg.appendChild(mk('rect', { width:W, height:H, fill:'#fafbfc' }));
-
-  // Layer bands
-  LAYERS.forEach(l => {
-    const g = mk('g');
-    g.appendChild(mk('rect', { x:0, y:l.y, width:W, height:LAYER_H, fill:l.color+'0c', stroke:l.color+'28', 'stroke-width':'1' }));
-    const t = mk('text', { x:12, y:l.y+16, fill:l.color, class:'lbl' });
-    t.textContent = l.label; g.appendChild(t);
-    svg.appendChild(g);
-  });
-
-  // Component nodes
-  const C = comps(ver);
-  C.forEach(c => {
-    const ly = LAYERS.find(ll=>ll.id===c.l);
-    const gy = ly.y + 24;
-    const g = mk('g');
-    g.appendChild(mk('rect', { x:c.x, y:gy, width:c.w, height:NODE_H, rx:'5', fill:'#fff', stroke:ly.color, 'stroke-width':'1.5', class:'node-rect' }));
-    const t1 = mk('text', { x:c.x+8, y:gy+15, fill:'#1a1d23', class:'cn' });
-    t1.textContent = c.n; g.appendChild(t1);
-    const t2 = mk('text', { x:c.x+8, y:gy+29, fill:ly.color, class:'cv' });
-    t2.textContent = c.v; g.appendChild(t2);
-    if (c.d) {
-      const t3 = mk('text', { x:c.x+c.w-8, y:gy+22, fill:'#9399a3', class:'cd', 'text-anchor':'end' });
-      t3.textContent = c.d; g.appendChild(t3);
-    }
-    // Store position for connection drawing
-    c._cx = c.x + c.w/2; c._cy = gy + NODE_H/2; c._t = gy; c._b = gy + NODE_H;
-    svg.appendChild(g);
-  });
-
-  // Connections (only if both nodes visible)
-  CONNS.forEach(([from,to]) => {
-    const fc = C.find(c=>c.id===from), tc = C.find(c=>c.id===to);
-    if (!fc || !tc) return;
-    if (to==='hw-a5' && ver!=='v023') return;
-    const fl = LAYERS.find(l=>l.id===fc.l), tl = LAYERS.find(l=>l.id===tc.l);
-    svg.appendChild(mk('line', {
-      x1:fc._cx, y1:fc._b, x2:tc._cx, y2:tc._t,
-      class:'conn', stroke:fl.color+'50', 'stroke-dasharray':'4,2', 'marker-end':'url(#ar)',
-    }));
-  });
-
-  // Separate ops by source
-  const tnOps = ops.filter(o => o[1]==='op-plugin' || o[1]==='vllm-ascend');
-  const atbOps = ops.filter(o => o[1]==='ATB');
-
-  // Group by category
-  function grp(list) {
-    const m = {};
-    list.forEach(o => { const c = o[2]; if (!m[c]) m[c]=[]; m[c].push(o); });
-    return m;
-  }
-  const tnCat = grp(tnOps), atbCat = grp(atbOps);
-  const order = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
-
-  // Draw operator blocks
-  function drawOpBlock(cats, startX, baseY, color) {
-    let cx = startX;
-    order.forEach(cat => {
-      const items = cats[cat];
-      if (!items || items.length===0) return;
-      const g = mk('g');
-      // Category label
-      const cl = mk('text', { x:cx, y:baseY-2, fill:color, class:'ocat' });
-      cl.textContent = cat; g.appendChild(cl);
-      items.forEach((item, i) => {
-        const name = item[0], ow = Math.min(name.length*6.8+16, 170);
-        const oy = baseY + 2 + i*(OP_H+4);
-        g.appendChild(mk('rect', { x:cx, y:oy, width:ow, height:OP_H, rx:'3', fill:color+'18', stroke:color+'45', 'stroke-width':'0.8', class:'op-rect' }));
-        const t = mk('text', { x:cx+4, y:oy+13, fill:'#1a1d23', class:'on' });
-        t.textContent = name; g.appendChild(t);
-      });
-      svg.appendChild(g);
-      cx += 175;
-    });
-  }
-
-  // torch_npu ops on left side of binding layer
-  const bLayer = LAYERS.find(l=>l.id==='bind');
-  drawOpBlock(tnCat, 760, bLayer.y+6, '#e8590c');
-  // ATB ops on right side
-  drawOpBlock(atbCat, 760, bLayer.y+36, '#7950f2');
-
-  ct.innerHTML = '';
-  ct.appendChild(svg);
+  document.getElementById(containerId).innerHTML = makeDiagram(ops, ver);
 }
 
 // =================== DIFF DIAGRAM ===================
-function drawDiff() {
-  const ct = document.getElementById('tab-diff');
-  const svg = mk('svg', { viewBox:`0 0 ${W} 580`, width:'100%', height:580 });
-  svg.appendChild(mk('rect', { width:W, height:580, fill:'#fafbfc' }));
+function makeDiffSVG() {
+  var h = '<svg viewBox="0 0 '+W+' 580" width="100%" height="580" xmlns="http://www.w3.org/2000/svg">';
+  h += '<rect width="'+W+'" height="580" fill="#fafbfc"/>';
 
-  // Three sections: added, removed, changed
-  const secs = [
+  var secs = [
     { t:'新增算子 (v0.20→v0.23)', items:['npu_fused_infer_attention_score','npu_kv_quant_sparse_flash_attention','npu_lightning_indexer','npu_quant_lightning_indexer','npu_rms_norm','npu_transpose_quant_batchmatmul','_C.compressor_metadata','_C.dispatch_ffn_combine','_C.dispatch_gmm_combine_decode','_C.moe_gating_top_k_hash','_C.npu_swiglu_group_quant','_C.npu_vllm_quant_lightning_indexer','_C.npu_vllm_quant_lightning_indexer_meta','dsa_forward (ACL graph)'], y:15, c:'#2b8a3e', bg:'#d3f9d8', n:14 },
     { t:'移除/替换算子', items:['npu_sparse_attn_sharedkv','npu_sparse_attn_sharedkv_metadata','_C.npu_scatter_nd_update_v'], y:170, c:'#c92a2a', bg:'#ffe3e3', n:3 },
-    { t:'重命名/升级算子', items:['_C.npu_quant_lightning_indexer→_C.npu_vllm_quant_lightning_indexer','npu_sparse_attn_sharedkv→npu_sparse_flash_attention (ATB→op-plugin)','npu_scatter_nd_update_v→npu_scatter_pa_kv_cache (ATB→op-plugin)','quant_lightning_indexer→npu_quant_lightning_indexer (ATB→op-plugin,A5)'], y:260, c:'#f08c00', bg:'#ffe8cc', n:4 },
+    { t:'重命名/升级算子', items:['_C.npu_quant_lightning_indexer → _C.npu_vllm_quant_lightning_indexer','npu_sparse_attn_sharedkv → npu_sparse_flash_attention (ATB→op-plugin)','npu_scatter_nd_update_v → npu_scatter_pa_kv_cache (ATB→op-plugin)','quant_lightning_indexer → npu_quant_lightning_indexer (ATB→op-plugin, A5)'], y:260, c:'#f08c00', bg:'#ffe8cc', n:4 },
   ];
 
-  secs.forEach(sec => {
-    const g = mk('g');
-    const rows = Math.ceil(sec.items.length / 4);
-    g.appendChild(mk('rect', { x:15, y:sec.y, width:W-30, height:Math.max(120, rows*26+40), rx:'6', fill:sec.bg, stroke:sec.c, 'stroke-width':'1' }));
-    const t = mk('text', { x:28, y:sec.y+22, fill:sec.c, class:'cn' });
-    t.textContent = sec.t + ` (${sec.n})`; g.appendChild(t);
-    sec.items.forEach((item, i) => {
-      const col = i % 4, row = Math.floor(i/4);
-      const ox = 28 + col*310, oy = sec.y + 40 + row*24;
-      const ti = mk('text', { x:ox, y:oy+14, fill:'#1a1d23', class:'on' });
-      ti.textContent = item; g.appendChild(ti);
+  secs.forEach(function(sec) {
+    var rows = Math.ceil(sec.items.length / 4);
+    h += '<rect x="15" y="'+sec.y+'" width="'+(W-30)+'" height="'+Math.max(120, rows*26+40)+'" rx="6" fill="'+sec.bg+'" stroke="'+sec.c+'" stroke-width="1"/>';
+    h += '<text x="28" y="'+(sec.y+22)+'" fill="'+sec.c+'" class="cn">'+esc(sec.t)+' ('+sec.n+')</text>';
+    sec.items.forEach(function(item, i) {
+      var col = i % 4, row = Math.floor(i/4);
+      var ox = 28 + col*310, oy = sec.y + 40 + row*24;
+      h += '<text x="'+ox+'" y="'+(oy+14)+'" fill="#1a1d23" class="on">'+esc(item)+'</text>';
     });
-    svg.appendChild(g);
   });
 
-  // Version comparison at bottom
-  const vg = mk('g');
-  vg.appendChild(mk('rect', { x:15, y:400, width:W-30, height:155, rx:'6', fill:'#f1f3f5', stroke:'#dee2e6', 'stroke-width':'1' }));
-  const vt = mk('text', { x:28, y:422, fill:'#1a1d23', class:'cn' });
-  vt.textContent = '全链路组件版本对比'; vg.appendChild(vt);
-
-  const vers = [
-    ['CANN','8.5.1','→','9.0.0','→','9.0.1','#862e9c'],
-    ['torch_npu / PyTorch','2.8.0','→','2.10.0','→','2.10.0','#e8590c'],
-    ['vLLM upstream','v0.13.0','→','v0.20.2','→','v0.23.0','#4c6ef5'],
-    ['vllm-ascend','v0.13.0rc3','→','v0.20.2rc1','→','v0.23.0rc1','#7950f2'],
-    ['triton-ascend','—','','3.2.1','(v0.23+)','','#2b8a3e'],
+  // Version comparison
+  h += '<rect x="15" y="400" width="'+(W-30)+'" height="155" rx="6" fill="#f1f3f5" stroke="#dee2e6" stroke-width="1"/>';
+  h += '<text x="28" y="422" fill="#1a1d23" class="cn">全链路组件版本对比</text>';
+  var vers = [
+    ['CANN','8.5.1 → 9.0.0 → 9.0.1','#862e9c'],
+    ['torch_npu / PyTorch','2.8.0 → 2.10.0 → 2.10.0','#e8590c'],
+    ['vLLM upstream','v0.13.0 → v0.20.2 → v0.23.0','#4c6ef5'],
+    ['vllm-ascend','v0.13.0rc3 → v0.20.2rc1 → v0.23.0rc1','#7950f2'],
+    ['triton-ascend','(v0.23 首次引入 3.2.1)','#2b8a3e'],
   ];
-  vers.forEach((v,i) => {
-    const ox = 28, oy = 436 + i*22;
-    const n = mk('text', { x:ox, y:oy, fill:v[6], class:'cn' });
-    n.textContent = v[0]+':'; vg.appendChild(n);
-    const vals = mk('text', { x:ox+165, y:oy, fill:'#5f6672', class:'on' });
-    vals.textContent = `v0.13: ${v[1]}    v0.20: ${v[3]}    v0.23: ${v[5]}`;
-    vg.appendChild(vals);
+  vers.forEach(function(v,i) {
+    h += '<text x="28" y="'+(436+i*22)+'" fill="'+v[2]+'" class="cn">'+esc(v[0])+':</text>';
+    h += '<text x="190" y="'+(436+i*22)+'" fill="#5f6672" class="on">'+esc(v[1])+'</text>';
   });
-  svg.appendChild(vg);
 
-  ct.innerHTML = '';
-  ct.appendChild(svg);
+  h += '</svg>';
+  return h;
+}
+
+function drawDiff() {
+  document.getElementById('tab-diff').innerHTML = makeDiffSVG();
 }
 
 // =================== STATS ===================
@@ -439,7 +400,12 @@ function init() {
     });
   });
 }
-document.addEventListener('DOMContentLoaded', init);
+// Init when DOM is ready (works regardless of script position)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
 </script>
 </body>
 </html>
