@@ -229,9 +229,16 @@ function compsHTML(ver) {
     { x:80,w:300, n:'op-plugin',   v:CANN[ver], d:'C++ → aclnnXxx()', l:3 },
     { x:430,w:280, n:'ACLNN (闭源)', v:CANN[ver], d:'libaclnn.so', l:3 },
     { x:80,w:630, n:'CANN toolkit', v:CANN[ver], d:'ascend-cann-toolkit + ascend-cann-ops', l:4 },
-    { x:80,w:300, n:'Ascend A3',    v:'910C', l:5 },
   ];
-  if (ver === 'v023') cs.push({ x:430,w:280, n:'Ascend A5', v:'950PR', d:'FP8 / MXFP8', l:5 });
+  // 按 CANN 版本显示对应的 NPU 硬件代际
+  if (ver === 'v013') {
+    cs.push({ x:80,w:300, n:'Ascend 910B / 910C', v:'CANN 8.5.1', d:'A2 + A3 兼容', l:5 });
+  } else if (ver === 'v020') {
+    cs.push({ x:80,w:300, n:'Ascend 910C (A3)', v:'CANN 9.0.0', l:5 });
+  } else if (ver === 'v023') {
+    cs.push({ x:80,w:300, n:'Ascend 910C (A3)', v:'CANN 9.0.1', l:5 });
+    cs.push({ x:430,w:280, n:'Ascend 950PR (A5)', v:'FP8 / MXFP8', d:'新增 A5 支持', l:5 });
+  }
 
   cs.forEach(function(c) {
     var ly = LAYERS[c.l], gy = ly.y + 24;
@@ -326,7 +333,13 @@ function opsHTML(ops) {
   var atbRes = drawBlock(atbCat, startX, atbY + 32, '#7950f2', colsPerRow, colW);
   html += atbRes.html;
 
-  var maxY = atbY + 32 + atbRes.height;
+  // NPU 代际兼容性说明
+  var noteY = atbY + 32 + atbRes.height + 16;
+  html += '<rect x="20" y="'+noteY+'" width="'+(W-40)+'" height="36" rx="4" fill="#f8f9fb" stroke="#dee2e6" stroke-width="0.8"/>';
+  html += '<text x="32" y="'+(noteY+14)+'" fill="#5f6672" class="on">📌 torch_npu / op-plugin 算子由 CANN 抽象硬件差异，A2(910B)、A3(910C)、A5(950PR) 通用；</text>';
+  html += '<text x="32" y="'+(noteY+28)+'" fill="#5f6672" class="on">ATB / _C_ascend 算子更贴近硬件，部分为 A5 专属（如 mx_quant、swiglu_group_quant、lightning_indexer op-plugin 版本）。</text>';
+
+  var maxY = noteY + 36;
   return { html: html, maxY: maxY };
 }
 
@@ -522,14 +535,12 @@ function setupZoomPan() {
     }
   });
 
-  // Zoom buttons
+  // Zoom buttons — 固定步长 ±25%
   document.getElementById('zoom-in').addEventListener('click', function() {
-    var vp = document.getElementById('diagram-viewport');
-    zoomTo(zoomScale * 1.25, vp.clientWidth / 2 + vp.scrollLeft, vp.clientHeight / 2 + vp.scrollTop);
+    zoomTo(Math.min(3, zoomScale + 0.25), vp.clientWidth / 2 + vp.scrollLeft, vp.clientHeight / 2 + vp.scrollTop);
   });
   document.getElementById('zoom-out').addEventListener('click', function() {
-    var vp = document.getElementById('diagram-viewport');
-    zoomTo(zoomScale / 1.25, vp.clientWidth / 2 + vp.scrollLeft, vp.clientHeight / 2 + vp.scrollTop);
+    zoomTo(Math.max(0.25, zoomScale - 0.25), vp.clientWidth / 2 + vp.scrollLeft, vp.clientHeight / 2 + vp.scrollTop);
   });
   document.getElementById('zoom-fit').addEventListener('click', fitToScreen);
 }
@@ -585,20 +596,15 @@ function init() {
       else if (target==='v023') showStats('v023',OPS.v023);
       else if (target==='v013') showStats('v013',OPS.v013);
       else showDiffStats();
-      // 切换后自适应窗口
-      setTimeout(fitToScreen, 50);
     });
   });
 
-  // Reset zoom for new tab + apply to new SVG
+  // 默认 100% 缩放
   zoomScale = 1;
   var svg = getActiveSVG();
   if (svg) applyZoom(svg);
   var vp = document.getElementById('diagram-viewport');
   vp.scrollLeft = 0; vp.scrollTop = 0;
-
-  // Initial fit
-  setTimeout(fitToScreen, 150);
 }
 // Init when DOM is ready (works regardless of script position)
 if (document.readyState === 'loading') {
