@@ -42,16 +42,16 @@ main { padding: 16px 24px; max-width: 1500px; margin: 0 auto; }
 .leg { display: flex; align-items: center; gap: 5px; }
 .leg-d { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 
-/* Diagram container — viewport for zoom/pan */
+/* Diagram container — scrollable viewport + zoom */
 .diagram {
   background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border);
-  box-shadow: var(--shadow); position: relative; overflow: hidden;
-  height: 620px; cursor: grab;
+  box-shadow: var(--shadow); position: relative;
+  height: 600px; overflow: auto; cursor: grab;
 }
 .diagram:active { cursor: grabbing; }
 .diagram svg {
-  display: block; position: absolute; top: 0; left: 0;
-  transform-origin: 0 0; user-select: none;
+  display: block; transform-origin: 0 0;
+  user-select: none; -webkit-user-select: none;
 }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
@@ -61,7 +61,7 @@ main { padding: 16px 24px; max-width: 1500px; margin: 0 auto; }
   position: absolute; bottom: 12px; right: 12px;
   display: flex; gap: 2px; z-index: 50;
   background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-  padding: 3px; box-shadow: var(--shadow);
+  padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
 }
 .zoom-btn {
   width: 28px; height: 28px; border: none; background: transparent;
@@ -304,7 +304,7 @@ function opsHTML(ops) {
 }
 
 function makeDiagram(ops, ver) {
-  var html = '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" xmlns="http://www.w3.org/2000/svg">';
+  var html = '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" xmlns="http://www.w3.org/2000/svg">';
   html += '<defs><marker id="ar" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#adb5bd"/></marker></defs>';
   html += '<rect width="'+W+'" height="'+H+'" fill="#fafbfc"/>';
   // Layer bands
@@ -324,7 +324,8 @@ function drawDiagram(containerId, ops, ver) {
 
 // =================== DIFF DIAGRAM ===================
 function makeDiffSVG() {
-  var h = '<svg viewBox="0 0 '+W+' 580" width="100%" height="580" xmlns="http://www.w3.org/2000/svg">';
+  var DH = 580;
+  var h = '<svg viewBox="0 0 '+W+' '+DH+'" width="'+W+'" height="'+DH+'" xmlns="http://www.w3.org/2000/svg">';
   h += '<rect width="'+W+'" height="580" fill="#fafbfc"/>';
 
   var secs = [
@@ -392,83 +393,94 @@ function showDiffStats() {
 }
 
 // =================== ZOOM / PAN ===================
-var zoomState = { scale: 1, tx: 20, ty: 20 };
+var zoomScale = 1;
 
 function getActiveSVG() {
   var ct = document.querySelector('.tab-content.active');
   return ct ? ct.querySelector('svg') : null;
 }
 
-function applyTransform(svg) {
+function applyZoom(svg) {
   if (!svg) return;
-  var s = zoomState;
-  svg.style.transform = 'translate('+s.tx+'px,'+s.ty+'px) scale('+s.scale+')';
-  document.getElementById('zoom-level').textContent = Math.round(s.scale*100)+'%';
+  svg.style.transform = 'scale(' + zoomScale + ')';
+  // Update SVG display size so scrollbars work
+  svg.style.width = (W * zoomScale) + 'px';
+  svg.style.height = (H * zoomScale) + 'px';
+  document.getElementById('zoom-level').textContent = Math.round(zoomScale * 100) + '%';
 }
 
-function zoomTo(newScale, cx, cy) {
-  var viewport = document.getElementById('diagram-viewport');
-  var s = zoomState;
-  var prevScale = s.scale;
-  s.scale = Math.max(0.3, Math.min(3, newScale));
-  // Zoom toward cursor position
-  if (cx !== undefined) {
-    s.tx = cx - (cx - s.tx) * (s.scale / prevScale);
-    s.ty = cy - (cy - s.ty) * (s.scale / prevScale);
+function zoomTo(newScale, anchorX, anchorY) {
+  var vp = document.getElementById('diagram-viewport');
+  var svg = getActiveSVG();
+  if (!svg) return;
+  var prev = zoomScale;
+  zoomScale = Math.max(0.3, Math.min(3, newScale));
+  applyZoom(svg);
+
+  // Adjust scroll position so the point under cursor stays fixed
+  if (anchorX !== undefined) {
+    var ratio = zoomScale / prev;
+    vp.scrollLeft = (vp.scrollLeft + anchorX) * ratio - anchorX;
+    vp.scrollTop  = (vp.scrollTop  + anchorY) * ratio - anchorY;
   }
-  applyTransform(getActiveSVG());
 }
 
 function resetZoom() {
-  zoomState = { scale: 1, tx: 20, ty: 20 };
-  applyTransform(getActiveSVG());
+  zoomScale = 1;
+  applyZoom(getActiveSVG());
 }
 
 function fitToScreen() {
-  var viewport = document.getElementById('diagram-viewport');
-  var svg = getActiveSVG();
-  if (!svg) return;
-  var vw = viewport.clientWidth - 40;
-  var vh = viewport.clientHeight - 20;
+  var vp = document.getElementById('diagram-viewport');
   var sw = W, sh = H;
-  var s = Math.min(vw/sw, vh/sh, 1);
-  zoomState = { scale: s, tx: 20, ty: 10 };
-  applyTransform(svg);
+  // Leave 20px padding
+  var s = Math.min((vp.clientWidth - 20) / sw, (vp.clientHeight - 20) / sh, 1);
+  zoomScale = s;
+  var svg = getActiveSVG();
+  if (svg) applyZoom(svg);
+  vp.scrollLeft = 0; vp.scrollTop = 0;
 }
 
-// Pan tracking
-var panning = false, panStart = { x: 0, y: 0, tx: 0, ty: 0 };
+// Pan: drag to scroll
+var panning = false, panStartX = 0, panStartY = 0, scrollStartX = 0, scrollStartY = 0;
 
 function setupZoomPan() {
   var vp = document.getElementById('diagram-viewport');
 
-  // Mouse wheel zoom
+  // Mouse wheel → zoom
   vp.addEventListener('wheel', function(e) {
-    e.preventDefault();
-    var rect = vp.getBoundingClientRect();
-    var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    var delta = e.deltaY > 0 ? 0.9 : 1.1;
-    zoomTo(zoomState.scale * delta, cx, cy);
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+wheel → zoom (browser default is fine with metaKey)
+      e.preventDefault();
+      var rect = vp.getBoundingClientRect();
+      var anchorX = e.clientX - rect.left + vp.scrollLeft;
+      var anchorY = e.clientY - rect.top + vp.scrollTop;
+      var delta = e.deltaY > 0 ? 0.9 : 1.1;
+      zoomTo(zoomScale * delta, anchorX, anchorY);
+    }
+    // Normal scroll → let the container scroll naturally
   }, { passive: false });
 
-  // Pan: mouse down
+  // Drag-to-pan (middle-click or space+drag style)
   vp.addEventListener('mousedown', function(e) {
     if (e.target.closest('.zoom-bar')) return;
+    // Only enter pan mode on left-click when zoomed in (scrollbars visible)
     panning = true;
-    panStart = { x: e.clientX, y: e.clientY, tx: zoomState.tx, ty: zoomState.ty };
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    scrollStartX = vp.scrollLeft;
+    scrollStartY = vp.scrollTop;
     vp.style.cursor = 'grabbing';
     e.preventDefault();
   });
 
-  // Pan: mouse move
   window.addEventListener('mousemove', function(e) {
     if (!panning) return;
-    zoomState.tx = panStart.tx + (e.clientX - panStart.x);
-    zoomState.ty = panStart.ty + (e.clientY - panStart.y);
-    applyTransform(getActiveSVG());
+    var vp = document.getElementById('diagram-viewport');
+    vp.scrollLeft = scrollStartX + (panStartX - e.clientX);
+    vp.scrollTop  = scrollStartY + (panStartY - e.clientY);
   });
 
-  // Pan: mouse up
   window.addEventListener('mouseup', function() {
     if (panning) {
       panning = false;
@@ -479,13 +491,11 @@ function setupZoomPan() {
   // Zoom buttons
   document.getElementById('zoom-in').addEventListener('click', function() {
     var vp = document.getElementById('diagram-viewport');
-    var rect = vp.getBoundingClientRect();
-    zoomTo(zoomState.scale * 1.25, rect.width/2, rect.height/2);
+    zoomTo(zoomScale * 1.25, vp.clientWidth / 2 + vp.scrollLeft, vp.clientHeight / 2 + vp.scrollTop);
   });
   document.getElementById('zoom-out').addEventListener('click', function() {
     var vp = document.getElementById('diagram-viewport');
-    var rect = vp.getBoundingClientRect();
-    zoomTo(zoomState.scale / 1.25, rect.width/2, rect.height/2);
+    zoomTo(zoomScale / 1.25, vp.clientWidth / 2 + vp.scrollLeft, vp.clientHeight / 2 + vp.scrollTop);
   });
   document.getElementById('zoom-fit').addEventListener('click', fitToScreen);
 }
@@ -523,8 +533,11 @@ function init() {
       document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
       const target = tab.dataset.tab;
       document.getElementById('tab-'+target).classList.add('active');
-      // Reset zoom for new tab
-      resetZoom();
+      // Apply zoom to new tab's SVG
+      var svg = getActiveSVG();
+      if (svg) applyZoom(svg);
+      var vp = document.getElementById('diagram-viewport');
+      vp.scrollLeft = 0; vp.scrollTop = 0;
       if (target==='v020') showStats('v020',OPS.v020);
       else if (target==='v023') showStats('v023',OPS.v023);
       else if (target==='v013') showStats('v013',OPS.v013);
@@ -532,8 +545,15 @@ function init() {
     });
   });
 
+  // Reset zoom for new tab + apply to new SVG
+  zoomScale = 1;
+  var svg = getActiveSVG();
+  if (svg) applyZoom(svg);
+  var vp = document.getElementById('diagram-viewport');
+  vp.scrollLeft = 0; vp.scrollTop = 0;
+
   // Initial fit
-  setTimeout(fitToScreen, 100);
+  setTimeout(fitToScreen, 150);
 }
 // Init when DOM is ready (works regardless of script position)
 if (document.readyState === 'loading') {
