@@ -29,7 +29,7 @@ header p { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
 .tab.active { background: var(--c-vllm); color: #fff; border-color: var(--c-vllm); }
 .tab.active.diff { background: var(--changed); border-color: var(--changed); }
 
-main { padding: 16px 24px; max-width: 1500px; margin: 0 auto; }
+main { padding: 16px 24px; max-width: 1680px; margin: 0 auto; }
 
 /* Stats */
 .stats { display: flex; gap: 10px; margin-bottom: 12px; }
@@ -187,7 +187,7 @@ OPS.v020 = OPS.v020.map(o => {
 });
 
 // v0.23.0 = v0.20 + new - removed
-OPS.v023 = OPS.v020.filter(o => !['_C.npu_sparse_attn_sharedkv','_C.npu_sparse_attn_sharedkv_meta','_C.npu_scatter_nd_update_v'].includes(o[0])).concat([
+OPS.v023 = OPS.v020.filter(o => !['_C.npu_sparse_attn_sharedkv','_C.npu_sparse_attn_sharedkv_meta','_C.npu_scatter_nd_update_v','_C.npu_quant_lightning_indexer','_C.npu_quant_lightning_indexer_meta'].includes(o[0])).concat([
   ['npu_fused_infer_attention_score','op-plugin','DSA Attention'],
   ['npu_kv_quant_sparse_flash_attention','op-plugin','DSA Attention'],
   ['npu_lightning_indexer','op-plugin','Indexer'],
@@ -203,15 +203,9 @@ OPS.v023 = OPS.v020.filter(o => !['_C.npu_sparse_attn_sharedkv','_C.npu_sparse_a
   ['_C.npu_vllm_quant_lightning_indexer_meta','ATB','Indexer'],
   ['dsa_forward (ACL graph)','vllm-ascend','Graph'],
 ]);
-// v0.23 rename: _C.npu_quant_lightning_indexer → _C.npu_vllm_quant_lightning_indexer
-OPS.v023 = OPS.v023.map(o => {
-  if (o[0]==='_C.npu_quant_lightning_indexer') return ['_C.npu_vllm_quant_lightning_indexer','ATB','Indexer'];
-  if (o[0]==='_C.npu_quant_lightning_indexer_meta') return ['_C.npu_vllm_quant_lightning_indexer_meta','ATB','Indexer'];
-  return o;
-});
 
 // =================== RENDER ENGINE ===================
-const W = 1300, LAYER_H = 65, NODE_H = 38, OP_H = 20;
+const W = 1600, LAYER_H = 65, NODE_H = 38, OP_H = 20;
 
 const LAYERS = [
   { id:'vllm',  label:'vLLM Framework',           y:20,  color:'#4c6ef5' },
@@ -241,24 +235,27 @@ function compsHTML(ver) {
 
   cs.forEach(function(c) {
     var ly = LAYERS[c.l], gy = ly.y + 24;
-    rows += '<rect x="'+c.x+'" y="'+gy+'" width="'+c.w+'" height="'+NODE_H+'" rx="5" fill="#fff" stroke="'+ly.color+'" stroke-width="1.5" class="node-rect"/>';
+    rows += '<rect x="'+c.x+'" y="'+gy+'" width="'+c.w+'" height="'+NODE_H+'" rx="5" fill="#fff" stroke="'+ly.color+'" stroke-width="1.5" class="node-rect" data-op="'+esc(c.n)+'"/>';
     rows += '<text x="'+(c.x+8)+'" y="'+(gy+15)+'" fill="#1a1d23" class="cn">'+esc(c.n)+'</text>';
     rows += '<text x="'+(c.x+8)+'" y="'+(gy+29)+'" fill="'+ly.color+'" class="cv">'+esc(c.v)+'</text>';
     if (c.d) rows += '<text x="'+(c.x+c.w-8)+'" y="'+(gy+22)+'" fill="#9399a3" class="cd" text-anchor="end">'+esc(c.d)+'</text>';
   });
 
-  // Connection lines
+  // 连接线：源组件底部中心 → 目标组件顶部边缘（不再插入 rect 内部）
+  // 组件坐标: vLLM(80,44) w110, ascend(80,119) w140, torch_npu(80,204) w300
+  //           ATB(430,204) w280, op-plugin(80,319) w300, ACLNN(430,319) w280
+  //           CANN(80,434) w630, A3(80,524) w300, A5(430,524) w280
   var conns = [
-    [80+55,44+38, 80+70,119+24],
-    [80+70,119+38, 80+150,204+24],
-    [80+70,119+38, 430+140,204+24],
-    [80+150,204+38, 80+150,319+24],
-    [430+140,204+38, 430+140,319+24],
-    [80+150,319+38, 80+315,434+24],
-    [430+140,319+38, 80+315,434+24],
-    [80+315,434+38, 80+150,524+24],
+    [135, 82,   150, 119],   // vLLM ↓ → vllm-ascend
+    [150, 157,  230, 204],   // vllm-ascend ↓ → torch_npu
+    [150, 157,  570, 204],   // vllm-ascend ↓ → ATB
+    [230, 242,  230, 319],   // torch_npu ↓ → op-plugin
+    [570, 242,  570, 319],   // ATB ↓ → ACLNN
+    [230, 357,  395, 434],   // op-plugin ↓ → CANN
+    [570, 357,  395, 434],   // ACLNN ↓ → CANN
+    [395, 472,  230, 524],   // CANN ↓ → A3
   ];
-  if (ver === 'v023') conns.push([80+315,434+38, 430+140,524+24]);
+  if (ver === 'v023') conns.push([395, 472, 570, 524]); // CANN ↓ → A5
   conns.forEach(function(c) {
     rows += '<line x1="'+c[0]+'" y1="'+c[1]+'" x2="'+c[2]+'" y2="'+c[3]+'" class="conn" stroke-dasharray="4,2" marker-end="url(#ar)"/>';
   });
@@ -266,12 +263,41 @@ function compsHTML(ver) {
   return rows;
 }
 
+var OP_ORDER = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
+
+function drawBlock(cats, startX, baseY, color, colsPerRow) {
+  // 按 OP_ORDER 收集有数据的分类，每行 colsPerRow 个分类，自动换行
+  var catEntries = [];
+  OP_ORDER.forEach(function(cat) {
+    var items = cats[cat];
+    if (items && items.length > 0) catEntries.push({cat: cat, items: items});
+  });
+
+  var html = '', totalH = 0;
+  for (var i = 0; i < catEntries.length; i += colsPerRow) {
+    var rowCats = catEntries.slice(i, i + colsPerRow);
+    var maxOps = 1;
+    rowCats.forEach(function(e) { maxOps = Math.max(maxOps, e.items.length); });
+    var rowH = 16 + maxOps * (OP_H + 4) + 12;  // 分类标签 + 算子行 + 行间距
+
+    rowCats.forEach(function(entry, col) {
+      var cx = startX + col * 175;
+      html += '<text x="'+cx+'" y="'+(baseY+totalH+12)+'" fill="'+color+'" class="ocat">'+esc(entry.cat)+'</text>';
+      entry.items.forEach(function(item, j) {
+        var name = item[0], ow = Math.min(name.length*6.8+16, 168);
+        var oy = baseY + totalH + 16 + j*(OP_H+4);
+        html += '<rect x="'+cx+'" y="'+oy+'" width="'+ow+'" height="'+OP_H+'" rx="3" fill="'+color+'18" stroke="'+color+'45" stroke-width="0.8" class="op-rect" data-op="'+esc(name)+'"/>';
+        html += '<text x="'+(cx+4)+'" y="'+(oy+13)+'" fill="#1a1d23" class="on">'+esc(name)+'</text>';
+      });
+    });
+    totalH += rowH;
+  }
+  return { html: html, height: totalH };
+}
+
 function opsHTML(ops) {
-  var rows = '';
-  // Separate by source
   var tnOps = ops.filter(function(o){return o[1]==='op-plugin'||o[1]==='vllm-ascend';});
   var atbOps = ops.filter(function(o){return o[1]==='ATB';});
-  var order = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
 
   function grp(list) {
     var m = {};
@@ -280,46 +306,39 @@ function opsHTML(ops) {
   }
   var tnCat = grp(tnOps), atbCat = grp(atbOps);
 
-  function drawBlock(cats, startX, baseY, color) {
-    var cx = startX, html = '';
-    order.forEach(function(cat) {
-      var items = cats[cat];
-      if (!items || items.length===0) return;
-      html += '<text x="'+cx+'" y="'+(baseY-2)+'" fill="'+color+'" class="ocat">'+esc(cat)+'</text>';
-      items.forEach(function(item, i) {
-        var name = item[0], ow = Math.min(name.length*6.8+16, 175);
-        var oy = baseY + 2 + i*(OP_H+4);
-        html += '<rect x="'+cx+'" y="'+oy+'" width="'+ow+'" height="'+OP_H+'" rx="3" fill="'+color+'18" stroke="'+color+'45" stroke-width="0.8" class="op-rect"/>';
-        html += '<text x="'+(cx+4)+'" y="'+(oy+13)+'" fill="#1a1d23" class="on">'+esc(name)+'</text>';
-      });
-      cx += 175;
-    });
-    return html;
-  }
-
+  // 双列布局：torch_npu 左侧 x=400，ATB 右侧 x=760，各 2 列/行避免重叠
   var bLy = LAYERS[2].y;
-  rows += drawBlock(tnCat, 760, bLy+6, '#e8590c');
-  rows += drawBlock(atbCat, 760, bLy+36, '#7950f2');
-  return rows;
+  var tnRes = drawBlock(tnCat, 400, bLy+6, '#e8590c', 2);
+  var atbRes = drawBlock(atbCat, 760, bLy+6, '#7950f2', 2);
+
+  var maxY = bLy + 6 + Math.max(tnRes.height, atbRes.height);
+  return { html: tnRes.html + atbRes.html + '', maxY: maxY };
 }
 
 function makeDiagram(ops, ver) {
-  var html = '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" xmlns="http://www.w3.org/2000/svg">';
+  var opsRes = opsHTML(ops);
+  var dh = Math.max(H, opsRes.maxY + 40);
+
+  var html = '<svg viewBox="0 0 '+W+' '+dh+'" width="'+W+'" height="'+dh+'" xmlns="http://www.w3.org/2000/svg">';
   html += '<defs><marker id="ar" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#adb5bd"/></marker></defs>';
-  html += '<rect width="'+W+'" height="'+H+'" fill="#fafbfc"/>';
-  // Layer bands
+  html += '<rect width="'+W+'" height="'+dh+'" fill="#fafbfc"/>';
+  // Layer bands — 最后一个 bands (NPU Hardware) 扩展到全高
   LAYERS.forEach(function(l) {
-    html += '<rect x="0" y="'+l.y+'" width="'+W+'" height="'+LAYER_H+'" fill="'+l.color+'0c" stroke="'+l.color+'28" stroke-width="1"/>';
+    var bh = (l.id === 'hw') ? Math.max(LAYER_H, dh - l.y - 10) : LAYER_H;
+    html += '<rect x="0" y="'+l.y+'" width="'+W+'" height="'+bh+'" fill="'+l.color+'0c" stroke="'+l.color+'28" stroke-width="1"/>';
     html += '<text x="12" y="'+(l.y+16)+'" fill="'+l.color+'" class="lbl">'+esc(l.label)+'</text>';
   });
   html += compsHTML(ver);
-  html += opsHTML(ops);
+  html += opsRes.html;
   html += '</svg>';
-  return html;
+
+  return { svg: html, height: dh };
 }
 
 function drawDiagram(containerId, ops, ver) {
-  document.getElementById(containerId).innerHTML = makeDiagram(ops, ver);
+  var result = makeDiagram(ops, ver);
+  document.getElementById(containerId).innerHTML = result.svg;
+  document.getElementById(containerId).dataset.svgH = result.height;
 }
 
 // =================== DIFF DIAGRAM ===================
@@ -330,7 +349,7 @@ function makeDiffSVG() {
 
   var secs = [
     { t:'新增算子 (v0.20→v0.23)', items:['npu_fused_infer_attention_score','npu_kv_quant_sparse_flash_attention','npu_lightning_indexer','npu_quant_lightning_indexer','npu_rms_norm','npu_transpose_quant_batchmatmul','_C.compressor_metadata','_C.dispatch_ffn_combine','_C.dispatch_gmm_combine_decode','_C.moe_gating_top_k_hash','_C.npu_swiglu_group_quant','_C.npu_vllm_quant_lightning_indexer','_C.npu_vllm_quant_lightning_indexer_meta','dsa_forward (ACL graph)'], y:15, c:'#2b8a3e', bg:'#d3f9d8', n:14 },
-    { t:'移除/替换算子', items:['npu_sparse_attn_sharedkv','npu_sparse_attn_sharedkv_metadata','_C.npu_scatter_nd_update_v'], y:170, c:'#c92a2a', bg:'#ffe3e3', n:3 },
+    { t:'移除/替换算子', items:['_C.npu_sparse_attn_sharedkv','_C.npu_sparse_attn_sharedkv_meta','_C.npu_scatter_nd_update_v'], y:170, c:'#c92a2a', bg:'#ffe3e3', n:3 },
     { t:'重命名/升级算子', items:['_C.npu_quant_lightning_indexer → _C.npu_vllm_quant_lightning_indexer','npu_sparse_attn_sharedkv → npu_sparse_flash_attention (ATB→op-plugin)','npu_scatter_nd_update_v → npu_scatter_pa_kv_cache (ATB→op-plugin)','quant_lightning_indexer → npu_quant_lightning_indexer (ATB→op-plugin, A5)'], y:260, c:'#f08c00', bg:'#ffe8cc', n:4 },
   ];
 
@@ -387,7 +406,7 @@ function showDiffStats() {
     `<div class="stat"><div class="stat-v" style="color:var(--added)">+14</div><div class="stat-l">新增算子</div></div>` +
     `<div class="stat"><div class="stat-v" style="color:var(--removed)">-3</div><div class="stat-l">移除算子</div></div>` +
     `<div class="stat"><div class="stat-v" style="color:var(--changed)">~4</div><div class="stat-l">重命名/升级</div></div>` +
-    `<div class="stat"><div class="stat-v">${OPS.v023.length - OPS.v020.length}</div><div class="stat-l">净增 (33→${OPS.v023.length})</div></div>` +
+    `<div class="stat"><div class="stat-v">${OPS.v023.length - OPS.v020.length}</div><div class="stat-l">净增 (${OPS.v020.length}→${OPS.v023.length})</div></div>` +
     `<div class="stat"><div class="stat-v" style="color:var(--c-cann)">9.0.0→9.0.1</div><div class="stat-l">CANN 版本</div></div>` +
     `<div class="stat"><div class="stat-v" style="color:var(--c-hw)">+A5 950PR</div><div class="stat-l">新硬件</div></div>`;
 }
@@ -403,9 +422,9 @@ function getActiveSVG() {
 function applyZoom(svg) {
   if (!svg) return;
   svg.style.transform = 'scale(' + zoomScale + ')';
-  // Update SVG display size so scrollbars work
+  var sh = parseFloat(svg.getAttribute('height')) || H;
   svg.style.width = (W * zoomScale) + 'px';
-  svg.style.height = (H * zoomScale) + 'px';
+  svg.style.height = (sh * zoomScale) + 'px';
   document.getElementById('zoom-level').textContent = Math.round(zoomScale * 100) + '%';
 }
 
@@ -432,11 +451,12 @@ function resetZoom() {
 
 function fitToScreen() {
   var vp = document.getElementById('diagram-viewport');
-  var sw = W, sh = H;
-  // Leave 20px padding
-  var s = Math.min((vp.clientWidth - 20) / sw, (vp.clientHeight - 20) / sh, 1);
-  zoomScale = s;
   var svg = getActiveSVG();
+  if (!svg) return;
+  var ct = document.querySelector('.tab-content.active');
+  var sh = parseFloat(ct ? (ct.dataset.svgH || H) : H);
+  var s = Math.min((vp.clientWidth - 20) / W, (vp.clientHeight - 20) / sh, 1);
+  zoomScale = s;
   if (svg) applyZoom(svg);
   vp.scrollLeft = 0; vp.scrollTop = 0;
 }
@@ -509,16 +529,25 @@ function init() {
   showStats('v020', OPS.v020);
   setupZoomPan();
 
-  // Tooltip
+  // Tooltip — 使用 data-op 属性获取名称
   const tip = document.getElementById('ttip');
   document.addEventListener('mouseover', e => {
     const el = e.target.closest('.op-rect,.node-rect');
     if (!el) { tip.classList.remove('on'); return; }
-    const txt = el.closest('g')?.querySelector('text')?.textContent || '';
-    tip.innerHTML = `<b>${txt}</b>`;
+    var name = el.dataset.op || '';
+    // 对 node-rect: 读取版本信息（class='cv' 的下一个兄弟节点）
+    var ver = '';
+    if (el.classList.contains('node-rect')) {
+      var sib = el.nextElementSibling; // class='cn' (name text)
+      if (sib) sib = sib.nextElementSibling; // class='cv' (version text)
+      if (sib) ver = sib.textContent || '';
+    }
+    if (!name) { tip.classList.remove('on'); return; }
+    tip.innerHTML = '<b>'+esc(name)+'</b>'+(ver?'<span>'+esc(ver)+'</span>':'');
     tip.classList.add('on');
   });
   document.addEventListener('mousemove', e => {
+    if (!tip.classList.contains('on')) return;
     tip.style.left = (e.clientX+14)+'px'; tip.style.top = (e.clientY-40)+'px';
   });
   document.addEventListener('mouseout', e => {
@@ -542,6 +571,8 @@ function init() {
       else if (target==='v023') showStats('v023',OPS.v023);
       else if (target==='v013') showStats('v013',OPS.v013);
       else showDiffStats();
+      // 切换后自适应窗口
+      setTimeout(fitToScreen, 50);
     });
   });
 
