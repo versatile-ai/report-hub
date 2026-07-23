@@ -119,6 +119,7 @@ main { padding: 16px 24px; max-width: 1400px; margin: 0 auto; }
   <div class="leg"><div class="leg-d" style="background:var(--c-impl)"></div>op-plugin / ACLNN</div>
   <div class="leg"><div class="leg-d" style="background:var(--c-cann)"></div>CANN Toolkit</div>
   <div class="leg"><div class="leg-d" style="background:var(--c-hw)"></div>NPU 硬件</div>
+  <div class="leg"><div class="leg-d" style="background:#f08c00;border-radius:2px;width:14px;height:14px"></div>A5 专属算子</div>
 </div>
 <div class="diagram" id="diagram-viewport">
   <div class="tab-content active" id="tab-v020"></div>
@@ -272,6 +273,14 @@ function compsHTML(ver) {
 
 var OP_ORDER = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
 
+// A5 (950PR) 专属算子 — 依赖 FP8/MXFP8 或 lightning indexer 硬件特性
+var A5_OPS = new Set([
+  'npu_dynamic_mx_quant',
+  'npu_lightning_indexer','npu_quant_lightning_indexer',
+  '_C.npu_vllm_quant_lightning_indexer','_C.npu_vllm_quant_lightning_indexer_meta',
+  '_C.npu_swiglu_group_quant',
+]);
+
 function drawBlock(cats, startX, baseY, color, colsPerRow, colW) {
   // 按 OP_ORDER 收集有数据的分类，每行 colsPerRow 个分类，自动换行
   var catEntries = [];
@@ -291,10 +300,17 @@ function drawBlock(cats, startX, baseY, color, colsPerRow, colW) {
       var cx = startX + col * colW;
       html += '<text x="'+cx+'" y="'+(baseY+totalH+12)+'" fill="'+color+'" class="ocat">'+esc(entry.cat)+'</text>';
       entry.items.forEach(function(item, j) {
-        var name = item[0], ow = Math.min(name.length*6.8+16, colW - 10);
+        var name = item[0], isA5 = A5_OPS.has(name);
+        var ow = Math.min(name.length*6.8+16, colW - 10) + (isA5 ? 22 : 0);  // A5 标签预留空间
         var oy = baseY + totalH + 16 + j*(OP_H+4);
-        html += '<rect x="'+cx+'" y="'+oy+'" width="'+ow+'" height="'+OP_H+'" rx="3" fill="'+color+'18" stroke="'+color+'45" stroke-width="0.8" class="op-rect" data-op="'+esc(name)+'"/>';
+        var rstrok = isA5 ? '#f08c00' : color+'45';
+        var rsw = isA5 ? '1.5' : '0.8';
+        html += '<rect x="'+cx+'" y="'+oy+'" width="'+ow+'" height="'+OP_H+'" rx="3" fill="'+color+'18" stroke="'+rstrok+'" stroke-width="'+rsw+'" class="op-rect" data-op="'+esc(name)+'"/>';
         html += '<text x="'+(cx+4)+'" y="'+(oy+13)+'" fill="#1a1d23" class="on">'+esc(name)+'</text>';
+        if (isA5) {
+          html += '<rect x="'+(cx+ow-20)+'" y="'+(oy+2)+'" width="16" height="16" rx="2" fill="#f08c00" opacity="0.85"/>';
+          html += '<text x="'+(cx+ow-12)+'" y="'+(oy+14)+'" fill="#fff" font-size="8" font-weight="700" text-anchor="middle">A5</text>';
+        }
       });
     });
     totalH += rowH;
@@ -568,7 +584,8 @@ function init() {
       if (sib) ver = sib.textContent || '';
     }
     if (!name) { tip.classList.remove('on'); return; }
-    tip.innerHTML = '<b>'+esc(name)+'</b>'+(ver?'<span>'+esc(ver)+'</span>':'');
+    var isA5 = A5_OPS.has(name);
+    tip.innerHTML = '<b>'+esc(name)+(isA5?' <span style="color:#f08c00;font-weight:700">A5</span>':'')+'</b>'+(ver?'<span>'+esc(ver)+'</span>':'');
     tip.classList.add('on');
   });
   document.addEventListener('mousemove', e => {
