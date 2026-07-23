@@ -111,10 +111,10 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   </div>
 
   <div class="diagram">
-    <div class="tab-content active" id="tab-v020"><svg id="svg-v020"></svg></div>
-    <div class="tab-content" id="tab-v023"><svg id="svg-v023"></svg></div>
-    <div class="tab-content" id="tab-v013"><svg id="svg-v013"></svg></div>
-    <div class="tab-content" id="tab-diff"><svg id="svg-diff"></svg></div>
+    <div class="tab-content active" id="tab-v020"></div>
+    <div class="tab-content" id="tab-v023"></div>
+    <div class="tab-content" id="tab-v013"></div>
+    <div class="tab-content" id="tab-diff"></div>
   </div>
 </main>
 
@@ -263,6 +263,19 @@ function drawDiagram(containerId, ops, version, highlightDiffs) {
   svg.setAttribute('width', '100%');
   svg.setAttribute('height', H);
 
+  // Arrow marker (must be defined first so references resolve)
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+  marker.setAttribute('id','arrow'); marker.setAttribute('viewBox','0 0 6 6');
+  marker.setAttribute('refX','5'); marker.setAttribute('refY','3');
+  marker.setAttribute('markerWidth','5'); marker.setAttribute('markerHeight','5');
+  marker.setAttribute('orient','auto');
+  const mpath = document.createElementNS('http://www.w3.org/2000/svg','path');
+  mpath.setAttribute('d','M0,0 L6,3 L0,6'); mpath.setAttribute('fill','#adb5bd');
+  marker.appendChild(mpath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
   // Background
   const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
   bg.setAttribute('width', W); bg.setAttribute('height', H);
@@ -352,19 +365,6 @@ function drawDiagram(containerId, ops, version, highlightDiffs) {
     svg.appendChild(line);
   });
 
-  // Arrow marker
-  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
-  const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
-  marker.setAttribute('id','arrow'); marker.setAttribute('viewBox','0 0 6 6');
-  marker.setAttribute('refX','5'); marker.setAttribute('refY','3');
-  marker.setAttribute('markerWidth','5'); marker.setAttribute('markerHeight','5');
-  marker.setAttribute('orient','auto');
-  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d','M0,0 L6,3 L0,6'); path.setAttribute('fill','#adb5bd');
-  marker.appendChild(path);
-  defs.appendChild(marker);
-  svg.insertBefore(defs, svg.firstChild);
-
   // Operator nodes — grouped by category, in their source layer
   const cats = groupOps(ops);
   const catOrder = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
@@ -434,7 +434,10 @@ function drawDiffDiagram(containerId) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('width','100%'); svg.setAttribute('height', H);
-  svg.innerHTML = `<rect width="${W}" height="${H}" fill="#fafbfc"/>`;
+  // Background rect (use createElementNS for correct SVG namespace)
+  const diffBg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  diffBg.setAttribute('width', W); diffBg.setAttribute('height', H); diffBg.setAttribute('fill','#fafbfc');
+  svg.appendChild(diffBg);
 
   const sections = [
     { title: '新增算子 (v0.20→v0.23)', items: OPS_v023_new.map(o=>o[0]), color:'#2b8a3e', y:20, bg:'#d3f9d8', border:'#2b8a3e' },
@@ -525,15 +528,15 @@ function updateStats(version, ops) {
 
 // ===================== INIT =====================
 function init() {
-  drawDiagram('svg-v020', ops_v020_full, 'v020', null);
-  drawDiagram('svg-v023', ops_v023_full, 'v023', null);
-  drawDiagram('svg-v013', ops_v013_full, 'v013', null);
+  drawDiagram('tab-v020', ops_v020_full, 'v020', null);
+  drawDiagram('tab-v023', ops_v023_full, 'v023', null);
+  drawDiagram('tab-v013', ops_v013_full, 'v013', null);
 
   // Diff
+  drawDiffDiagram('tab-diff');
   const addedSet = new Set(OPS_v023_new.map(o=>o[0]));
   const removedSet = new Set(OPS_v023_removed);
   const changedSet = new Set(OPS_v023_changed.map(o=>o[0]));
-  drawDiffDiagram('svg-diff');
 
   updateStats('v020', ops_v020_full);
 
