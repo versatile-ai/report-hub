@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek V4 × vLLM-Ascend 依赖关系图</title>
+<style>
+:root {
+  --bg: #f8f9fb;
+  --surface: #ffffff;
+  --border: #e2e5ea;
+  --text: #1a1d23;
+  --text-secondary: #5f6672;
+  --text-muted: #9399a3;
+  --layer-vllm: #4c6ef5;
+  --layer-ascend: #7950f2;
+  --layer-torchnpu: #e8590c;
+  --layer-opplugin: #2b8a3e;
+  --layer-aclnn: #c92a2a;
+  --layer-cann: #862e9c;
+  --layer-hw: #495057;
+  --added: #2b8a3e;
+  --removed: #c92a2a;
+  --changed: #e8590c;
+  --connector: #adb5bd;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.10);
+  --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow); }
+header h1 { font-size: 18px; font-weight: 600; }
+header p { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.tabs { display: flex; gap: 4px; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 68px; z-index: 99; }
+.tab { padding: 8px 20px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; white-space: nowrap; }
+.tab:hover { background: #f1f3f5; }
+.tab.active { background: var(--layer-vllm); color: #fff; border-color: var(--layer-vllm); }
+.tab-diff.active { background: var(--changed); border-color: var(--changed); color: #fff; }
+main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; font-size: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+.diagram { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow-x: auto; padding: 24px; box-shadow: var(--shadow); }
+.diagram svg { display: block; }
+/* Layer labels */
+.layer-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+/* Node styles */
+.node-group { cursor: default; }
+.node-rect { stroke-width: 1.5px; transition: all 0.2s; }
+.node-rect:hover { filter: brightness(0.95); }
+.node-title { font-size: 12px; font-weight: 600; }
+.node-version { font-size: 10px; opacity: 0.85; }
+.node-desc { font-size: 10px; opacity: 0.7; }
+/* Operator nodes */
+.op-node { font-size: 9px; }
+.op-rect { rx: 3px; stroke-width: 1px; }
+.op-rect:hover { filter: brightness(0.92); }
+/* Connections */
+.conn-line { stroke: var(--connector); stroke-width: 1px; fill: none; opacity: 0.5; }
+.conn-line:hover { stroke-width: 2px; opacity: 0.8; }
+/* Diff styles */
+.diff-added .op-rect { fill: #d3f9d8; stroke: var(--added); }
+.diff-removed .op-rect { fill: #ffe3e3; stroke: var(--removed); }
+.diff-changed .op-rect { fill: #ffe8cc; stroke: var(--changed); }
+/* Stats */
+.stats { display: flex; gap: 12px; margin-bottom: 16px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); flex: 1; min-width: 120px; }
+.stat-value { font-size: 24px; font-weight: 700; }
+.stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.stat-sub { font-size: 10px; color: var(--text-muted); }
+/* Tooltip */
+.tooltip { position: absolute; background: #1a1d23; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; max-width: 320px; box-shadow: var(--shadow-lg); }
+.tooltip.show { opacity: 1; }
+.tooltip .tt-title { font-weight: 600; margin-bottom: 4px; }
+.tooltip .tt-row { display: flex; justify-content: space-between; gap: 16px; font-size: 11px; }
+.tooltip .tt-label { color: #adb5bd; }
+/* Tab content */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DeepSeek V4 × vLLM-Ascend 算子依赖关系图</h1>
+  <p>从 vLLM 框架层 → vllm-ascend 适配层 → torch_npu / ATB → op-plugin → ACLNN API → CANN toolkit → NPU 硬件</p>
+</header>
+
+<div class="tabs" id="tabs">
+  <button class="tab active" data-tab="v020">v0.20.2 (CANN 9.0.0)</button>
+  <button class="tab" data-tab="v023">v0.23.0 (CANN 9.0.1)</button>
+  <button class="tab" data-tab="v013">v0.13.0 (CANN 8.5.1)</button>
+  <button class="tab tab-diff" data-tab="diff">差异对比 (v0.20→v0.23)</button>
+</div>
+
+<main>
+  <div id="tooltip" class="tooltip"></div>
+
+  <!-- Stats row -->
+  <div class="stats" id="stats"></div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-vllm)"></div>vLLM 框架</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-ascend)"></div>vllm-ascend / ATB</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-torchnpu)"></div>torch_npu</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-opplugin)"></div>op-plugin / ACLNN</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-cann)"></div>CANN toolkit</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-hw)"></div>NPU Hardware</div>
+  </div>
+
+  <div class="diagram">
+    <div class="tab-content active" id="tab-v020"><svg id="svg-v020"></svg></div>
+    <div class="tab-content" id="tab-v023"><svg id="svg-v023"></svg></div>
+    <div class="tab-content" id="tab-v013"><svg id="svg-v013"></svg></div>
+    <div class="tab-content" id="tab-diff"><svg id="svg-diff"></svg></div>
+  </div>
+</main>
+
+<script>
+// ===================== DATA =====================
+const CANN_VER = { 'v013': '8.5.1', 'v020': '9.0.0', 'v023': '9.0.1' };
+const TORCH_VER = { 'v013': '2.8.0', 'v020': '2.10.0', 'v023': '2.10.0' };
+const VLLM_VER = { 'v013': 'v0.13.0', 'v020': 'v0.20.2', 'v023': 'v0.23.0' };
+
+// Operator definitions: [name, source_repo, category, aclnn_api]
+// v0.13.0 operators
+const OPS_v013 = [
+  // DSA operators
+  ['npu_sparse_attn_sharedkv', 'ATB', 'DSA Attention', 'aclnnSparseFlashAttention'],
+  ['npu_sparse_attn_sharedkv_metadata', 'ATB', 'DSA Attention', '(internal)'],
+  ['compressor', 'ATB', 'Compressor', '(internal)'],
+  ['npu_quant_lightning_indexer', 'ATB', 'Indexer', 'aclnnQuantLightningIndexer'],
+  ['npu_quant_lightning_indexer_metadata', 'ATB', 'Indexer', '(internal)'],
+  ['npu_rms_norm_dynamic_quant', 'ATB', 'Norm', 'aclnnAddRmsNormQuantV2'],
+  ['inplace_partial_rotary_mul', 'ATB', 'RoPE', '(internal)'],
+  ['npu_hc_pre', 'ATB', 'HC', '(internal)'],
+  ['npu_hc_post', 'ATB', 'HC', '(internal)'],
+  // torch_npu ops
+  ['npu_rotary_mul', 'op-plugin', 'RoPE', 'aclnnRotaryPositionEmbedding'],
+  ['npu_dynamic_quant', 'op-plugin', 'Quant', 'aclnnDynamicQuant'],
+  ['npu_quant_matmul', 'op-plugin', 'MatMul', 'aclnnBatchMatMul'],
+  ['npu_transpose_batchmatmul', 'op-plugin', 'MatMul', '(internal)'],
+  ['npu_scatter_nd_update_', 'op-plugin', 'KV Cache', '(internal)'],
+  // MoE ops
+  ['npu_moe_init_routing_v2', 'op-plugin', 'MoE Routing', 'aclnnMoeInitRoutingV2'],
+  ['npu_moe_token_permute', 'op-plugin', 'MoE Token', 'aclnnMoeTokenPermuteWithRoutingMap'],
+  ['npu_moe_token_unpermute', 'op-plugin', 'MoE Token', 'aclnnMoeTokenUnpermuteWithRoutingMap'],
+  ['npu_moe_distribute_dispatch', 'op-plugin', 'MoE Dispatch', 'aclnnMoeDistributeDispatch'],
+  ['npu_moe_distribute_combine', 'op-plugin', 'MoE Dispatch', 'aclnnMoeDistributeCombine'],
+  ['npu_grouped_matmul', 'op-plugin', 'MoE Expert', 'aclnnGroupedMatmul'],
+  ['npu_swiglu', 'op-plugin', 'MoE Expert', 'aclnnSwiGluQuantV2'],
+  ['npu_grouped_matmul_swiglu_quant', 'op-plugin', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNz'],
+  ['_C.npu_dequant_swiglu_quant', 'ATB', 'MoE Expert', 'aclnnDequantSwigluQuant'],
+  ['_C.grouped_matmul_swiglu_quant_weight_nz', 'ATB', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNz'],
+  // FlashComm
+  ['maybe_all_gather_and_maybe_unpad', 'vLLM', 'FlashComm', 'hcclAllGather'],
+];
+
+// v0.20.2: v0.13 + additions
+const OPS_v020_new = [
+  ['npu_mla_prolog_v2', 'op-plugin', 'MLA Prolog', 'aclnnMlaPrologV2WeightNz'],
+  ['npu_mla_prolog_v3', 'op-plugin', 'MLA Prolog', 'aclnnMlaPrologV3WeightNz'],
+  ['npu_gather_pa_kv_cache', 'op-plugin', 'KV Cache', 'aclnnGatherPaKVCache'],
+  ['npu_scatter_pa_kv_cache', 'op-plugin', 'KV Cache', 'aclnnScatterPaKvCache'],
+  ['npu_fusion_attention', 'op-plugin', 'DSA Attention', '(internal)'],
+  ['npu_moe_gating_top_k', 'op-plugin', 'MoE Routing', 'aclnnMoeGatingTopK'],
+  ['npu_grouped_matmul_swiglu_quant_v2', 'op-plugin', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNzV2'],
+  ['npu_dynamic_mx_quant', 'op-plugin', 'Quant', 'aclnnDynamicBlockQuant'],
+  ['_C.npu_scatter_nd_update_v', 'ATB', 'KV Cache', '(internal)'],
+  ['_C.grouped_matmul_swiglu_quant_v2', 'ATB', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNzV2'],
+  ['npu.atb.npu_paged_cache_load', 'ATB', 'KV Cache', '(internal)'],
+];
+const OPS_v020_removed = ['npu_scatter_nd_update_'];
+const OPS_v020_changed = [
+  ['npu_hc_pre', 'npu_hc_pre_v2', 'ATB', 'HC'],
+  ['MoE dispatch v1', 'MoE dispatch v2', 'op-plugin', 'MoE Dispatch'],
+  ['MoE combine v1', 'MoE combine v2', 'op-plugin', 'MoE Dispatch'],
+];
+
+// v0.23.0: v0.20.2 + additions
+const OPS_v023_new = [
+  ['npu_fused_infer_attention_score', 'op-plugin', 'DSA Attention', 'aclnnFusedInferAttentionScoreV3'],
+  ['npu_kv_quant_sparse_flash_attention', 'op-plugin', 'DSA Attention', 'aclnnKvQuantSparseFlashAttention'],
+  ['npu_lightning_indexer', 'op-plugin', 'Indexer', 'aclnnLightningIndexer'],
+  ['npu_quant_lightning_indexer', 'op-plugin', 'Indexer', 'aclnnQuantLightningIndexer'],
+  ['npu_rms_norm', 'op-plugin', 'Norm', 'aclnnRmsNorm'],
+  ['npu_transpose_quant_batchmatmul', 'op-plugin', 'MatMul', '(internal)'],
+  ['_C.compressor_metadata', 'ATB', 'Compressor', '(internal)'],
+  ['_C.dispatch_ffn_combine', 'ATB', 'MoE Dispatch', '(internal)'],
+  ['_C.dispatch_gmm_combine_decode', 'ATB', 'MoE Dispatch', '(internal)'],
+  ['_C.moe_gating_top_k_hash', 'ATB', 'MoE Routing', 'aclnnMoeGatingTopK(hash)'],
+  ['_C.npu_swiglu_group_quant', 'ATB', 'MoE Expert', 'aclnnSwiGluQuantV2(group)'],
+  ['_C.npu_vllm_quant_lightning_indexer', 'ATB', 'Indexer', 'aclnnQuantLightningIndexer'],
+  ['_C.npu_vllm_quant_lightning_indexer_metadata', 'ATB', 'Indexer', '(internal)'],
+  ['dsa_forward (ACL graph)', 'vllm-ascend', 'Graph', 'ACL Graph'],
+];
+const OPS_v023_removed = [
+  'npu_sparse_attn_sharedkv', 'npu_sparse_attn_sharedkv_metadata',
+  '_C.npu_scatter_nd_update_v',
+];
+const OPS_v023_changed = [
+  ['_C.npu_quant_lightning_indexer→_C.npu_vllm_quant_lightning_indexer', 'ATB', 'Indexer'],
+  ['npu_sparse_attn_sharedkv→npu_sparse_flash_attention', 'ATB→op-plugin', 'DSA Attention'],
+];
+
+// Assemble full op lists
+function buildOps(base, additions, removed) {
+  const ops = base.filter(o => !removed.includes(o[0]));
+  return ops.concat(additions);
+}
+const ops_v013_full = OPS_v013;
+const ops_v020_full = buildOps(OPS_v013, OPS_v020_new, OPS_v020_removed);
+const ops_v023_full = buildOps(ops_v020_full, OPS_v023_new, OPS_v023_removed);
+
+// ===================== LAYOUT =====================
+const LAYERS = [
+  { id: 'vllm', label: 'vLLM Framework', color: '#4c6ef5', y: 40 },
+  { id: 'ascend', label: 'vllm-ascend / ATB', color: '#7950f2', y: 140 },
+  { id: 'torchnpu', label: 'torch_npu', color: '#e8590c', y: 260 },
+  { id: 'opplugin', label: 'op-plugin / ACLNN API', color: '#2b8a3e', y: 380 },
+  { id: 'cann', label: 'CANN Toolkit', color: '#862e9c', y: 480 },
+  { id: 'hw', label: 'NPU Hardware', color: '#495057', y: 540 },
+];
+const LAYER_H = 50;
+const NODE_H = 36;
+const OP_W = 130;
+const OP_H = 22;
+const GAP = 8;
+const PAD_X = 40;
+
+function getSourceLayer(src) {
+  if (src === 'vLLM' || src === 'vllm-ascend') return 'ascend';
+  if (src === 'ATB') return 'ascend';
+  if (src === 'op-plugin') return 'opplugin';
+  return 'opplugin';
+}
+
+function getTargetLayer(src) {
+  if (src === 'vLLM' || src === 'vllm-ascend') return 'torchnpu';
+  if (src === 'ATB') return 'cann';
+  if (src === 'op-plugin') return 'cann';
+  return 'cann';
+}
+
+function groupOps(ops) {
+  const cats = {};
+  ops.forEach(o => {
+    const cat = o[2];
+    if (!cats[cat]) cats[cat] = [];
+    cats[cat].push(o);
+  });
+  return cats;
+}
+
+function drawDiagram(containerId, ops, version, highlightDiffs) {
+  const container = document.getElementById(containerId);
+  const W = 1400;
+  const H = 620;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', H);
+
+  // Background
+  const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  bg.setAttribute('width', W); bg.setAttribute('height', H);
+  bg.setAttribute('fill', '#fafbfc');
+  svg.appendChild(bg);
+
+  // Layer bands
+  LAYERS.forEach(l => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', 0); rect.setAttribute('y', l.y);
+    rect.setAttribute('width', W); rect.setAttribute('height', LAYER_H);
+    rect.setAttribute('fill', l.color + '0d');
+    rect.setAttribute('stroke', l.color + '30');
+    rect.setAttribute('stroke-width', '1');
+    g.appendChild(rect);
+    // Label
+    const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+    txt.setAttribute('x', 12); txt.setAttribute('y', l.y + 18);
+    txt.setAttribute('fill', l.color); txt.setAttribute('font-size','11');
+    txt.setAttribute('font-weight','600'); txt.setAttribute('font-family','system-ui,sans-serif');
+    txt.setAttribute('class','layer-label');
+    txt.textContent = l.label;
+    g.appendChild(txt);
+    svg.appendChild(g);
+  });
+
+  // Component nodes
+  const comps = [
+    { id:'vllm-upstream', layer:'vllm', label:'vLLM', ver: VLLM_VER[version] || VLLM_VER.v023, x:100, w:110 },
+    { id:'vllm-ascend', layer:'ascend', label:'vllm-ascend', ver: VLLM_VER[version] || VLLM_VER.v023, x:100, w:130 },
+    { id:'atb', layer:'ascend', label:'ATB', ver: CANN_VER[version] || CANN_VER.v023, x:280, w:110 },
+    { id:'torchnpu', layer:'torchnpu', label:'torch_npu', ver: TORCH_VER[version] || TORCH_VER.v023, x:100, w:140 },
+    { id:'opplugin', layer:'opplugin', label:'op-plugin', ver: CANN_VER[version] || CANN_VER.v023, x:100, w:160 },
+    { id:'aclnn', layer:'opplugin', label:'ACLNN (闭源)', ver: CANN_VER[version] || CANN_VER.v023, x:310, w:120 },
+    { id:'cann', layer:'cann', label:'CANN toolkit', ver: CANN_VER[version] || CANN_VER.v023, x:100, w:160 },
+    { id:'hw-a3', layer:'hw', label:'Ascend A3 (910C)', ver:'', x:100, w:140 },
+    { id:'hw-a5', layer:'hw', label:'Ascend A5 (950PR)', ver:'(v0.23+)', x:290, w:140 },
+  ];
+
+  comps.forEach(c => {
+    const layer = LAYERS.find(l => l.id === c.layer);
+    const gy = layer.y + 28;
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','node-group');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', c.x); rect.setAttribute('y', gy);
+    rect.setAttribute('width', c.w); rect.setAttribute('height', NODE_H);
+    rect.setAttribute('rx', '5'); rect.setAttribute('fill', '#fff');
+    rect.setAttribute('stroke', layer.color); rect.setAttribute('stroke-width','1.5');
+    rect.setAttribute('class','node-rect');
+    g.appendChild(rect);
+    const t1 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t1.setAttribute('x', c.x+8); t1.setAttribute('y', gy+16);
+    t1.setAttribute('fill', '#1a1d23'); t1.setAttribute('font-size','12'); t1.setAttribute('font-weight','600');
+    t1.setAttribute('class','node-title'); t1.textContent = c.label;
+    g.appendChild(t1);
+    if (c.ver) {
+      const t2 = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t2.setAttribute('x', c.x+8); t2.setAttribute('y', gy+30);
+      t2.setAttribute('fill', layer.color); t2.setAttribute('font-size','10');
+      t2.setAttribute('class','node-version'); t2.textContent = c.ver;
+      g.appendChild(t2);
+    }
+    svg.appendChild(g);
+  });
+
+  // Component connections (inter-layer arrows)
+  const compConns = [
+    ['vllm-upstream','vllm-ascend'], ['vllm-ascend','torchnpu'],
+    ['vllm-ascend','atb'], ['torchnpu','opplugin'], ['atb','aclnn'],
+    ['opplugin','aclnn'], ['aclnn','cann'], ['cann','hw-a3'],
+    ...(version==='v023'?[['cann','hw-a5']]:[]),
+  ];
+  compConns.forEach(([from,to]) => {
+    const fc = comps.find(c=>c.id===from), tc = comps.find(c=>c.id===to);
+    if (!fc || !tc) return;
+    const fl = LAYERS.find(l=>l.id===fc.layer), tl = LAYERS.find(l=>l.id===tc.layer);
+    const x1 = fc.x + fc.w/2, y1 = fl.y + 28 + NODE_H;
+    const x2 = tc.x + tc.w/2, y2 = tl.y + 28;
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1); line.setAttribute('y1',y1); line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+    line.setAttribute('class','conn-line');
+    line.setAttribute('stroke',fl.color+'60');
+    line.setAttribute('stroke-width','1.5'); line.setAttribute('marker-end','url(#arrow)');
+    line.setAttribute('stroke-dasharray','4,2');
+    svg.appendChild(line);
+  });
+
+  // Arrow marker
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+  marker.setAttribute('id','arrow'); marker.setAttribute('viewBox','0 0 6 6');
+  marker.setAttribute('refX','5'); marker.setAttribute('refY','3');
+  marker.setAttribute('markerWidth','5'); marker.setAttribute('markerHeight','5');
+  marker.setAttribute('orient','auto');
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d','M0,0 L6,3 L0,6'); path.setAttribute('fill','#adb5bd');
+  marker.appendChild(path);
+  defs.appendChild(marker);
+  svg.insertBefore(defs, svg.firstChild);
+
+  // Operator nodes — grouped by category, in their source layer
+  const cats = groupOps(ops);
+  const catOrder = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
+  let cx = 500;
+  catOrder.forEach(cat => {
+    const items = cats[cat];
+    if (!items || items.length === 0) return;
+    // Category header
+    const srces = [...new Set(items.map(i=>i[1]))];
+    const srcLayer = srces.includes('ATB') || srces.includes('vllm-ascend') ? 'ascend' : 'torchnpu';
+    const layer = LAYERS.find(l=>l.id===srcLayer);
+    const gy = layer.y + 28;
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    // Cat label
+    const cl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    cl.setAttribute('x', cx); cl.setAttribute('y', gy-2);
+    cl.setAttribute('fill', layer.color); cl.setAttribute('font-size','9'); cl.setAttribute('font-weight','700');
+    cl.setAttribute('text-anchor','start'); cl.textContent = cat;
+    g.appendChild(cl);
+    items.forEach((item, idx) => {
+      const name = item[0], src = item[1];
+      const srcLayer2 = src === 'ATB' || src === 'vllm-ascend' ? 'ascend' : 'torchnpu';
+      const l = LAYERS.find(ll=>ll.id===srcLayer2);
+      const oy = gy + 2 + idx*(OP_H+3);
+      const ow = Math.min(name.length*7 + 20, 160);
+      const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r.setAttribute('x', cx); r.setAttribute('y', oy);
+      r.setAttribute('width', ow); r.setAttribute('height', OP_H);
+      r.setAttribute('rx','3'); r.setAttribute('fill', l.color+'15');
+      r.setAttribute('stroke', l.color+'50'); r.setAttribute('stroke-width','0.8');
+      r.setAttribute('class','op-rect');
+      if (highlightDiffs) {
+        if (highlightDiffs.added && highlightDiffs.added.has(name)) r.setAttribute('class','op-rect diff-added');
+        if (highlightDiffs.removed && highlightDiffs.removed.has(name)) r.setAttribute('class','op-rect diff-removed');
+        if (highlightDiffs.changed && highlightDiffs.changed.has(name)) r.setAttribute('class','op-rect diff-changed');
+      }
+      g.appendChild(r);
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', cx+4); t.setAttribute('y', oy+14);
+      t.setAttribute('fill', '#1a1d23'); t.setAttribute('font-size','9'); t.setAttribute('class','op-node');
+      t.textContent = name;
+      g.appendChild(t);
+      // Connection line to component
+      const compId = src === 'ATB' ? 'atb' : (src === 'vLLM' ? 'vllm-upstream' : src === 'vllm-ascend' ? 'vllm-ascend' : 'opplugin');
+      const comp = comps.find(c=>c.id===compId);
+      if (comp) {
+        const cl2 = LAYERS.find(ll=>ll.id===comp.layer);
+        const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+        line.setAttribute('x1', cx); line.setAttribute('y1', oy+OP_H/2);
+        line.setAttribute('x2', comp.x+comp.w); line.setAttribute('y2', cl2.y+28+NODE_H/2);
+        line.setAttribute('class','conn-line'); line.setAttribute('opacity','0.2');
+        g.appendChild(line);
+      }
+    });
+    svg.appendChild(g);
+    cx += 170;
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+// ===================== DIFF DIAGRAM =====================
+function drawDiffDiagram(containerId) {
+  const container = document.getElementById(containerId);
+  const W = 1400, H = 650;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width','100%'); svg.setAttribute('height', H);
+  svg.innerHTML = `<rect width="${W}" height="${H}" fill="#fafbfc"/>`;
+
+  const sections = [
+    { title: '新增算子 (v0.20→v0.23)', items: OPS_v023_new.map(o=>o[0]), color:'#2b8a3e', y:20, bg:'#d3f9d8', border:'#2b8a3e' },
+    { title: '移除/替换算子 (v0.20→v0.23)', items: OPS_v023_removed, color:'#c92a2a', y:240, bg:'#ffe3e3', border:'#c92a2a' },
+    { title: '重命名/拆分算子 (v0.20→v0.23)', items: OPS_v023_changed.map(o=>o[0]), color:'#e8590c', y:370, bg:'#ffe8cc', border:'#e8590c' },
+  ];
+
+  sections.forEach(sec => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    // Section bg
+    const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x',20); r.setAttribute('y',sec.y); r.setAttribute('width',W-40);
+    const rows = Math.ceil(sec.items.length/6);
+    r.setAttribute('height', Math.max(180, rows*30+60));
+    r.setAttribute('fill',sec.bg); r.setAttribute('stroke',sec.border); r.setAttribute('stroke-width','1');
+    r.setAttribute('rx','6');
+    g.appendChild(r);
+    // Title
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',36); t.setAttribute('y',sec.y+24);
+    t.setAttribute('fill',sec.color); t.setAttribute('font-size','14'); t.setAttribute('font-weight','700');
+    t.textContent = sec.title + ` (${sec.items.length})`;
+    g.appendChild(t);
+    // Items
+    sec.items.forEach((item,idx) => {
+      const col = idx % 6; const row = Math.floor(idx/6);
+      const ox = 36 + col*210, oy = sec.y + 44 + row*28;
+      const it = document.createElementNS('http://www.w3.org/2000/svg','text');
+      it.setAttribute('x',ox); it.setAttribute('y',oy+14);
+      it.setAttribute('fill','#1a1d23'); it.setAttribute('font-size','10');
+      it.setAttribute('font-family','monospace'); it.textContent = item;
+      g.appendChild(it);
+    });
+    svg.appendChild(g);
+  });
+
+  // Component version comparison
+  const verG = document.createElementNS('http://www.w3.org/2000/svg','g');
+  const vr = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  vr.setAttribute('x',20); vr.setAttribute('y',530); vr.setAttribute('width',W-40); vr.setAttribute('height',90);
+  vr.setAttribute('fill','#f1f3f5'); vr.setAttribute('stroke','#dee2e6'); vr.setAttribute('stroke-width','1'); vr.setAttribute('rx','6');
+  verG.appendChild(vr);
+  const vt = document.createElementNS('http://www.w3.org/2000/svg','text');
+  vt.setAttribute('x',36); vt.setAttribute('y',554);
+  vt.setAttribute('fill','#1a1d23'); vt.setAttribute('font-size','14'); vt.setAttribute('font-weight','700');
+  vt.textContent = '组件版本对比';
+  verG.appendChild(vt);
+  const versions = [
+    ['CANN','8.5.1→9.0.0→9.0.1','#862e9c'],
+    ['PyTorch / torch_npu','2.8.0→2.10.0','#e8590c'],
+    ['vLLM upstream','v0.13.0→v0.20.2→v0.23.0','#4c6ef5'],
+    ['vllm-ascend','v0.13.0rc3→v0.20.2rc1→v0.23.0rc1','#7950f2'],
+    ['triton-ascend','—(v0.23首次引入 3.2.1)','#2b8a3e'],
+    ['ATB','CANN 8.5→CANN 9.0→CANN 9.0.1','#495057'],
+  ];
+  versions.forEach((v,i) => {
+    const x = 36 + (i%3)*450, y = 570 + Math.floor(i/3)*24;
+    const lt = document.createElementNS('http://www.w3.org/2000/svg','text');
+    lt.setAttribute('x',x); lt.setAttribute('y',y);
+    lt.setAttribute('fill',v[2]); lt.setAttribute('font-size','11'); lt.setAttribute('font-weight','600');
+    lt.textContent = v[0]+':';
+    verG.appendChild(lt);
+    const rt = document.createElementNS('http://www.w3.org/2000/svg','text');
+    rt.setAttribute('x',x+140); rt.setAttribute('y',y);
+    rt.setAttribute('fill','#5f6672'); rt.setAttribute('font-size','10');
+    rt.textContent = v[1];
+    verG.appendChild(rt);
+  });
+  svg.appendChild(verG);
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+// ===================== STATS =====================
+function updateStats(version, ops) {
+  const cats = groupOps(ops);
+  const atbCount = ops.filter(o=>o[1]==='ATB').length;
+  const opPluginCount = ops.filter(o=>o[1]==='op-plugin'||o[1]==='vLLM'||o[1]==='vllm-ascend').length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="stat-value" style="color:var(--layer-vllm)">${ops.length}</div><div class="stat-label">总算子数</div><div class="stat-sub">${version}</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:var(--layer-ascend)">${atbCount}</div><div class="stat-label">ATB (_C_ascend) 算子</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:var(--layer-torchnpu)">${opPluginCount}</div><div class="stat-label">op-plugin / vllm-ascend 算子</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:var(--layer-cann)">${Object.keys(cats).length}</div><div class="stat-label">算子类别</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:var(--layer-opplugin)">${CANN_VER[version]||CANN_VER.v023}</div><div class="stat-label">CANN 版本</div></div>
+  `;
+}
+
+// ===================== INIT =====================
+function init() {
+  drawDiagram('svg-v020', ops_v020_full, 'v020', null);
+  drawDiagram('svg-v023', ops_v023_full, 'v023', null);
+  drawDiagram('svg-v013', ops_v013_full, 'v013', null);
+
+  // Diff
+  const addedSet = new Set(OPS_v023_new.map(o=>o[0]));
+  const removedSet = new Set(OPS_v023_removed);
+  const changedSet = new Set(OPS_v023_changed.map(o=>o[0]));
+  drawDiffDiagram('svg-diff');
+
+  updateStats('v020', ops_v020_full);
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+      const target = tab.dataset.tab;
+      document.getElementById('tab-'+target).classList.add('active');
+      if (target === 'v020') updateStats('v020', ops_v020_full);
+      else if (target === 'v023') updateStats('v023', ops_v023_full);
+      else if (target === 'v013') updateStats('v013', ops_v013_full);
+      else {
+        document.getElementById('stats').innerHTML = `
+          <div class="stat-card"><div class="stat-value" style="color:var(--added)">+${OPS_v023_new.length}</div><div class="stat-label">新增算子 (v0.20→v0.23)</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--removed)">-${OPS_v023_removed.length}</div><div class="stat-label">移除算子</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--changed)">~${OPS_v023_changed.length}</div><div class="stat-label">修改算子</div></div>
+          <div class="stat-card"><div class="stat-value">${ops_v023_full.length-ops_v020_full.length}</div><div class="stat-label">净增算子</div></div>
+          <div class="stat-card"><div class="stat-value">${ops_v023_full.length}</div><div class="stat-label">v0.23 总算子数</div></div>
+        `;
+      }
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

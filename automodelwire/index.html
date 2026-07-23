@@ -559,6 +559,13 @@ const EXPERIMENTS=[
    {title:"基线数据报告",subtitle:"Batch 层级 · Forward/Backward/Update 计数 · 阶段耗时分解 · 8 卡一致性 · micro-batch 前向耗时分布 · 采集可靠性教训",file:"verl-train-perfix-cache-perf/2026-07-22-baseline-report.html",date:"2026-07-22",type:"stage"},
    {title:"集成效果验证报告",subtitle:"9 组矩阵实测 · micro_batch 定标 · PS 加速效果 · dispatch 根因定位与修复 · HBM 线性定标 · 两层限制模型 · 16 条集成教训 · 结论与下一步",file:"verl-train-perfix-cache-perf/2026-07-23-stage-report.html",date:"2026-07-23",type:"stage"}
   ]
+  },
+  {id:"deepseek-v4-npu-operator-deps",name:"DeepSeek V4 × vLLM-Ascend 算子依赖分析",subtitle:"CANN 生态全景 · 50 算子源码追溯 · v0.13→v0.20→v0.23 三版本矩阵 · op-plugin → ACLNN API 完整调用链",status:"active",startDate:"2026-07-23",lastUpdate:"2026-07-23",
+   tags:["DeepSeek-V4","vllm-ascend","CANN","算子追溯","torch_npu","op-plugin","ATB","ACLNN","依赖关系图"],
+   metrics:[{label:"追溯算子",value:"50",tone:"good"},{label:"版本数",value:"3",tone:"info"},{label:"子模块",value:"3",tone:"info"},{label:"CANN 仓库",value:"69",tone:"info"},{label:"ACLNN API",value:"494",tone:"info"}],
+   reports:[
+   {title:"依赖关系图 (HTML 可视化)",subtitle:"分层架构图 · v0.13/v0.20/v0.23 三 Tab · 差异对比 · 组件版本链",file:"deepseek-v4-npu-operator-deps/index.html",date:"2026-07-23",type:"stage"}
+  ]
   }
 ];
 
