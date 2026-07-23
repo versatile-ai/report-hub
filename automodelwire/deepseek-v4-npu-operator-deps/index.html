@@ -3,542 +3,426 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DeepSeek V4 × vLLM-Ascend 依赖关系图</title>
+<title>DeepSeek V4 × vLLM-Ascend 算子依赖关系图</title>
 <style>
 :root {
-  --bg: #f8f9fb;
-  --surface: #ffffff;
-  --border: #e2e5ea;
-  --text: #1a1d23;
-  --text-secondary: #5f6672;
-  --text-muted: #9399a3;
-  --layer-vllm: #4c6ef5;
-  --layer-ascend: #7950f2;
-  --layer-torchnpu: #e8590c;
-  --layer-opplugin: #2b8a3e;
-  --layer-aclnn: #c92a2a;
-  --layer-cann: #862e9c;
-  --layer-hw: #495057;
-  --added: #2b8a3e;
-  --removed: #c92a2a;
-  --changed: #e8590c;
-  --connector: #adb5bd;
-  --shadow: 0 1px 3px rgba(0,0,0,0.08);
-  --shadow-lg: 0 4px 12px rgba(0,0,0,0.10);
+  --bg: #f8f9fb; --surface: #ffffff; --border: #e2e5ea;
+  --text: #1a1d23; --text-secondary: #5f6672; --text-muted: #9399a3;
+  --c-vllm: #4c6ef5; --c-ascend: #7950f2; --c-binding: #e8590c;
+  --c-impl: #2b8a3e; --c-cann: #862e9c; --c-hw: #495057;
+  --added: #2b8a3e; --removed: #c92a2a; --changed: #f08c00;
+  --conn: #ced4da; --shadow: 0 1px 3px rgba(0,0,0,0.08);
   --radius: 8px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+
+/* Header */
 header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow); }
 header h1 { font-size: 18px; font-weight: 600; }
 header p { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
-.tabs { display: flex; gap: 4px; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 68px; z-index: 99; }
-.tab { padding: 8px 20px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; white-space: nowrap; }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 66px; z-index: 99; overflow-x: auto; }
+.tab { padding: 7px 18px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; white-space: nowrap; }
 .tab:hover { background: #f1f3f5; }
-.tab.active { background: var(--layer-vllm); color: #fff; border-color: var(--layer-vllm); }
-.tab-diff.active { background: var(--changed); border-color: var(--changed); color: #fff; }
-main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
-.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; font-size: 12px; }
-.legend-item { display: flex; align-items: center; gap: 6px; }
-.legend-dot { width: 10px; height: 10px; border-radius: 3px; }
-.diagram { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow-x: auto; padding: 24px; box-shadow: var(--shadow); }
-.diagram svg { display: block; }
-/* Layer labels */
-.layer-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-/* Node styles */
-.node-group { cursor: default; }
-.node-rect { stroke-width: 1.5px; transition: all 0.2s; }
-.node-rect:hover { filter: brightness(0.95); }
-.node-title { font-size: 12px; font-weight: 600; }
-.node-version { font-size: 10px; opacity: 0.85; }
-.node-desc { font-size: 10px; opacity: 0.7; }
-/* Operator nodes */
-.op-node { font-size: 9px; }
-.op-rect { rx: 3px; stroke-width: 1px; }
-.op-rect:hover { filter: brightness(0.92); }
-/* Connections */
-.conn-line { stroke: var(--connector); stroke-width: 1px; fill: none; opacity: 0.5; }
-.conn-line:hover { stroke-width: 2px; opacity: 0.8; }
-/* Diff styles */
-.diff-added .op-rect { fill: #d3f9d8; stroke: var(--added); }
-.diff-removed .op-rect { fill: #ffe3e3; stroke: var(--removed); }
-.diff-changed .op-rect { fill: #ffe8cc; stroke: var(--changed); }
+.tab.active { background: var(--c-vllm); color: #fff; border-color: var(--c-vllm); }
+.tab.active.diff { background: var(--changed); border-color: var(--changed); }
+
+main { padding: 16px 24px; max-width: 1500px; margin: 0 auto; }
+
 /* Stats */
-.stats { display: flex; gap: 12px; margin-bottom: 16px; }
-.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); flex: 1; min-width: 120px; }
-.stat-value { font-size: 24px; font-weight: 700; }
-.stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
-.stat-sub { font-size: 10px; color: var(--text-muted); }
-/* Tooltip */
-.tooltip { position: absolute; background: #1a1d23; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; max-width: 320px; box-shadow: var(--shadow-lg); }
-.tooltip.show { opacity: 1; }
-.tooltip .tt-title { font-weight: 600; margin-bottom: 4px; }
-.tooltip .tt-row { display: flex; justify-content: space-between; gap: 16px; font-size: 11px; }
-.tooltip .tt-label { color: #adb5bd; }
-/* Tab content */
+.stats { display: flex; gap: 10px; margin-bottom: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; box-shadow: var(--shadow); flex: 1; min-width: 100px; }
+.stat-v { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.stat-l { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+/* Legend */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; font-size: 11px; }
+.leg { display: flex; align-items: center; gap: 5px; }
+.leg-d { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+/* Diagram container */
+.diagram { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow-x: auto; padding: 20px; box-shadow: var(--shadow); min-height: 400px; }
+.diagram svg { display: block; min-width: 1200px; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+
+/* SVG styles */
+.lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.cn { font-size: 11px; font-weight: 600; }
+.cv { font-size: 9px; opacity: 0.85; }
+.cd { font-size: 9px; opacity: 0.6; }
+.on { font-size: 9px; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+.ocat { font-size: 9px; font-weight: 700; }
+
+/* Interaction */
+.node-rect { cursor: default; transition: filter 0.15s; }
+.node-rect:hover { filter: brightness(0.94); }
+.conn { stroke: var(--conn); stroke-width: 1.2px; fill: none; opacity: 0.45; transition: opacity 0.15s, stroke-width 0.15s; }
+.conn:hover { opacity: 0.8; stroke-width: 2px; }
+.op-rect { transition: filter 0.15s; }
+.op-rect:hover { filter: brightness(0.9); }
+
+/* Tooltip */
+.ttip { position: fixed; background: #1a1d23; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 11px; pointer-events: none; opacity: 0; z-index: 999; max-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: opacity 0.12s; }
+.ttip.on { opacity: 1; }
+.ttip b { display: block; margin-bottom: 3px; font-size: 12px; }
+.ttip span { color: #adb5bd; font-size: 10px; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>DeepSeek V4 × vLLM-Ascend 算子依赖关系图</h1>
-  <p>从 vLLM 框架层 → vllm-ascend 适配层 → torch_npu / ATB → op-plugin → ACLNN API → CANN toolkit → NPU 硬件</p>
+  <p>vllm-ascend 调用 torch_npu.* 算子（走 op-plugin → ACLNN）和 _C_ascend.* 算子（走 ATB → ACLNN），两条路径并⾏，最终汇聚到 CANN Toolkit → NPU 硬件</p>
 </header>
 
 <div class="tabs" id="tabs">
-  <button class="tab active" data-tab="v020">v0.20.2 (CANN 9.0.0)</button>
-  <button class="tab" data-tab="v023">v0.23.0 (CANN 9.0.1)</button>
-  <button class="tab" data-tab="v013">v0.13.0 (CANN 8.5.1)</button>
-  <button class="tab tab-diff" data-tab="diff">差异对比 (v0.20→v0.23)</button>
+  <button class="tab active" data-tab="v020">v0.20.2 · CANN 9.0.0</button>
+  <button class="tab" data-tab="v023">v0.23.0 · CANN 9.0.1</button>
+  <button class="tab" data-tab="v013">v0.13.0 · CANN 8.5.1</button>
+  <button class="tab diff" data-tab="diff">差异对比 v0.20 → v0.23</button>
 </div>
 
 <main>
-  <div id="tooltip" class="tooltip"></div>
-
-  <!-- Stats row -->
-  <div class="stats" id="stats"></div>
-
-  <!-- Legend -->
-  <div class="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-vllm)"></div>vLLM 框架</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-ascend)"></div>vllm-ascend / ATB</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-torchnpu)"></div>torch_npu</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-opplugin)"></div>op-plugin / ACLNN</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-cann)"></div>CANN toolkit</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--layer-hw)"></div>NPU Hardware</div>
-  </div>
-
-  <div class="diagram">
-    <div class="tab-content active" id="tab-v020"></div>
-    <div class="tab-content" id="tab-v023"></div>
-    <div class="tab-content" id="tab-v013"></div>
-    <div class="tab-content" id="tab-diff"></div>
-  </div>
+<div id="ttip" class="ttip"></div>
+<div class="stats" id="stats"></div>
+<div class="legend">
+  <div class="leg"><div class="leg-d" style="background:var(--c-vllm)"></div>vLLM</div>
+  <div class="leg"><div class="leg-d" style="background:var(--c-ascend)"></div>vllm-ascend</div>
+  <div class="leg"><div class="leg-d" style="background:var(--c-binding)"></div>torch_npu / ATB</div>
+  <div class="leg"><div class="leg-d" style="background:var(--c-impl)"></div>op-plugin / ACLNN</div>
+  <div class="leg"><div class="leg-d" style="background:var(--c-cann)"></div>CANN Toolkit</div>
+  <div class="leg"><div class="leg-d" style="background:var(--c-hw)"></div>NPU 硬件</div>
+</div>
+<div class="diagram">
+  <div class="tab-content active" id="tab-v020"></div>
+  <div class="tab-content" id="tab-v023"></div>
+  <div class="tab-content" id="tab-v013"></div>
+  <div class="tab-content" id="tab-diff"></div>
+</div>
 </main>
 
 <script>
-// ===================== DATA =====================
-const CANN_VER = { 'v013': '8.5.1', 'v020': '9.0.0', 'v023': '9.0.1' };
-const TORCH_VER = { 'v013': '2.8.0', 'v020': '2.10.0', 'v023': '2.10.0' };
-const VLLM_VER = { 'v013': 'v0.13.0', 'v020': 'v0.20.2', 'v023': 'v0.23.0' };
+// =================== DATA ===================
+const CANN = { v013: '8.5.1', v020: '9.0.0', v023: '9.0.1' };
+const TN = { v013: '2.8.0', v020: '2.10.0', v023: '2.10.0' };
+const VA = { v013: 'v0.13.0', v020: 'v0.20.2', v023: 'v0.23.0' };
 
-// Operator definitions: [name, source_repo, category, aclnn_api]
-// v0.13.0 operators
-const OPS_v013 = [
-  // DSA operators
-  ['npu_sparse_attn_sharedkv', 'ATB', 'DSA Attention', 'aclnnSparseFlashAttention'],
-  ['npu_sparse_attn_sharedkv_metadata', 'ATB', 'DSA Attention', '(internal)'],
-  ['compressor', 'ATB', 'Compressor', '(internal)'],
-  ['npu_quant_lightning_indexer', 'ATB', 'Indexer', 'aclnnQuantLightningIndexer'],
-  ['npu_quant_lightning_indexer_metadata', 'ATB', 'Indexer', '(internal)'],
-  ['npu_rms_norm_dynamic_quant', 'ATB', 'Norm', 'aclnnAddRmsNormQuantV2'],
-  ['inplace_partial_rotary_mul', 'ATB', 'RoPE', '(internal)'],
-  ['npu_hc_pre', 'ATB', 'HC', '(internal)'],
-  ['npu_hc_post', 'ATB', 'HC', '(internal)'],
-  // torch_npu ops
-  ['npu_rotary_mul', 'op-plugin', 'RoPE', 'aclnnRotaryPositionEmbedding'],
-  ['npu_dynamic_quant', 'op-plugin', 'Quant', 'aclnnDynamicQuant'],
-  ['npu_quant_matmul', 'op-plugin', 'MatMul', 'aclnnBatchMatMul'],
-  ['npu_transpose_batchmatmul', 'op-plugin', 'MatMul', '(internal)'],
-  ['npu_scatter_nd_update_', 'op-plugin', 'KV Cache', '(internal)'],
-  // MoE ops
-  ['npu_moe_init_routing_v2', 'op-plugin', 'MoE Routing', 'aclnnMoeInitRoutingV2'],
-  ['npu_moe_token_permute', 'op-plugin', 'MoE Token', 'aclnnMoeTokenPermuteWithRoutingMap'],
-  ['npu_moe_token_unpermute', 'op-plugin', 'MoE Token', 'aclnnMoeTokenUnpermuteWithRoutingMap'],
-  ['npu_moe_distribute_dispatch', 'op-plugin', 'MoE Dispatch', 'aclnnMoeDistributeDispatch'],
-  ['npu_moe_distribute_combine', 'op-plugin', 'MoE Dispatch', 'aclnnMoeDistributeCombine'],
-  ['npu_grouped_matmul', 'op-plugin', 'MoE Expert', 'aclnnGroupedMatmul'],
-  ['npu_swiglu', 'op-plugin', 'MoE Expert', 'aclnnSwiGluQuantV2'],
-  ['npu_grouped_matmul_swiglu_quant', 'op-plugin', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNz'],
-  ['_C.npu_dequant_swiglu_quant', 'ATB', 'MoE Expert', 'aclnnDequantSwigluQuant'],
-  ['_C.grouped_matmul_swiglu_quant_weight_nz', 'ATB', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNz'],
-  // FlashComm
-  ['maybe_all_gather_and_maybe_unpad', 'vLLM', 'FlashComm', 'hcclAllGather'],
-];
+// Each op: [name, source, category]
+const OPS = {
+v013: [
+  // torch_npu path (~14 ops)
+  ['npu_rotary_mul','op-plugin','RoPE'],['npu_dynamic_quant','op-plugin','Quant'],
+  ['npu_quant_matmul','op-plugin','MatMul'],['npu_transpose_batchmatmul','op-plugin','MatMul'],
+  ['npu_scatter_nd_update_','op-plugin','KV Cache'],['npu_moe_init_routing_v2','op-plugin','MoE Routing'],
+  ['npu_moe_token_permute','op-plugin','MoE Token'],['npu_moe_token_unpermute','op-plugin','MoE Token'],
+  ['npu_moe_distribute_dispatch','op-plugin','MoE Dispatch'],['npu_moe_distribute_combine','op-plugin','MoE Dispatch'],
+  ['npu_grouped_matmul','op-plugin','MoE Expert'],['npu_swiglu','op-plugin','MoE Expert'],
+  ['npu_grouped_matmul_swiglu_quant','op-plugin','MoE Expert'],
+  // ATB path (~12 ops)
+  ['_C.npu_sparse_attn_sharedkv','ATB','DSA Attention'],
+  ['_C.npu_sparse_attn_sharedkv_meta','ATB','DSA Attention'],
+  ['_C.compressor','ATB','Compressor'],
+  ['_C.npu_quant_lightning_indexer','ATB','Indexer'],
+  ['_C.npu_quant_lightning_indexer_meta','ATB','Indexer'],
+  ['_C.npu_rms_norm_dynamic_quant','ATB','Norm'],
+  ['_C.inplace_partial_rotary_mul','ATB','RoPE'],
+  ['_C.npu_hc_pre','ATB','HC'],
+  ['_C.npu_hc_post','ATB','HC'],
+  ['_C.npu_dequant_swiglu_quant','ATB','MoE Expert'],
+  ['_C.grouped_matmul_swiglu_quant_nz','ATB','MoE Expert'],
+  // vllm-ascend custom
+  ['maybe_all_gather_unpad','vllm-ascend','FlashComm'],
+]};
 
-// v0.20.2: v0.13 + additions
-const OPS_v020_new = [
-  ['npu_mla_prolog_v2', 'op-plugin', 'MLA Prolog', 'aclnnMlaPrologV2WeightNz'],
-  ['npu_mla_prolog_v3', 'op-plugin', 'MLA Prolog', 'aclnnMlaPrologV3WeightNz'],
-  ['npu_gather_pa_kv_cache', 'op-plugin', 'KV Cache', 'aclnnGatherPaKVCache'],
-  ['npu_scatter_pa_kv_cache', 'op-plugin', 'KV Cache', 'aclnnScatterPaKvCache'],
-  ['npu_fusion_attention', 'op-plugin', 'DSA Attention', '(internal)'],
-  ['npu_moe_gating_top_k', 'op-plugin', 'MoE Routing', 'aclnnMoeGatingTopK'],
-  ['npu_grouped_matmul_swiglu_quant_v2', 'op-plugin', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNzV2'],
-  ['npu_dynamic_mx_quant', 'op-plugin', 'Quant', 'aclnnDynamicBlockQuant'],
-  ['_C.npu_scatter_nd_update_v', 'ATB', 'KV Cache', '(internal)'],
-  ['_C.grouped_matmul_swiglu_quant_v2', 'ATB', 'MoE Expert', 'aclnnGroupedMatmulSwigluQuantWeightNzV2'],
-  ['npu.atb.npu_paged_cache_load', 'ATB', 'KV Cache', '(internal)'],
-];
-const OPS_v020_removed = ['npu_scatter_nd_update_'];
-const OPS_v020_changed = [
-  ['npu_hc_pre', 'npu_hc_pre_v2', 'ATB', 'HC'],
-  ['MoE dispatch v1', 'MoE dispatch v2', 'op-plugin', 'MoE Dispatch'],
-  ['MoE combine v1', 'MoE combine v2', 'op-plugin', 'MoE Dispatch'],
-];
+// v0.20.2 = v0.13 + new - removed
+OPS.v020 = OPS.v013.filter(o => o[0] !== 'npu_scatter_nd_update_').concat([
+  ['npu_mla_prolog_v2','op-plugin','MLA Prolog'],['npu_mla_prolog_v3','op-plugin','MLA Prolog'],
+  ['npu_gather_pa_kv_cache','op-plugin','KV Cache'],['npu_scatter_pa_kv_cache','op-plugin','KV Cache'],
+  ['npu_fusion_attention','op-plugin','DSA Attention'],['npu_moe_gating_top_k','op-plugin','MoE Routing'],
+  ['npu_grouped_matmul_swiglu_quant_v2','op-plugin','MoE Expert'],
+  ['npu_dynamic_mx_quant','op-plugin','Quant'],
+  ['_C.npu_scatter_nd_update_v','ATB','KV Cache'],
+  ['_C.grouped_matmul_swiglu_quant_v2','ATB','MoE Expert'],
+  ['npu.atb.npu_paged_cache_load','ATB','KV Cache'],
+]);
+// v0.20 changed: HC v1→v2, dispatch/combine v1→v2
+OPS.v020 = OPS.v020.map(o => {
+  if (o[0]==='_C.npu_hc_pre') return ['_C.npu_hc_pre_v2','ATB','HC'];
+  if (o[0]==='npu_moe_distribute_dispatch') return ['npu_moe_distribute_dispatch_v2','op-plugin','MoE Dispatch'];
+  if (o[0]==='npu_moe_distribute_combine') return ['npu_moe_distribute_combine_v2','op-plugin','MoE Dispatch'];
+  return o;
+});
 
-// v0.23.0: v0.20.2 + additions
-const OPS_v023_new = [
-  ['npu_fused_infer_attention_score', 'op-plugin', 'DSA Attention', 'aclnnFusedInferAttentionScoreV3'],
-  ['npu_kv_quant_sparse_flash_attention', 'op-plugin', 'DSA Attention', 'aclnnKvQuantSparseFlashAttention'],
-  ['npu_lightning_indexer', 'op-plugin', 'Indexer', 'aclnnLightningIndexer'],
-  ['npu_quant_lightning_indexer', 'op-plugin', 'Indexer', 'aclnnQuantLightningIndexer'],
-  ['npu_rms_norm', 'op-plugin', 'Norm', 'aclnnRmsNorm'],
-  ['npu_transpose_quant_batchmatmul', 'op-plugin', 'MatMul', '(internal)'],
-  ['_C.compressor_metadata', 'ATB', 'Compressor', '(internal)'],
-  ['_C.dispatch_ffn_combine', 'ATB', 'MoE Dispatch', '(internal)'],
-  ['_C.dispatch_gmm_combine_decode', 'ATB', 'MoE Dispatch', '(internal)'],
-  ['_C.moe_gating_top_k_hash', 'ATB', 'MoE Routing', 'aclnnMoeGatingTopK(hash)'],
-  ['_C.npu_swiglu_group_quant', 'ATB', 'MoE Expert', 'aclnnSwiGluQuantV2(group)'],
-  ['_C.npu_vllm_quant_lightning_indexer', 'ATB', 'Indexer', 'aclnnQuantLightningIndexer'],
-  ['_C.npu_vllm_quant_lightning_indexer_metadata', 'ATB', 'Indexer', '(internal)'],
-  ['dsa_forward (ACL graph)', 'vllm-ascend', 'Graph', 'ACL Graph'],
-];
-const OPS_v023_removed = [
-  'npu_sparse_attn_sharedkv', 'npu_sparse_attn_sharedkv_metadata',
-  '_C.npu_scatter_nd_update_v',
-];
-const OPS_v023_changed = [
-  ['_C.npu_quant_lightning_indexer→_C.npu_vllm_quant_lightning_indexer', 'ATB', 'Indexer'],
-  ['npu_sparse_attn_sharedkv→npu_sparse_flash_attention', 'ATB→op-plugin', 'DSA Attention'],
-];
+// v0.23.0 = v0.20 + new - removed
+OPS.v023 = OPS.v020.filter(o => !['_C.npu_sparse_attn_sharedkv','_C.npu_sparse_attn_sharedkv_meta','_C.npu_scatter_nd_update_v'].includes(o[0])).concat([
+  ['npu_fused_infer_attention_score','op-plugin','DSA Attention'],
+  ['npu_kv_quant_sparse_flash_attention','op-plugin','DSA Attention'],
+  ['npu_lightning_indexer','op-plugin','Indexer'],
+  ['npu_quant_lightning_indexer','op-plugin','Indexer'],
+  ['npu_rms_norm','op-plugin','Norm'],
+  ['npu_transpose_quant_batchmatmul','op-plugin','MatMul'],
+  ['_C.compressor_metadata','ATB','Compressor'],
+  ['_C.dispatch_ffn_combine','ATB','MoE Dispatch'],
+  ['_C.dispatch_gmm_combine_decode','ATB','MoE Dispatch'],
+  ['_C.moe_gating_top_k_hash','ATB','MoE Routing'],
+  ['_C.npu_swiglu_group_quant','ATB','MoE Expert'],
+  ['_C.npu_vllm_quant_lightning_indexer','ATB','Indexer'],
+  ['_C.npu_vllm_quant_lightning_indexer_meta','ATB','Indexer'],
+  ['dsa_forward (ACL graph)','vllm-ascend','Graph'],
+]);
+// v0.23 rename: _C.npu_quant_lightning_indexer → _C.npu_vllm_quant_lightning_indexer
+OPS.v023 = OPS.v023.map(o => {
+  if (o[0]==='_C.npu_quant_lightning_indexer') return ['_C.npu_vllm_quant_lightning_indexer','ATB','Indexer'];
+  if (o[0]==='_C.npu_quant_lightning_indexer_meta') return ['_C.npu_vllm_quant_lightning_indexer_meta','ATB','Indexer'];
+  return o;
+});
 
-// Assemble full op lists
-function buildOps(base, additions, removed) {
-  const ops = base.filter(o => !removed.includes(o[0]));
-  return ops.concat(additions);
-}
-const ops_v013_full = OPS_v013;
-const ops_v020_full = buildOps(OPS_v013, OPS_v020_new, OPS_v020_removed);
-const ops_v023_full = buildOps(ops_v020_full, OPS_v023_new, OPS_v023_removed);
+// =================== RENDER ENGINE ===================
+const W = 1300, LAYER_H = 65, NODE_H = 38, OP_H = 20;
+const NS = 'http://www.w3.org/2000/svg';
 
-// ===================== LAYOUT =====================
 const LAYERS = [
-  { id: 'vllm', label: 'vLLM Framework', color: '#4c6ef5', y: 40 },
-  { id: 'ascend', label: 'vllm-ascend / ATB', color: '#7950f2', y: 140 },
-  { id: 'torchnpu', label: 'torch_npu', color: '#e8590c', y: 260 },
-  { id: 'opplugin', label: 'op-plugin / ACLNN API', color: '#2b8a3e', y: 380 },
-  { id: 'cann', label: 'CANN Toolkit', color: '#862e9c', y: 480 },
-  { id: 'hw', label: 'NPU Hardware', color: '#495057', y: 540 },
+  { id:'vllm',  label:'vLLM Framework',           y:20,  color:'#4c6ef5' },
+  { id:'asc',   label:'vllm-ascend Plugin',       y:95,  color:'#7950f2' },
+  { id:'bind',  label:'torch_npu (左)  ───  ATB _C_ascend (右) — 两条并行绑定路径', y:180, color:'#e8590c' },
+  { id:'impl',  label:'op-plugin (左)  ───  ACLNN API (右) — 两条并行实现路径',    y:295, color:'#2b8a3e' },
+  { id:'cann',  label:'CANN Toolkit (ascend-cann-toolkit + ops)', y:410, color:'#862e9c' },
+  { id:'hw',    label:'NPU Hardware',             y:500, color:'#495057' },
 ];
-const LAYER_H = 50;
-const NODE_H = 36;
-const OP_W = 130;
-const OP_H = 22;
-const GAP = 8;
-const PAD_X = 40;
+const H = LAYERS[5].y + 60;
 
-function getSourceLayer(src) {
-  if (src === 'vLLM' || src === 'vllm-ascend') return 'ascend';
-  if (src === 'ATB') return 'ascend';
-  if (src === 'op-plugin') return 'opplugin';
-  return 'opplugin';
+// Component nodes per layer
+function comps(ver) {
+  return [
+    { id:'vllm',   l:'vllm', x:80,w:110, n:'vLLM',        v:'v'+ver.substring(1) },
+    { id:'va',     l:'asc',  x:80,w:140, n:'vllm-ascend', v:VA[ver] },
+    { id:'tn',     l:'bind', x:80,w:280, n:'torch_npu',   v:TN[ver],  d:'torch_npu.npu_* 算子 (~25个)' },
+    { id:'atb',    l:'bind', x:420,w:250, n:'ATB',        v:CANN[ver],d:'_C_ascend.* 算子 (~18个)' },
+    { id:'opp',    l:'impl', x:80,w:280, n:'op-plugin',   v:CANN[ver],d:'C++ 实现 → aclnnXxx()' },
+    { id:'aclnn',  l:'impl', x:420,w:250, n:'ACLNN',      v:CANN[ver],d:'libaclnn.so (CANN 闭源)' },
+    { id:'cann',   l:'cann', x:80,w:590, n:'CANN toolkit',v:CANN[ver],d:'ascend-cann-toolkit + ascend-cann-ops' },
+    { id:'hw-a3',  l:'hw',   x:80,w:280, n:'Ascend A3',   v:'910C' },
+    { id:'hw-a5',  l:'hw',   x:400,w:280, n:'Ascend A5',  v:'950PR (v0.23+)', d: ver === 'v023' ? 'FP8 / MXFP8' : null },
+  ];
 }
 
-function getTargetLayer(src) {
-  if (src === 'vLLM' || src === 'vllm-ascend') return 'torchnpu';
-  if (src === 'ATB') return 'cann';
-  if (src === 'op-plugin') return 'cann';
-  return 'cann';
+// Connections between component nodes
+const CONNS = [
+  ['vllm','va'], ['va','tn'], ['va','atb'],
+  ['tn','opp'], ['atb','aclnn'], ['opp','cann'], ['aclnn','cann'],
+  ['cann','hw-a3'], ['cann','hw-a5'],
+];
+
+function mk(tag, attrs) {
+  const el = document.createElementNS(NS, tag);
+  Object.entries(attrs).forEach(([k,v]) => { if (v != null) el.setAttribute(k, v); });
+  return el;
 }
 
-function groupOps(ops) {
-  const cats = {};
-  ops.forEach(o => {
-    const cat = o[2];
-    if (!cats[cat]) cats[cat] = [];
-    cats[cat].push(o);
-  });
-  return cats;
-}
+function drawDiagram(containerId, ops, ver) {
+  const ct = document.getElementById(containerId);
+  const svg = mk('svg', { viewBox: `0 0 ${W} ${H}`, width:'100%', height:H });
 
-function drawDiagram(containerId, ops, version, highlightDiffs) {
-  const container = document.getElementById(containerId);
-  const W = 1400;
-  const H = 620;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('width', '100%');
-  svg.setAttribute('height', H);
-
-  // Arrow marker (must be defined first so references resolve)
-  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
-  const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
-  marker.setAttribute('id','arrow'); marker.setAttribute('viewBox','0 0 6 6');
-  marker.setAttribute('refX','5'); marker.setAttribute('refY','3');
-  marker.setAttribute('markerWidth','5'); marker.setAttribute('markerHeight','5');
-  marker.setAttribute('orient','auto');
-  const mpath = document.createElementNS('http://www.w3.org/2000/svg','path');
-  mpath.setAttribute('d','M0,0 L6,3 L0,6'); mpath.setAttribute('fill','#adb5bd');
-  marker.appendChild(mpath);
-  defs.appendChild(marker);
-  svg.appendChild(defs);
+  // Arrow marker
+  const defs = mk('defs');
+  const m = mk('marker', { id:'ar', viewBox:'0 0 6 6', refX:'5', refY:'3', markerWidth:'5', markerHeight:'5', orient:'auto' });
+  m.appendChild(mk('path', { d:'M0,0 L6,3 L0,6', fill:'#adb5bd' }));
+  defs.appendChild(m); svg.appendChild(defs);
 
   // Background
-  const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
-  bg.setAttribute('width', W); bg.setAttribute('height', H);
-  bg.setAttribute('fill', '#fafbfc');
-  svg.appendChild(bg);
+  svg.appendChild(mk('rect', { width:W, height:H, fill:'#fafbfc' }));
 
   // Layer bands
   LAYERS.forEach(l => {
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-    rect.setAttribute('x', 0); rect.setAttribute('y', l.y);
-    rect.setAttribute('width', W); rect.setAttribute('height', LAYER_H);
-    rect.setAttribute('fill', l.color + '0d');
-    rect.setAttribute('stroke', l.color + '30');
-    rect.setAttribute('stroke-width', '1');
-    g.appendChild(rect);
-    // Label
-    const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
-    txt.setAttribute('x', 12); txt.setAttribute('y', l.y + 18);
-    txt.setAttribute('fill', l.color); txt.setAttribute('font-size','11');
-    txt.setAttribute('font-weight','600'); txt.setAttribute('font-family','system-ui,sans-serif');
-    txt.setAttribute('class','layer-label');
-    txt.textContent = l.label;
-    g.appendChild(txt);
+    const g = mk('g');
+    g.appendChild(mk('rect', { x:0, y:l.y, width:W, height:LAYER_H, fill:l.color+'0c', stroke:l.color+'28', 'stroke-width':'1' }));
+    const t = mk('text', { x:12, y:l.y+16, fill:l.color, class:'lbl' });
+    t.textContent = l.label; g.appendChild(t);
     svg.appendChild(g);
   });
 
   // Component nodes
-  const comps = [
-    { id:'vllm-upstream', layer:'vllm', label:'vLLM', ver: VLLM_VER[version] || VLLM_VER.v023, x:100, w:110 },
-    { id:'vllm-ascend', layer:'ascend', label:'vllm-ascend', ver: VLLM_VER[version] || VLLM_VER.v023, x:100, w:130 },
-    { id:'atb', layer:'ascend', label:'ATB', ver: CANN_VER[version] || CANN_VER.v023, x:280, w:110 },
-    { id:'torchnpu', layer:'torchnpu', label:'torch_npu', ver: TORCH_VER[version] || TORCH_VER.v023, x:100, w:140 },
-    { id:'opplugin', layer:'opplugin', label:'op-plugin', ver: CANN_VER[version] || CANN_VER.v023, x:100, w:160 },
-    { id:'aclnn', layer:'opplugin', label:'ACLNN (闭源)', ver: CANN_VER[version] || CANN_VER.v023, x:310, w:120 },
-    { id:'cann', layer:'cann', label:'CANN toolkit', ver: CANN_VER[version] || CANN_VER.v023, x:100, w:160 },
-    { id:'hw-a3', layer:'hw', label:'Ascend A3 (910C)', ver:'', x:100, w:140 },
-    { id:'hw-a5', layer:'hw', label:'Ascend A5 (950PR)', ver:'(v0.23+)', x:290, w:140 },
-  ];
-
-  comps.forEach(c => {
-    const layer = LAYERS.find(l => l.id === c.layer);
-    const gy = layer.y + 28;
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-    g.setAttribute('class','node-group');
-    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-    rect.setAttribute('x', c.x); rect.setAttribute('y', gy);
-    rect.setAttribute('width', c.w); rect.setAttribute('height', NODE_H);
-    rect.setAttribute('rx', '5'); rect.setAttribute('fill', '#fff');
-    rect.setAttribute('stroke', layer.color); rect.setAttribute('stroke-width','1.5');
-    rect.setAttribute('class','node-rect');
-    g.appendChild(rect);
-    const t1 = document.createElementNS('http://www.w3.org/2000/svg','text');
-    t1.setAttribute('x', c.x+8); t1.setAttribute('y', gy+16);
-    t1.setAttribute('fill', '#1a1d23'); t1.setAttribute('font-size','12'); t1.setAttribute('font-weight','600');
-    t1.setAttribute('class','node-title'); t1.textContent = c.label;
-    g.appendChild(t1);
-    if (c.ver) {
-      const t2 = document.createElementNS('http://www.w3.org/2000/svg','text');
-      t2.setAttribute('x', c.x+8); t2.setAttribute('y', gy+30);
-      t2.setAttribute('fill', layer.color); t2.setAttribute('font-size','10');
-      t2.setAttribute('class','node-version'); t2.textContent = c.ver;
-      g.appendChild(t2);
+  const C = comps(ver);
+  C.forEach(c => {
+    const ly = LAYERS.find(ll=>ll.id===c.l);
+    const gy = ly.y + 24;
+    const g = mk('g');
+    g.appendChild(mk('rect', { x:c.x, y:gy, width:c.w, height:NODE_H, rx:'5', fill:'#fff', stroke:ly.color, 'stroke-width':'1.5', class:'node-rect' }));
+    const t1 = mk('text', { x:c.x+8, y:gy+15, fill:'#1a1d23', class:'cn' });
+    t1.textContent = c.n; g.appendChild(t1);
+    const t2 = mk('text', { x:c.x+8, y:gy+29, fill:ly.color, class:'cv' });
+    t2.textContent = c.v; g.appendChild(t2);
+    if (c.d) {
+      const t3 = mk('text', { x:c.x+c.w-8, y:gy+22, fill:'#9399a3', class:'cd', 'text-anchor':'end' });
+      t3.textContent = c.d; g.appendChild(t3);
     }
+    // Store position for connection drawing
+    c._cx = c.x + c.w/2; c._cy = gy + NODE_H/2; c._t = gy; c._b = gy + NODE_H;
     svg.appendChild(g);
   });
 
-  // Component connections (inter-layer arrows)
-  const compConns = [
-    ['vllm-upstream','vllm-ascend'], ['vllm-ascend','torchnpu'],
-    ['vllm-ascend','atb'], ['torchnpu','opplugin'], ['atb','aclnn'],
-    ['opplugin','aclnn'], ['aclnn','cann'], ['cann','hw-a3'],
-    ...(version==='v023'?[['cann','hw-a5']]:[]),
-  ];
-  compConns.forEach(([from,to]) => {
-    const fc = comps.find(c=>c.id===from), tc = comps.find(c=>c.id===to);
+  // Connections (only if both nodes visible)
+  CONNS.forEach(([from,to]) => {
+    const fc = C.find(c=>c.id===from), tc = C.find(c=>c.id===to);
     if (!fc || !tc) return;
-    const fl = LAYERS.find(l=>l.id===fc.layer), tl = LAYERS.find(l=>l.id===tc.layer);
-    const x1 = fc.x + fc.w/2, y1 = fl.y + 28 + NODE_H;
-    const x2 = tc.x + tc.w/2, y2 = tl.y + 28;
-    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1',x1); line.setAttribute('y1',y1); line.setAttribute('x2',x2); line.setAttribute('y2',y2);
-    line.setAttribute('class','conn-line');
-    line.setAttribute('stroke',fl.color+'60');
-    line.setAttribute('stroke-width','1.5'); line.setAttribute('marker-end','url(#arrow)');
-    line.setAttribute('stroke-dasharray','4,2');
-    svg.appendChild(line);
+    if (to==='hw-a5' && ver!=='v023') return;
+    const fl = LAYERS.find(l=>l.id===fc.l), tl = LAYERS.find(l=>l.id===tc.l);
+    svg.appendChild(mk('line', {
+      x1:fc._cx, y1:fc._b, x2:tc._cx, y2:tc._t,
+      class:'conn', stroke:fl.color+'50', 'stroke-dasharray':'4,2', 'marker-end':'url(#ar)',
+    }));
   });
 
-  // Operator nodes — grouped by category, in their source layer
-  const cats = groupOps(ops);
-  const catOrder = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
-  let cx = 500;
-  catOrder.forEach(cat => {
-    const items = cats[cat];
-    if (!items || items.length === 0) return;
-    // Category header
-    const srces = [...new Set(items.map(i=>i[1]))];
-    const srcLayer = srces.includes('ATB') || srces.includes('vllm-ascend') ? 'ascend' : 'torchnpu';
-    const layer = LAYERS.find(l=>l.id===srcLayer);
-    const gy = layer.y + 28;
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-    // Cat label
-    const cl = document.createElementNS('http://www.w3.org/2000/svg','text');
-    cl.setAttribute('x', cx); cl.setAttribute('y', gy-2);
-    cl.setAttribute('fill', layer.color); cl.setAttribute('font-size','9'); cl.setAttribute('font-weight','700');
-    cl.setAttribute('text-anchor','start'); cl.textContent = cat;
-    g.appendChild(cl);
-    items.forEach((item, idx) => {
-      const name = item[0], src = item[1];
-      const srcLayer2 = src === 'ATB' || src === 'vllm-ascend' ? 'ascend' : 'torchnpu';
-      const l = LAYERS.find(ll=>ll.id===srcLayer2);
-      const oy = gy + 2 + idx*(OP_H+3);
-      const ow = Math.min(name.length*7 + 20, 160);
-      const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      r.setAttribute('x', cx); r.setAttribute('y', oy);
-      r.setAttribute('width', ow); r.setAttribute('height', OP_H);
-      r.setAttribute('rx','3'); r.setAttribute('fill', l.color+'15');
-      r.setAttribute('stroke', l.color+'50'); r.setAttribute('stroke-width','0.8');
-      r.setAttribute('class','op-rect');
-      if (highlightDiffs) {
-        if (highlightDiffs.added && highlightDiffs.added.has(name)) r.setAttribute('class','op-rect diff-added');
-        if (highlightDiffs.removed && highlightDiffs.removed.has(name)) r.setAttribute('class','op-rect diff-removed');
-        if (highlightDiffs.changed && highlightDiffs.changed.has(name)) r.setAttribute('class','op-rect diff-changed');
-      }
-      g.appendChild(r);
-      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-      t.setAttribute('x', cx+4); t.setAttribute('y', oy+14);
-      t.setAttribute('fill', '#1a1d23'); t.setAttribute('font-size','9'); t.setAttribute('class','op-node');
-      t.textContent = name;
-      g.appendChild(t);
-      // Connection line to component
-      const compId = src === 'ATB' ? 'atb' : (src === 'vLLM' ? 'vllm-upstream' : src === 'vllm-ascend' ? 'vllm-ascend' : 'opplugin');
-      const comp = comps.find(c=>c.id===compId);
-      if (comp) {
-        const cl2 = LAYERS.find(ll=>ll.id===comp.layer);
-        const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-        line.setAttribute('x1', cx); line.setAttribute('y1', oy+OP_H/2);
-        line.setAttribute('x2', comp.x+comp.w); line.setAttribute('y2', cl2.y+28+NODE_H/2);
-        line.setAttribute('class','conn-line'); line.setAttribute('opacity','0.2');
-        g.appendChild(line);
-      }
+  // Separate ops by source
+  const tnOps = ops.filter(o => o[1]==='op-plugin' || o[1]==='vllm-ascend');
+  const atbOps = ops.filter(o => o[1]==='ATB');
+
+  // Group by category
+  function grp(list) {
+    const m = {};
+    list.forEach(o => { const c = o[2]; if (!m[c]) m[c]=[]; m[c].push(o); });
+    return m;
+  }
+  const tnCat = grp(tnOps), atbCat = grp(atbOps);
+  const order = ['DSA Attention','MLA Prolog','Indexer','Compressor','RoPE','KV Cache','Norm','HC','Quant','MatMul','MoE Routing','MoE Token','MoE Dispatch','MoE Expert','FlashComm','Graph'];
+
+  // Draw operator blocks
+  function drawOpBlock(cats, startX, baseY, color) {
+    let cx = startX;
+    order.forEach(cat => {
+      const items = cats[cat];
+      if (!items || items.length===0) return;
+      const g = mk('g');
+      // Category label
+      const cl = mk('text', { x:cx, y:baseY-2, fill:color, class:'ocat' });
+      cl.textContent = cat; g.appendChild(cl);
+      items.forEach((item, i) => {
+        const name = item[0], ow = Math.min(name.length*6.8+16, 170);
+        const oy = baseY + 2 + i*(OP_H+4);
+        g.appendChild(mk('rect', { x:cx, y:oy, width:ow, height:OP_H, rx:'3', fill:color+'18', stroke:color+'45', 'stroke-width':'0.8', class:'op-rect' }));
+        const t = mk('text', { x:cx+4, y:oy+13, fill:'#1a1d23', class:'on' });
+        t.textContent = name; g.appendChild(t);
+      });
+      svg.appendChild(g);
+      cx += 175;
     });
-    svg.appendChild(g);
-    cx += 170;
-  });
+  }
 
-  container.innerHTML = '';
-  container.appendChild(svg);
+  // torch_npu ops on left side of binding layer
+  const bLayer = LAYERS.find(l=>l.id==='bind');
+  drawOpBlock(tnCat, 760, bLayer.y+6, '#e8590c');
+  // ATB ops on right side
+  drawOpBlock(atbCat, 760, bLayer.y+36, '#7950f2');
+
+  ct.innerHTML = '';
+  ct.appendChild(svg);
 }
 
-// ===================== DIFF DIAGRAM =====================
-function drawDiffDiagram(containerId) {
-  const container = document.getElementById(containerId);
-  const W = 1400, H = 650;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('width','100%'); svg.setAttribute('height', H);
-  // Background rect (use createElementNS for correct SVG namespace)
-  const diffBg = document.createElementNS('http://www.w3.org/2000/svg','rect');
-  diffBg.setAttribute('width', W); diffBg.setAttribute('height', H); diffBg.setAttribute('fill','#fafbfc');
-  svg.appendChild(diffBg);
+// =================== DIFF DIAGRAM ===================
+function drawDiff() {
+  const ct = document.getElementById('tab-diff');
+  const svg = mk('svg', { viewBox:`0 0 ${W} 580`, width:'100%', height:580 });
+  svg.appendChild(mk('rect', { width:W, height:580, fill:'#fafbfc' }));
 
-  const sections = [
-    { title: '新增算子 (v0.20→v0.23)', items: OPS_v023_new.map(o=>o[0]), color:'#2b8a3e', y:20, bg:'#d3f9d8', border:'#2b8a3e' },
-    { title: '移除/替换算子 (v0.20→v0.23)', items: OPS_v023_removed, color:'#c92a2a', y:240, bg:'#ffe3e3', border:'#c92a2a' },
-    { title: '重命名/拆分算子 (v0.20→v0.23)', items: OPS_v023_changed.map(o=>o[0]), color:'#e8590c', y:370, bg:'#ffe8cc', border:'#e8590c' },
+  // Three sections: added, removed, changed
+  const secs = [
+    { t:'新增算子 (v0.20→v0.23)', items:['npu_fused_infer_attention_score','npu_kv_quant_sparse_flash_attention','npu_lightning_indexer','npu_quant_lightning_indexer','npu_rms_norm','npu_transpose_quant_batchmatmul','_C.compressor_metadata','_C.dispatch_ffn_combine','_C.dispatch_gmm_combine_decode','_C.moe_gating_top_k_hash','_C.npu_swiglu_group_quant','_C.npu_vllm_quant_lightning_indexer','_C.npu_vllm_quant_lightning_indexer_meta','dsa_forward (ACL graph)'], y:15, c:'#2b8a3e', bg:'#d3f9d8', n:14 },
+    { t:'移除/替换算子', items:['npu_sparse_attn_sharedkv','npu_sparse_attn_sharedkv_metadata','_C.npu_scatter_nd_update_v'], y:170, c:'#c92a2a', bg:'#ffe3e3', n:3 },
+    { t:'重命名/升级算子', items:['_C.npu_quant_lightning_indexer→_C.npu_vllm_quant_lightning_indexer','npu_sparse_attn_sharedkv→npu_sparse_flash_attention (ATB→op-plugin)','npu_scatter_nd_update_v→npu_scatter_pa_kv_cache (ATB→op-plugin)','quant_lightning_indexer→npu_quant_lightning_indexer (ATB→op-plugin,A5)'], y:260, c:'#f08c00', bg:'#ffe8cc', n:4 },
   ];
 
-  sections.forEach(sec => {
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-    // Section bg
-    const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
-    r.setAttribute('x',20); r.setAttribute('y',sec.y); r.setAttribute('width',W-40);
-    const rows = Math.ceil(sec.items.length/6);
-    r.setAttribute('height', Math.max(180, rows*30+60));
-    r.setAttribute('fill',sec.bg); r.setAttribute('stroke',sec.border); r.setAttribute('stroke-width','1');
-    r.setAttribute('rx','6');
-    g.appendChild(r);
-    // Title
-    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-    t.setAttribute('x',36); t.setAttribute('y',sec.y+24);
-    t.setAttribute('fill',sec.color); t.setAttribute('font-size','14'); t.setAttribute('font-weight','700');
-    t.textContent = sec.title + ` (${sec.items.length})`;
-    g.appendChild(t);
-    // Items
-    sec.items.forEach((item,idx) => {
-      const col = idx % 6; const row = Math.floor(idx/6);
-      const ox = 36 + col*210, oy = sec.y + 44 + row*28;
-      const it = document.createElementNS('http://www.w3.org/2000/svg','text');
-      it.setAttribute('x',ox); it.setAttribute('y',oy+14);
-      it.setAttribute('fill','#1a1d23'); it.setAttribute('font-size','10');
-      it.setAttribute('font-family','monospace'); it.textContent = item;
-      g.appendChild(it);
+  secs.forEach(sec => {
+    const g = mk('g');
+    const rows = Math.ceil(sec.items.length / 4);
+    g.appendChild(mk('rect', { x:15, y:sec.y, width:W-30, height:Math.max(120, rows*26+40), rx:'6', fill:sec.bg, stroke:sec.c, 'stroke-width':'1' }));
+    const t = mk('text', { x:28, y:sec.y+22, fill:sec.c, class:'cn' });
+    t.textContent = sec.t + ` (${sec.n})`; g.appendChild(t);
+    sec.items.forEach((item, i) => {
+      const col = i % 4, row = Math.floor(i/4);
+      const ox = 28 + col*310, oy = sec.y + 40 + row*24;
+      const ti = mk('text', { x:ox, y:oy+14, fill:'#1a1d23', class:'on' });
+      ti.textContent = item; g.appendChild(ti);
     });
     svg.appendChild(g);
   });
 
-  // Component version comparison
-  const verG = document.createElementNS('http://www.w3.org/2000/svg','g');
-  const vr = document.createElementNS('http://www.w3.org/2000/svg','rect');
-  vr.setAttribute('x',20); vr.setAttribute('y',530); vr.setAttribute('width',W-40); vr.setAttribute('height',90);
-  vr.setAttribute('fill','#f1f3f5'); vr.setAttribute('stroke','#dee2e6'); vr.setAttribute('stroke-width','1'); vr.setAttribute('rx','6');
-  verG.appendChild(vr);
-  const vt = document.createElementNS('http://www.w3.org/2000/svg','text');
-  vt.setAttribute('x',36); vt.setAttribute('y',554);
-  vt.setAttribute('fill','#1a1d23'); vt.setAttribute('font-size','14'); vt.setAttribute('font-weight','700');
-  vt.textContent = '组件版本对比';
-  verG.appendChild(vt);
-  const versions = [
-    ['CANN','8.5.1→9.0.0→9.0.1','#862e9c'],
-    ['PyTorch / torch_npu','2.8.0→2.10.0','#e8590c'],
-    ['vLLM upstream','v0.13.0→v0.20.2→v0.23.0','#4c6ef5'],
-    ['vllm-ascend','v0.13.0rc3→v0.20.2rc1→v0.23.0rc1','#7950f2'],
-    ['triton-ascend','—(v0.23首次引入 3.2.1)','#2b8a3e'],
-    ['ATB','CANN 8.5→CANN 9.0→CANN 9.0.1','#495057'],
+  // Version comparison at bottom
+  const vg = mk('g');
+  vg.appendChild(mk('rect', { x:15, y:400, width:W-30, height:155, rx:'6', fill:'#f1f3f5', stroke:'#dee2e6', 'stroke-width':'1' }));
+  const vt = mk('text', { x:28, y:422, fill:'#1a1d23', class:'cn' });
+  vt.textContent = '全链路组件版本对比'; vg.appendChild(vt);
+
+  const vers = [
+    ['CANN','8.5.1','→','9.0.0','→','9.0.1','#862e9c'],
+    ['torch_npu / PyTorch','2.8.0','→','2.10.0','→','2.10.0','#e8590c'],
+    ['vLLM upstream','v0.13.0','→','v0.20.2','→','v0.23.0','#4c6ef5'],
+    ['vllm-ascend','v0.13.0rc3','→','v0.20.2rc1','→','v0.23.0rc1','#7950f2'],
+    ['triton-ascend','—','','3.2.1','(v0.23+)','','#2b8a3e'],
   ];
-  versions.forEach((v,i) => {
-    const x = 36 + (i%3)*450, y = 570 + Math.floor(i/3)*24;
-    const lt = document.createElementNS('http://www.w3.org/2000/svg','text');
-    lt.setAttribute('x',x); lt.setAttribute('y',y);
-    lt.setAttribute('fill',v[2]); lt.setAttribute('font-size','11'); lt.setAttribute('font-weight','600');
-    lt.textContent = v[0]+':';
-    verG.appendChild(lt);
-    const rt = document.createElementNS('http://www.w3.org/2000/svg','text');
-    rt.setAttribute('x',x+140); rt.setAttribute('y',y);
-    rt.setAttribute('fill','#5f6672'); rt.setAttribute('font-size','10');
-    rt.textContent = v[1];
-    verG.appendChild(rt);
+  vers.forEach((v,i) => {
+    const ox = 28, oy = 436 + i*22;
+    const n = mk('text', { x:ox, y:oy, fill:v[6], class:'cn' });
+    n.textContent = v[0]+':'; vg.appendChild(n);
+    const vals = mk('text', { x:ox+165, y:oy, fill:'#5f6672', class:'on' });
+    vals.textContent = `v0.13: ${v[1]}    v0.20: ${v[3]}    v0.23: ${v[5]}`;
+    vg.appendChild(vals);
   });
-  svg.appendChild(verG);
+  svg.appendChild(vg);
 
-  container.innerHTML = '';
-  container.appendChild(svg);
+  ct.innerHTML = '';
+  ct.appendChild(svg);
 }
 
-// ===================== STATS =====================
-function updateStats(version, ops) {
-  const cats = groupOps(ops);
-  const atbCount = ops.filter(o=>o[1]==='ATB').length;
-  const opPluginCount = ops.filter(o=>o[1]==='op-plugin'||o[1]==='vLLM'||o[1]==='vllm-ascend').length;
-  document.getElementById('stats').innerHTML = `
-    <div class="stat-card"><div class="stat-value" style="color:var(--layer-vllm)">${ops.length}</div><div class="stat-label">总算子数</div><div class="stat-sub">${version}</div></div>
-    <div class="stat-card"><div class="stat-value" style="color:var(--layer-ascend)">${atbCount}</div><div class="stat-label">ATB (_C_ascend) 算子</div></div>
-    <div class="stat-card"><div class="stat-value" style="color:var(--layer-torchnpu)">${opPluginCount}</div><div class="stat-label">op-plugin / vllm-ascend 算子</div></div>
-    <div class="stat-card"><div class="stat-value" style="color:var(--layer-cann)">${Object.keys(cats).length}</div><div class="stat-label">算子类别</div></div>
-    <div class="stat-card"><div class="stat-value" style="color:var(--layer-opplugin)">${CANN_VER[version]||CANN_VER.v023}</div><div class="stat-label">CANN 版本</div></div>
-  `;
+// =================== STATS ===================
+function showStats(ver, ops) {
+  const tn = ops.filter(o=>o[1]==='op-plugin'||o[1]==='vllm-ascend').length;
+  const atb = ops.filter(o=>o[1]==='ATB').length;
+  const cats = new Set(ops.map(o=>o[2])).size;
+  document.getElementById('stats').innerHTML =
+    `<div class="stat"><div class="stat-v" style="color:var(--c-vllm)">${ops.length}</div><div class="stat-l">总算子数</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--c-binding)">${tn}</div><div class="stat-l">torch_npu 算子</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--c-ascend)">${atb}</div><div class="stat-l">ATB 算子</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--c-impl)">${cats}</div><div class="stat-l">算子类别</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--c-cann)">CANN ${CANN[ver]}</div><div class="stat-l">torch_npu ${TN[ver]}</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--c-hw)">${VA[ver]}</div><div class="stat-l">vllm-ascend</div></div>`;
 }
 
-// ===================== INIT =====================
+function showDiffStats() {
+  document.getElementById('stats').innerHTML =
+    `<div class="stat"><div class="stat-v" style="color:var(--added)">+14</div><div class="stat-l">新增算子</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--removed)">-3</div><div class="stat-l">移除算子</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--changed)">~4</div><div class="stat-l">重命名/升级</div></div>` +
+    `<div class="stat"><div class="stat-v">${OPS.v023.length - OPS.v020.length}</div><div class="stat-l">净增 (33→${OPS.v023.length})</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--c-cann)">9.0.0→9.0.1</div><div class="stat-l">CANN 版本</div></div>` +
+    `<div class="stat"><div class="stat-v" style="color:var(--c-hw)">+A5 950PR</div><div class="stat-l">新硬件</div></div>`;
+}
+
+// =================== INIT ===================
 function init() {
-  drawDiagram('tab-v020', ops_v020_full, 'v020', null);
-  drawDiagram('tab-v023', ops_v023_full, 'v023', null);
-  drawDiagram('tab-v013', ops_v013_full, 'v013', null);
+  drawDiagram('tab-v020', OPS.v020, 'v020');
+  drawDiagram('tab-v023', OPS.v023, 'v023');
+  drawDiagram('tab-v013', OPS.v013, 'v013');
+  drawDiff();
+  showStats('v020', OPS.v020);
 
-  // Diff
-  drawDiffDiagram('tab-diff');
-  const addedSet = new Set(OPS_v023_new.map(o=>o[0]));
-  const removedSet = new Set(OPS_v023_removed);
-  const changedSet = new Set(OPS_v023_changed.map(o=>o[0]));
-
-  updateStats('v020', ops_v020_full);
+  // Tooltip
+  const tip = document.getElementById('ttip');
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('.op-rect,.node-rect');
+    if (!el) { tip.classList.remove('on'); return; }
+    const txt = el.closest('g')?.querySelector('text')?.textContent || '';
+    tip.innerHTML = `<b>${txt}</b>`;
+    tip.classList.add('on');
+  });
+  document.addEventListener('mousemove', e => {
+    tip.style.left = (e.clientX+14)+'px'; tip.style.top = (e.clientY-40)+'px';
+  });
+  document.addEventListener('mouseout', e => {
+    if (!e.target.closest('.op-rect,.node-rect')) tip.classList.remove('on');
+  });
 
   // Tab switching
   document.querySelectorAll('.tab').forEach(tab => {
@@ -548,22 +432,13 @@ function init() {
       document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
       const target = tab.dataset.tab;
       document.getElementById('tab-'+target).classList.add('active');
-      if (target === 'v020') updateStats('v020', ops_v020_full);
-      else if (target === 'v023') updateStats('v023', ops_v023_full);
-      else if (target === 'v013') updateStats('v013', ops_v013_full);
-      else {
-        document.getElementById('stats').innerHTML = `
-          <div class="stat-card"><div class="stat-value" style="color:var(--added)">+${OPS_v023_new.length}</div><div class="stat-label">新增算子 (v0.20→v0.23)</div></div>
-          <div class="stat-card"><div class="stat-value" style="color:var(--removed)">-${OPS_v023_removed.length}</div><div class="stat-label">移除算子</div></div>
-          <div class="stat-card"><div class="stat-value" style="color:var(--changed)">~${OPS_v023_changed.length}</div><div class="stat-label">修改算子</div></div>
-          <div class="stat-card"><div class="stat-value">${ops_v023_full.length-ops_v020_full.length}</div><div class="stat-label">净增算子</div></div>
-          <div class="stat-card"><div class="stat-value">${ops_v023_full.length}</div><div class="stat-label">v0.23 总算子数</div></div>
-        `;
-      }
+      if (target==='v020') showStats('v020',OPS.v020);
+      else if (target==='v023') showStats('v023',OPS.v023);
+      else if (target==='v013') showStats('v013',OPS.v013);
+      else showDiffStats();
     });
   });
 }
-
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
