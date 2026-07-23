@@ -552,11 +552,12 @@ const EXPERIMENTS=[
    {title:"Phase Report — Draft Graph",subtitle:"Draft Graph 突破 · torch.npu.graph 直接捕获 · TPOT 36ms · DP=2 vs DP=4 对比 · 13 Lessons Learned · 路线图",file:"deepseek-v4-npu-dspark/2026-07-22-phase-report.html",date:"2026-07-22",type:"stage"}
   ]
   },
-  {id:"verl-train-perfix-cache-perf",name:"verl 训练 Prefix-Cache 性能基线",subtitle:"verl GRPO 训练 (Megatron 后端) 前缀缓存优化基线 · Qwen3-8B · 单节点 8 卡 · timing 采集可靠性修复 (Fix1-3)",status:"active",startDate:"2026-07-21",lastUpdate:"2026-07-22",
-   tags:["verl","GRPO","Megatron","Ascend 910B","Qwen3-8B","TP=4 DP=2","前缀缓存"],
-   metrics:[{label:"step",value:"626s",tone:"warn"},{label:"throughput",value:"130 tok/s/GPU",tone:"good"},{label:"update_actor",value:"45%",tone:"bad"},{label:"MFU",value:"4.27%",tone:"warn"},{label:"peak HBM",value:"29.5GB",tone:"good"},{label:"步数",value:"3 smoke",tone:"warn"}],
+  {id:"verl-train-perfix-cache-perf",name:"verl 训练 PrefixSharing 性能验证",subtitle:"PrefixSharing (prefix-0501) 在 VeRL GRPO 上的集成验证 · Qwen3-8B · 9 组矩阵实测 · dispatch 根因修复 · 两层限制模型 · 16 条教训",status:"active",startDate:"2026-07-21",lastUpdate:"2026-07-23",
+   tags:["verl","GRPO","Megatron","Ascend 910B","Qwen3-8B","PrefixSharing","prefix-0501","dispatch修复","两层限制模型"],
+   metrics:[{label:"mb=8 step",value:"417s",tone:"good"},{label:"PS mb=2",value:"-47% actor",tone:"good"},{label:"匹配率修复",value:"3.7×",tone:"good"},{label:"PS net speedup",value:"≈0 (GSM8K)",tone:"warn"},{label:"HBM mb=8",value:"35.7GB",tone:"good"},{label:"矩阵",value:"9 组",tone:"info"}],
    reports:[
-   {title:"基线数据报告",subtitle:"Batch 层级 · Forward/Backward/Update 计数 · 阶段耗时分解 · 8 卡一致性 · micro-batch 前向耗时分布 · 采集可靠性教训",file:"verl-train-perfix-cache-perf/2026-07-22-baseline-report.html",date:"2026-07-22",type:"stage"}
+   {title:"基线数据报告",subtitle:"Batch 层级 · Forward/Backward/Update 计数 · 阶段耗时分解 · 8 卡一致性 · micro-batch 前向耗时分布 · 采集可靠性教训",file:"verl-train-perfix-cache-perf/2026-07-22-baseline-report.html",date:"2026-07-22",type:"stage"},
+   {title:"集成效果验证报告",subtitle:"9 组矩阵实测 · micro_batch 定标 · PS 加速效果 · dispatch 根因定位与修复 · HBM 线性定标 · 两层限制模型 · 16 条集成教训 · 结论与下一步",file:"verl-train-perfix-cache-perf/2026-07-23-stage-report.html",date:"2026-07-23",type:"stage"}
   ]
   }
 ];

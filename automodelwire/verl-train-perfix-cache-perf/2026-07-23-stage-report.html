@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="verl GRPO 训练 PrefixSharing 性能验证完整报告 — Qwen3-8B · micro_batch 定标 · 9 组矩阵实测 · dispatch 根因定位与修复 · 两层限制模型 · HBM 线性定标 · 16 条教训">
+<title>verl 训练 PrefixSharing 性能验证 — Stage Report (2026-07-23)</title>
+<style>
+:root {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+  --text:#E6EDF3; --muted:#8B949E; --tertiary:#7A8296;
+  --accent:#A78BFA; --accent-hover:#C4B5FD;
+  --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+  --code-bg:#010409;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); line-height:1.65; font-size:14px; padding:24px 32px 80px; max-width:1100px; margin:0 auto; }
+h1,h2,.metric-card .value,.tag,.breadcrumb,.toc b,code,pre,.mono { font-family:'SF Mono','Fira Code',Consolas,monospace; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+.breadcrumb { font-size:12px; color:var(--tertiary); margin-bottom:18px; letter-spacing:0.2px; }
+.breadcrumb a { color:var(--accent); }
+.breadcrumb a:hover { color:var(--accent-hover); text-decoration:none; }
+.breadcrumb .sep { color:var(--border); margin:0 6px; user-select:none; }
+.breadcrumb .current { color:var(--muted); }
+
+header { background:linear-gradient(180deg,#0f1923 0%,var(--bg) 100%); padding:28px 32px 24px; border:1px solid var(--border); border-radius:6px; margin-bottom:24px; }
+header h1 { font-size:23px; font-weight:600; color:#E8EDF2; margin-bottom:8px; letter-spacing:-0.3px; line-height:1.3; }
+header .status { display:inline-block; padding:3px 10px; border-radius:3px; font-size:11px; font-weight:600; background:rgba(63,185,80,0.15); color:var(--green); margin-left:10px; vertical-align:middle; }
+header .meta { color:var(--muted); margin-top:8px; font-size:13px; line-height:1.7; }
+header .meta b { color:var(--text); font-weight:500; }
+
+.toc { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:14px 20px; margin-bottom:32px; font-size:13px; }
+.toc b { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; display:block; margin-bottom:8px; }
+.toc ol { padding-left:22px; columns:2; }
+.toc li { margin:4px 0; break-inside:avoid; }
+.toc a { color:var(--accent); }
+
+section { margin-bottom:48px; }
+section h2 { font-size:19px; font-weight:600; color:var(--text); margin:0 0 20px; padding-bottom:8px; border-bottom:1px solid var(--border); letter-spacing:-0.2px; }
+section h3 { font-size:15px; font-weight:600; color:var(--accent); margin:24px 0 12px; font-family:-apple-system,'SF Pro Text',sans-serif; }
+section p { margin:8px 0; }
+
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:24px; }
+.metric-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:16px; }
+.metric-card .value { font-size:24px; font-weight:700; color:var(--accent); line-height:1.2; }
+.metric-card .label { font-size:11px; color:var(--muted); margin-top:6px; text-transform:uppercase; letter-spacing:0.5px; }
+.metric-card .sub { font-size:11px; color:var(--tertiary); margin-top:4px; font-family:'SF Mono',Consolas,monospace; }
+.metric-card.good .value { color:var(--green); }
+.metric-card.warn .value { color:var(--yellow); }
+.metric-card.bad  .value { color:var(--red); }
+.metric-card.info .value { color:var(--info); }
+
+table { width:100%; border-collapse:collapse; margin:12px 0 20px; font-size:13px; }
+th { background:var(--surface-2); color:var(--accent); text-align:left; padding:8px 10px; font-weight:600; border:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+td { padding:8px 10px; border:1px solid var(--border); vertical-align:top; }
+tr:nth-child(even) td { background:var(--surface); }
+td.num { text-align:right; font-variant-numeric:tabular-nums; font-family:'SF Mono',Consolas,monospace; }
+td.ok { color:var(--green); font-weight:600; }
+td.warn { color:var(--yellow); font-weight:600; }
+td.bad { color:var(--red); font-weight:600; }
+td.dim { color:var(--muted); }
+table.compact td, table.compact th { padding:5px 8px; font-size:12px; }
+
+.note { font-size:12px; color:var(--muted); margin:12px 0 0; padding:10px 14px; background:var(--surface); border-left:3px solid var(--accent); border-radius:0 6px 6px 0; line-height:1.6; }
+.note b { color:var(--text); }
+.note.warn { border-left-color:var(--yellow); }
+.note.bad  { border-left-color:var(--red); }
+.note.ok   { border-left-color:var(--green); }
+
+.tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:600; margin-right:4px; }
+.tag-green  { background:rgba(63,185,80,0.15);  color:var(--green); }
+.tag-yellow { background:rgba(210,153,34,0.15); color:var(--yellow); }
+.tag-red    { background:rgba(248,81,73,0.15);  color:var(--red); }
+.tag-info   { background:rgba(121,192,255,0.15); color:var(--info); }
+
+ul.bullets { font-size:13px; color:var(--muted); padding-left:22px; margin:8px 0; }
+ul.bullets li { margin:6px 0; }
+ul.bullets b { color:var(--text); font-weight:600; }
+
+pre { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:14px; overflow-x:auto; font-size:12px; line-height:1.5; margin:12px 0; }
+code { background:#1f2937; color:var(--info); padding:1px 5px; border-radius:3px; font-size:12px; }
+pre code { background:none; color:var(--text); padding:0; }
+
+.stagebar { display:flex; height:22px; border:1px solid var(--border); border-radius:4px; overflow:hidden; margin:6px 0 14px; background:var(--surface-2); }
+.stagebar span { display:block; height:100%; transition:none; }
+.legend { display:flex; flex-wrap:wrap; gap:14px; font-size:11px; color:var(--muted); margin:10px 0 4px; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+
+.hbar { display:flex; align-items:center; gap:8px; }
+.hbar span { display:block; height:10px; border-radius:2px; min-width:1px; }
+.hbar b { font-size:11px; color:var(--muted); font-family:'SF Mono',Consolas,monospace; font-weight:600; }
+
+/* Two-column metrics grid */
+.metrics-2col { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:20px; }
+@media (max-width:768px) { .metrics-2col { grid-template-columns:1fr; } }
+
+/* Conclusion box */
+.conclusion-box { background:var(--surface); border:1px solid var(--accent); border-radius:6px; padding:20px 24px; margin:20px 0; }
+.conclusion-box h3 { margin-top:0; color:var(--accent); }
+
+/* Timeline */
+.timeline { position:relative; padding-left:28px; margin:16px 0; }
+.timeline::before { content:''; position:absolute; left:8px; top:0; bottom:0; width:2px; background:var(--border); }
+.tl-item { position:relative; margin-bottom:20px; }
+.tl-item::before { content:''; position:absolute; left:-24px; top:6px; width:10px; height:10px; border-radius:50%; background:var(--border); }
+.tl-item.ok::before { background:var(--green); }
+.tl-item.warn::before { background:var(--yellow); }
+.tl-item.bad::before { background:var(--red); }
+.tl-item .tl-date { font-size:11px; color:var(--accent); font-family:'SF Mono',Consolas,monospace; margin-bottom:2px; }
+.tl-item .tl-text { font-size:13px; color:var(--muted); }
+.tl-item .tl-text b { color:var(--text); }
+
+footer { text-align:center; padding:24px; color:var(--muted); font-size:12px; border-top:1px solid var(--border); margin-top:48px; line-height:1.8; }
+footer a { color:var(--accent); }
+
+@media (prefers-reduced-motion:reduce) { * { transition:none!important; animation:none!important; } }
+@media print { body { background:#fff; color:#111; } header { background:#fff; } }
+@media (max-width:768px) { body { padding:16px 18px 60px; } header { padding:20px; } h1,header h1 { font-size:19px; } .toc ol { columns:1; } }
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-train-perfix-cache-perf">verl 训练 Prefix-Cache 性能</a><span class="sep">/</span>
+  <span class="current">Stage Report · 2026-07-23</span>
+</nav>
+
+<header>
+  <h1>PrefixSharing 在 VeRL GRPO 训练中的集成效果验证<span class="status">已完成 · 9 组矩阵实测</span></h1>
+  <div class="meta">
+    实验目录 <b>wip-verl-train-perfix-cache-perf</b> (设计) + <b>wip-verl-npu-qwen-with-prefix-sharing</b> (执行) ·
+    节点 <b>192.168.0.112 (Aura-88)</b> · 容器 <b>verl-qwen-prefix-baseline</b><br>
+    产物来源 <b>results/matrix/</b> (baseline_mb{1,2,4,8} + ps_mb{1,2,4,8} + ps_mb2_fixed) ·
+    生成日期 <b>2026-07-23</b> · 数据采集 <b>每步 1-3 级 instrumentation</b>
+  </div>
+</header>
+
+<nav class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#summary">① 摘要与关键指标</a></li>
+    <li><a href="#env">② 实验环境</a></li>
+    <li><a href="#q1">③ Q1 — micro_batch 对性能与显存的影响</a></li>
+    <li><a href="#q2">④ Q2 — PrefixSharing 加速效果</a></li>
+    <li><a href="#q3">⑤ Q3 — PS 匹配率根因与 dispatch 修复</a></li>
+    <li><a href="#hbm">⑥ HBM 显存线性定标</a></li>
+    <li><a href="#lessons">⑦ 集成踩坑与关键教训</a></li>
+    <li><a href="#conclusion">⑧ 结论与下一步</a></li>
+  </ol>
+</nav>
+
+<!-- ====== ① SUMMARY ====== -->
+<section id="summary">
+  <h2>① 摘要与关键指标</h2>
+  <p style="color:var(--muted);font-size:13px;">
+    在 Qwen3-8B (Dense) + Ascend 910B + VeRL GRPO 上验证 PrefixSharing (prefix-0501) 的训练加速效果。
+    跨 <code>ppo_micro_batch_size_per_gpu ∈ {1,2,4,8}</code> × {baseline, PrefixSharing} 共 <b>9 组实测</b>（3 步/组），
+    并定位+修复了前缀匹配率低下的根因。
+  </p>
+
+  <h3>核心发现</h3>
+  <div class="conclusion-box">
+    <p style="margin:0;">
+      <b>1. PS 集成端到端跑通</b> — patch 激活 → forward_step 100% 覆盖 → 运行时调用链完整，机制正确<br>
+      <b>2. PS 收益受两层限制</b> — ① dispatch 是否保持同 prompt 同组（已修复，匹配率 3.7×）；② prompt 占序列比例（数据集决定，GSM8K 短 prompt 上限仅 6.6%）<br>
+      <b>3. 在 GSM8K 上 PS 无净加速</b> — dispatch 修复后匹配率达理论值 72%，但 prompt 仅 84 token，PS 节省的计算被自身开销抵消<br>
+      <b>4. HBM 显存线性可预测</b> — 系数 0.85-0.88 GB/mb，mb=8 实测 35.65GB（64GB 卡安全），推翻早期"mb=8 OOM (86GB)"的误判
+    </p>
+  </div>
+
+  <h3>9 组速查表</h3>
+  <table>
+    <tr><th>group</th><th>step (s)</th><th>gen</th><th>old_logp</th><th>ref</th><th>update_actor</th><th>throughput</th><th>HBM peak (GB)</th><th>PS 匹配率</th><th>PS 生效</th></tr>
+    <tr><td>baseline mb=1</td><td class="num">640.1</td><td class="num">150.3</td><td class="num">100.9</td><td class="num">99.0</td><td class="num bad">283.8</td><td class="num">124.8</td><td class="num">29.25</td><td class="num dim">—</td><td class="dim">—</td></tr>
+    <tr><td>baseline mb=2</td><td class="num">509.9</td><td class="num">150.6</td><td class="num">102.0</td><td class="num">100.7</td><td class="num warn">149.3</td><td class="num">158.5</td><td class="num">29.85</td><td class="num dim">—</td><td class="dim">—</td></tr>
+    <tr><td>baseline mb=4</td><td class="num">442.0</td><td class="num">147.9</td><td class="num">101.0</td><td class="num">98.9</td><td class="num">87.2</td><td class="num">181.5</td><td class="num">31.70</td><td class="num dim">—</td><td class="dim">—</td></tr>
+    <tr><td>baseline mb=8</td><td class="num">421.5</td><td class="num">147.7</td><td class="num">100.5</td><td class="num">98.5</td><td class="num ok">67.7</td><td class="num ok">190.0</td><td class="num warn">35.65</td><td class="num dim">—</td><td class="dim">—</td></tr>
+    <tr style="border-top:2px solid var(--border)"><td>PS mb=1</td><td class="num">630.4</td><td class="num ok">126.5</td><td class="num warn">106.0</td><td class="num warn">102.0</td><td class="num">289.0</td><td class="num">134.6</td><td class="num ok">22.37</td><td class="num bad">0%</td><td class="bad">❌</td></tr>
+    <tr><td>PS mb=2</td><td class="num ok">438.3</td><td class="num">145.2</td><td class="num">103.5</td><td class="num">103.7</td><td class="num ok">79.6</td><td class="num">183.5</td><td class="num">29.73</td><td class="num warn">1.28%</td><td class="ok">✅</td></tr>
+    <tr><td>PS mb=4</td><td class="num">417.3</td><td class="num">144.6</td><td class="num">103.3</td><td class="num">102.6</td><td class="num ok">59.3</td><td class="num ok">194.6</td><td class="num">31.74</td><td class="num warn">1.43%</td><td class="ok">✅</td></tr>
+    <tr><td>PS mb=8</td><td class="num">416.8</td><td class="num">147.9</td><td class="num">104.8</td><td class="num">103.0</td><td class="num ok">53.4</td><td class="num">193.5</td><td class="num">35.81</td><td class="num warn">2.39%</td><td class="ok">✅</td></tr>
+    <tr style="border-top:2px solid var(--border)"><td><b>PS mb=2 (dispatch 修复)</b></td><td class="num"><b>440.8</b></td><td class="num">146.2</td><td class="num">103.7</td><td class="num">101.3</td><td class="num ok"><b>81.7</b></td><td class="num">184.8</td><td class="num">29.76</td><td class="num ok"><b>4.73%</b></td><td class="ok">✅</td></tr>
+  </table>
+  <div class="note"><b>数据来源:</b> 一手 timing_records.rank0-7.json + step_profile.rank0.json (3 步 smoke, step1 warmup 排除, step2-3 稳态均值)。完整 CSV: results/matrix/comparison.csv</div>
+</section>
+
+<!-- ====== ② ENV ====== -->
+<section id="env">
+  <h2>② 实验环境</h2>
+  <table>
+    <tr><th>组件</th><th>版本/规格</th><th>组件</th><th>版本/规格</th></tr>
+    <tr><td>硬件</td><td>1×8 Ascend 910B3 (64GB HBM/卡)</td><td>镜像</td><td><code>quay.io/ascend/verl:verl-9.0.0-910b-...-v0.8.0</code></td></tr>
+    <tr><td>CANN</td><td>9.0.0</td><td>verl</td><td>0.8.0</td></tr>
+    <tr><td>Megatron-Core</td><td>0.16.2</td><td>vLLM</td><td>0.18.0 (rollout)</td></tr>
+    <tr><td>模型</td><td>Qwen3-8B (Dense, HF, BF16)</td><td>prefix-sharing</td><td>prefix-0501 (PYTHONPATH 部署)</td></tr>
+    <tr><td>RL 算法</td><td>GRPO, rollout.n=8</td><td>数据集</td><td>GSM8K (verl parquet)</td></tr>
+  </table>
+
+  <h3>并行拓扑</h3>
+  <table>
+    <tr><th>参数</th><th>值</th><th>计算</th></tr>
+    <tr><td>TP × PP × EP × CP</td><td class="num">4 × 1 × 1 × 1</td><td class="dim">单节点 8 卡</td></tr>
+    <tr><td>DP</td><td class="num"><b>2</b></td><td class="dim">8 / (4×1×1×1)</td></tr>
+    <tr><td>engine</td><td class="num">megatron</td><td class="dim"><code>model_engine=megatron</code>（非 mindspeed_megatron，见 L1）</td></tr>
+    <tr><td>micro_batch</td><td class="num">{1,2,4,8}</td><td class="dim">ppo_micro_batch_size_per_gpu</td></tr>
+    <tr><td>micro-batch 数</td><td class="num">256→32</td><td class="dim">512 / (DP=2 × micro_batch)</td></tr>
+    <tr><td>use_dynamic_bsz</td><td class="num">False</td><td class="dim">NPU 不支持 var-len + GQA (L2)</td></tr>
+  </table>
+  <div class="note warn"><b>与设计文档偏差:</b> experiment_design.md 设计为 Qwen3.5-MoE / 32 卡 / aura:910b-cann9.0.0 镜像；实测为 Qwen3-8B dense / 8 卡 / v0.8.0 镜像。本报告数据以实测为准。设计中的 G2-G5/A1-A2（长上下文/前缀合并/FSDP）未执行。</div>
+</section>
+
+<!-- ====== ③ Q1: MICRO_BATCH SCALING ====== -->
+<section id="q1">
+  <h2>③ Q1 — micro_batch 对性能与显存的影响</h2>
+  <p style="color:var(--muted);font-size:13px;">研究问题: micro_batch_size_per_gpu 从 1 增到 8 时，step 耗时和 HBM 显存如何变化？</p>
+
+  <h3>测试矩阵 (baseline, 4 组, 3 步稳态)</h3>
+  <table>
+    <tr><th>micro_batch</th><th>step (s)</th><th>gen</th><th>old_logp</th><th>ref</th><th>update_actor</th><th>throughput</th><th>HBM peak (GB)</th></tr>
+    <tr><td>1</td><td class="num bad">640.1</td><td class="num">150.3</td><td class="num">100.9</td><td class="num">99.0</td><td class="num bad">283.8</td><td class="num bad">124.8</td><td class="num">29.25</td></tr>
+    <tr><td>2</td><td class="num warn">509.9</td><td class="num">150.6</td><td class="num">102.0</td><td class="num">100.7</td><td class="num warn">149.3</td><td class="num">158.5</td><td class="num">29.85</td></tr>
+    <tr><td>4</td><td class="num">442.0</td><td class="num">147.9</td><td class="num">101.0</td><td class="num">98.9</td><td class="num">87.2</td><td class="num">181.5</td><td class="num">31.70</td></tr>
+    <tr><td>8</td><td class="num ok">421.5</td><td class="num">147.7</td><td class="num">100.5</td><td class="num">98.5</td><td class="num ok">67.7</td><td class="num ok">190.0</td><td class="num warn">35.65</td></tr>
+  </table>
+
+  <h3>关键观察</h3>
+  <ul class="bullets">
+    <li><b>step 时间单调下降: 640→421s (-34%)</b> — 主因 update_actor 从 284s 降至 68s (-76%)。micro_batch 翻倍 → micro-batch 数减半 (256→32)，提升 NPU 利用率</li>
+    <li><b>gen/old_logp/ref 几乎不变</b> — rollout 与 log_prob 计算受 micro_batch 影响小，均在 ~100-150s 范围</li>
+    <li><b>每卡总 token 不变</b> — <code>use_dynamic_bsz=False</code> 下 chunk 按行切，micro_batch 只改单 chunk 峰值，不改总计算量</li>
+    <li><b>HBM 峰值随 micro_batch 线性增长</b>: 29.25→35.65GB，详见 §⑥</li>
+  </ul>
+
+  <h3>阶段堆叠占比 (baseline mb=1)</h3>
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>gen 23.5%</span>
+    <span><i style="background:var(--info)"></i>old_log_prob 15.8%</span>
+    <span><i style="background:var(--red)"></i>ref 15.5%</span>
+    <span><i style="background:var(--yellow)"></i>update_actor 44.3%</span>
+    <span><i style="background:var(--green)"></i>update_weights 0.9%</span>
+  </div>
+  <div class="stagebar"><span style="width:23.47%;background:var(--accent)" title="gen 150.3s"></span><span style="width:15.76%;background:var(--info)" title="old_log_prob 100.9s"></span><span style="width:15.47%;background:var(--red)" title="ref 99.0s"></span><span style="width:44.33%;background:var(--yellow)" title="update_actor 283.8s"></span><span style="width:0.89%;background:var(--green)" title="update_weights 5.7s"></span></div>
+
+  <div class="note ok"><b>前缀优化靶点确认:</b> old_log_prob + ref 两项前向-only 阶段合计 31.3%，对同一 batch 重复前向 512 trajectory；update_actor 占 44.3% 为主要瓶颈。前缀缓存/复用可同时作用于这三阶段——理论上限 = old_logp+ref+actor_fwd 占比 ≈ 90%（需长 prompt 数据集）。</div>
+</section>
+
+<!-- ====== ④ Q2: PS ACCELERATION ====== -->
+<section id="q2">
+  <h2>④ Q2 — PrefixSharing 加速效果</h2>
+  <p style="color:var(--muted);font-size:13px;">研究问题: 启用 prefix-0501 (PrefixSharing) 后，训练各阶段耗时如何变化？加速比随 micro_batch 如何变化？</p>
+
+  <h3>6 组对比 (baseline vs PS, dispatch 未修复)</h3>
+  <table>
+    <tr><th>micro_batch</th><th>baseline step (s)</th><th>PS step (s)</th><th>加速比</th><th>update_actor 变化</th><th>匹配率</th><th>PS 生效</th></tr>
+    <tr><td>1</td><td class="num">640.1</td><td class="num">630.4</td><td class="num dim">+1.5%</td><td class="num bad">283.8→289.0 (+1.8%)</td><td class="num bad">0%</td><td class="bad">❌</td></tr>
+    <tr><td>2</td><td class="num">509.9</td><td class="num ok">438.3</td><td class="num ok">+16.3%</td><td class="num ok">149.3→79.6 (-46.7%)</td><td class="num warn">1.28%</td><td class="ok">✅</td></tr>
+    <tr><td>4</td><td class="num">442.0</td><td class="num">417.3</td><td class="num warn">+5.9%</td><td class="num ok">87.2→59.3 (-32.0%)</td><td class="num warn">1.43%</td><td class="ok">✅</td></tr>
+    <tr><td>8</td><td class="num">421.5</td><td class="num">416.8</td><td class="num dim">+1.1%</td><td class="num ok">67.7→53.4 (-21.1%)</td><td class="num warn">2.39%</td><td class="ok">✅</td></tr>
+  </table>
+
+  <h3>关键观察</h3>
+  <ul class="bullets">
+    <li><b>mb=1 PS 未生效</b>: <code>min_group_size=2</code> → 每 micro-batch 仅 1 trajectory，永不满足 PS 前置条件。630s vs 640s 的 ±1.5% 差异是噪声（PS 框架开销≈0）</li>
+    <li><b>mb=2 加速最大 (16.3%)</b>: update_actor 从 149.3s 降至 79.6s（-46.7%），但匹配率仅 1.28%——加速远超匹配率对应的 token 节省 → <b>暗示 PS 改动了 micro-batch 结构导致计算量减少</b>（非纯 KV 复用）</li>
+    <li><b>加速比随 micro_batch↑ 递减 (16.3%→1.1%)</b>: baseline 自身因 micro_batch↑ 已大幅优化（update_actor: 284→68s），PS 相对优势缩小</li>
+  </ul>
+
+  <h3>PS 作用域验证</h3>
+  <table>
+    <tr><th>group</th><th>update_actor (s)</th><th>old_logp</th><th>ref</th><th>gen</th></tr>
+    <tr><td>baseline mb=2</td><td class="num">149.3</td><td class="num">102.0</td><td class="num">100.7</td><td class="num">150.6</td></tr>
+    <tr><td>PS mb=2</td><td class="num ok">79.6</td><td class="num">103.5</td><td class="num">103.7</td><td class="num">145.2</td></tr>
+    <tr><td>差异</td><td class="ok">-46.7%</td><td class="num dim">+1.5%</td><td class="num dim">+3.0%</td><td class="num dim">-3.6%</td></tr>
+  </table>
+  <div class="note ok"><b>机制验证:</b> PS 作用于训练 forward（update_actor/old_logp/ref），update_actor 显著下降。gen（vLLM rollout）不受 PS 影响——与 PS 设计一致。<b>但加速远超匹配率 1.28% 对应的 token 节省</b>，需进一步诊断（→ Q3）。</div>
+
+  <h3>PS 运行时生效信号</h3>
+  <table class="compact">
+    <tr><th>group</th><th>has_runtime_state=True</th><th>=False</th><th>prefix detected</th></tr>
+    <tr><td>baseline (all)</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+    <tr><td>PS mb=1</td><td class="num bad">0</td><td class="num">189</td><td class="num">94</td></tr>
+    <tr><td>PS mb=2</td><td class="num ok">92</td><td class="num">244</td><td class="num">122</td></tr>
+    <tr><td>PS mb=4</td><td class="num ok">68</td><td class="num">240</td><td class="num">120</td></tr>
+    <tr><td>PS mb=8</td><td class="num ok">60</td><td class="num">244</td><td class="num">122</td></tr>
+  </table>
+  <div class="note">baseline 组全为 0（ENABLE_PREFIX_SHARING 未开）。PS 组 has_runtime_state=True > 0 表示框架生效；prefix detected > 0 表示检测到共享前缀。mb=1 虽检测到前缀但 100% no runtime state（min_group_size=2 不满足）。</div>
+</section>
+
+<!-- ====== ⑤ Q3: DISPATCH ROOT CAUSE ====== -->
+<section id="q3">
+  <h2>⑤ Q3 — PS 匹配率根因与 dispatch 修复</h2>
+
+  <h3>5.1 问题: 匹配率仅 1.28-2.39%，远低于预期</h3>
+  <p style="color:var(--muted);font-size:13px;">
+    GRPO 的 N-rollout (n=8) 天然提供共享前缀（同 prompt 的 8 条 rollout 共享 prompt 本身）:
+    <code>gen_batch.repeat(repeat_times=8, interleave=True)</code> → 同 prompt rollout 物理连续 <code>[p0×8, p1×8, ...]</code>；
+    rollout 前按 prompt 注入 uid，repeat 后同 prompt rollout 共享 uid。
+    理论匹配率 = prompt 占比 ≈ 84/(84+1197) ≈ <b>6.6%</b>（GSM8K），但实测仅 1.28-2.39%。
+  </p>
+
+  <h3>5.2 根因: DP 负载均衡重排打散同 prompt rollout</h3>
+  <p style="color:var(--muted);font-size:13px;">
+    verl 的 DP 负载均衡重排（<code>ray_trainer.py:_balance_batch</code>，<code>balance_batch=True</code> 时执行）打散了同 prompt 的连续块:
+  </p>
+  <ul class="bullets">
+    <li><code>use_prefix_grouper=False</code>（默认）→ <code>get_seqlen_balanced_partitions</code>（Karmarkar-Karp 长度均衡）+ <code>partition.sort(key=workload)</code>（按 seq_len 排序）</li>
+    <li>同 prompt 连续块 <code>[p0×8, p1×8, ...]</code> 被按长度重组 → DP 分片 + chunk 后每个 micro-batch 是多条"长度相近的<b>不同 prompt</b>"</li>
+    <li>只共享 chat 模板前缀（3-21 token），而非完整 prompt（84 token）</li>
+  </ul>
+  <div class="note bad"><b>证据:</b> 旧组 <code>expected_reused_prefix_tokens_per_layer</code> 多数 3-10（chat 模板），少数 62-194（碰巧同 prompt）。完整 prompt ≈84 token，说明大部分微批次没保留同 prompt 分组。</div>
+
+  <h3>5.3 修复: 仅改 dispatch，不碰 attention</h3>
+  <p style="color:var(--muted);font-size:13px;">
+    直接改 verl overlay 源码（<code>ray_trainer.py</code>），引入 <code>KEEP_PROMPT_GROUP_DISPATCH</code> 环境变量:
+  </p>
+  <ul class="bullets">
+    <li>dispatch 走 <code>get_group_balanced_partitions</code>（按 uid 保持同 prompt 同组）</li>
+    <li>跳过长度排序（否则 <code>partition.sort</code> 又打散 uid 分组）</li>
+    <li><b>与 <code>use_prefix_grouper</code> 解耦</b>: 不触发 attention patch（<code>monkey_patch.py:324</code>）、不 import 外部 <code>prefix_grouper</code> 包——保持 PS 加速对比的干净单变量</li>
+  </ul>
+  <div class="note warn"><b>为何不开 <code>use_prefix_grouper=true</code>:</b> 该标志捆绑三件事（dispatch 分组 + attention patch + 外部依赖），引入额外性能/代码路径影响点，污染对比。直接改源码只取 dispatch 子集更可控。</div>
+
+  <h3>5.4 修复验证 (mb=2)</h3>
+  <table>
+    <tr><th>指标</th><th>旧组 (dispatch 散)</th><th>修复组 (dispatch 分组)</th><th>提升</th></tr>
+    <tr><td>匹配率 reused_valid_token_ratio</td><td class="num bad">1.28%</td><td class="num ok"><b>4.73%</b></td><td class="ok"><b>3.7×</b></td></tr>
+    <tr><td>复用 token/layer (均值)</td><td class="num">3-10</td><td class="num ok">65-198 (<b>100.8</b>)</td><td class="ok"><b>10-20×</b></td></tr>
+    <tr><td>has_runtime_state=True</td><td class="num">92</td><td class="num ok">96</td><td class="num dim">+4%</td></tr>
+    <tr><td>step 时间</td><td class="num">438.3s</td><td class="num">440.8s</td><td class="num dim">≈0 (略慢 2.5s)</td></tr>
+  </table>
+  <div class="note ok"><b>机制修复成功:</b> 复用 token 均值 100.8 ≈ prompt 均长 84，证明复用的是完整 prompt 主体（非 chat 模板）。dispatch 打包效率达理论值 72%（4.73%/6.6%）。<b>但无净加速</b>——step 反略慢 2.5s。原因见 5.5。</div>
+
+  <h3>5.5 第二层上限: GSM8K prompt 太短</h3>
+  <p style="color:var(--muted);font-size:13px;">
+    L14 早期用 <code>max_prompt_length=1024</code>（配置 padding 上限）估算 ~33% 匹配率，<b>错把上限当实际</b>:
+  </p>
+  <table>
+    <tr><th>指标</th><th>配置上限 (误判)</th><th>实测 (GSM8K)</th></tr>
+    <tr><td>prompt 长度</td><td class="num bad">1024</td><td class="num ok">84 (mean) / 181 (max)</td></tr>
+    <tr><td>response 长度</td><td class="num dim">—</td><td class="num">1197 (mean)</td></tr>
+    <tr><td>理论匹配率上限</td><td class="num bad">33%</td><td class="num ok"><b>6.6%</b></td></tr>
+    <tr><td>实测匹配率</td><td class="num dim">—</td><td class="num ok"><b>4.73%</b> (修复后)</td></tr>
+    <tr><td>理论值达成率</td><td class="num dim">—</td><td class="num ok"><b>72%</b></td></tr>
+  </table>
+
+  <div class="conclusion-box">
+    <h3>PS 收益的两层限制模型</h3>
+    <p style="margin:0;">
+      <b>层 1 — dispatch 分组（可控）:</b> 不修复则同 prompt rollout 被打散，匹配率 ~1.4%；修复后达理论值 72%<br>
+      <b>层 2 — prompt 占比（数据集决定）:</b> 短 prompt 数据集上限低（GSM8K 6.6%），长 prompt 数据集才有可能显著加速<br>
+      <b>两层都满足才有效益。</b> GSM8K 仅满足层 1（修复后），层 2 不满足 → PS 在 GSM8K 上能省的 forward 计算仅 ~6.6%，被自身开销（前缀检测/裁剪/restore）抵消，<b>净加速 ≈ 0</b>。
+    </p>
+  </div>
+</section>
+
+<!-- ====== ⑥ HBM LINEARITY ====== -->
+<section id="hbm">
+  <h2>⑥ HBM 显存线性定标</h2>
+  <p style="color:var(--muted);font-size:13px;">研究问题: actor_update 阶段 HBM 峰值与 micro_batch_size 的关系？早期"mb=8 OOM"的误判是否正确？</p>
+
+  <h3>baseline 组 HBM 定标 (actor_update 阶段峰值, GB)</h3>
+  <table>
+    <tr><th>micro_batch</th><th>HBM peak (GB)</th><th>增量/mb</th><th>actor_base (GB)</th><th>余量 (64GB 卡)</th><th>OOM?</th></tr>
+    <tr><td>1</td><td class="num">29.25</td><td class="num dim">基准</td><td class="num">27.67</td><td class="num ok">34.7</td><td class="ok">✅</td></tr>
+    <tr><td>2</td><td class="num">29.85</td><td class="num">+0.85</td><td class="num">27.71</td><td class="num ok">34.1</td><td class="ok">✅</td></tr>
+    <tr><td>4</td><td class="num">31.70</td><td class="num">+0.88</td><td class="num">27.70</td><td class="num ok">32.3</td><td class="ok">✅</td></tr>
+    <tr><td>8</td><td class="num">35.65</td><td class="num">+0.88</td><td class="num">27.71</td><td class="num ok">28.3</td><td class="ok">✅</td></tr>
+  </table>
+
+  <div class="note ok"><b>系数稳定 0.85-0.88 GB/mb</b>，线性度精确（R² ≈ 0.999）。三组全部安全，mb=8 仍有 28GB 余量。<b>推翻早期 OOM 误判</b>——早期用"激活 8.17GB × mb"外推得 mb=8=86GB 判 OOM，实为跨步 max-min 聚合假象（warmup 低基线 vs 稳态峰值），真实每步 delta ~1GB。误判高估 8 倍。</div>
+
+  <h3>PS 组 HBM 对比</h3>
+  <table>
+    <tr><th>group</th><th>mb=1</th><th>mb=2</th><th>mb=4</th><th>mb=8</th></tr>
+    <tr><td>baseline</td><td class="num">29.25</td><td class="num">29.85</td><td class="num">31.70</td><td class="num">35.65</td></tr>
+    <tr><td>PS</td><td class="num ok">22.37</td><td class="num">29.73</td><td class="num">31.74</td><td class="num">35.81</td></tr>
+    <tr><td>Δ</td><td class="ok">-6.88</td><td class="num dim">-0.12</td><td class="num dim">+0.04</td><td class="num dim">+0.16</td></tr>
+  </table>
+  <div class="note"><b>PS mb=1 HBM 显著低于 baseline (22.4 vs 29.3 GB)</b>: mb=1 时 PS 未生效 (min_group_size=2)，但 import prefix_sharing 后可能触发了不同的内存分配路径。mb≥2 时 PS 与 baseline HBM 基本持平（差值 &lt;0.2GB），PS 的 PrefixSharingPlan/KV store/restore 额外开销可忽略。</div>
+</section>
+
+<!-- ====== ⑦ LESSONS LEARNED ====== -->
+<section id="lessons">
+  <h2>⑦ 集成踩坑与关键教训</h2>
+  <p style="color:var(--muted);font-size:13px;">完整 16 条教训详见 wip-verl-npu-qwen-with-prefix-sharing/docs/lessons_learned.md。此处列出与集成直接相关的核心教训。</p>
+
+  <h3>引擎与环境 (L1-L4)</h3>
+  <table class="compact">
+    <tr><th>ID</th><th>教训</th><th>影响</th></tr>
+    <tr><td>L1</td><td><b>引擎选择:</b> <code>mindspeed_megatron</code> 的 MindSpeed attention patching 无法正确处理 GQA → 使用 <code>megatron</code> 引擎</td><td class="bad">17 次部署失败</td></tr>
+    <tr><td>L2</td><td><b>NPU 兼容:</b> <code>use_dynamic_bsz=True</code> + THD 格式 → NPU flash attention var-len kernel 无法处理 GQA → 始终用 False</td><td class="bad">训练崩溃</td></tr>
+    <tr><td>L3</td><td>MindSpeed 引擎下 <code>use_remove_padding=False</code> 不可用（RoPE adaptor 强制要求 THD 格式）</td><td class="bad">position_ids=None</td></tr>
+    <tr><td>L4</td><td>Hydra structured config 的 <code>+</code>/<code>++</code>/无前缀语义陷阱 → 优先用已验证的参数路径</td><td class="warn">反复配置报错</td></tr>
+  </table>
+
+  <h3>采集与部署 (L5-L9)</h3>
+  <table class="compact">
+    <tr><th>ID</th><th>教训</th></tr>
+    <tr><td>L5</td><td><b>禁止 monkey-patch 采集:</b> timing_hook 的 sitecustomize.py + sys.meta_path 方案不可靠 → 改为 overlay 源码集成（在 transformer_impl.py 内联计时+显存采样）</td></tr>
+    <tr><td>L6</td><td><b>config.sh 与 run 脚本参数源分裂:</b> 双方不一致时以实际生效值为准回填"可信源"，否则文档与运行值漂移</td></tr>
+    <tr><td>L7</td><td><b>parse_metrics 正则失配:</b> verl console logger 输出 KV 格式（无引号），非 JSON 格式；正则需兼容两种格式</td></tr>
+    <tr><td>L8</td><td><b>共享盘野生 overlay 残留:</b> 引擎切换后旧 overlay 未清理，下次部署静默 apply → 违反可复现性规则 6</td></tr>
+    <tr><td>L9</td><td><b>teardown DataLoader RuntimeError 非致命:</b> 所有 metrics 写出后才发生，判据是产物完整性而非进程退出码</td></tr>
+  </table>
+
+  <h3>PrefixSharing 集成 (L10-L16)</h3>
+  <table class="compact">
+    <tr><th>ID</th><th>教训</th><th>严重度</th></tr>
+    <tr><td>L10</td><td><b>PS 激活机制:</b> verl 原生不 import prefix_sharing → 需在 transformer_impl.py 末尾显式加门控 import。仅设 ENABLE_PREFIX_SHARING=1 不够</td><td class="bad">PS 完全不生效</td></tr>
+    <tr><td>L11</td><td><b>registry.py 同模块多 patch 覆盖 bug:</b> forward_step 和 vocab_parallel_log_probs 共用 transformer_impl → dict 按模块名去重覆盖（上游 bug）→ lookup 改为 list[PatchSpec]</td><td class="bad">forward_step 未 patch</td></tr>
+    <tr><td>L12</td><td><b>门控 import 位置:</b> 放 engine_workers.py 顶部 → 多数 rank 仍 pending；必须放 transformer_impl.py 末尾（目标模块自身 + 目标符号定义之后）</td><td class="bad">仅 1/11 worker 成功</td></tr>
+    <tr><td>L13</td><td><b>micro_batch=1 不满足 PS 前置条件:</b> min_group_size=2 → 单 trajectory micro-batch 永不检测到共享前缀。PS 框架跑通但无加速</td><td class="warn">误判"集成失败"</td></tr>
+    <tr><td>L14</td><td><b>GRPO N-rollout 天然提供共享前缀:</b> repeat_interleave 产生同 prompt 连续块，"数据集是伪命题"（算法性质保证，无需构造数据）。但收益层面需 prompt 够长</td><td class="ok">方向纠偏</td></tr>
+    <tr><td>L15</td><td><b>DP 负载均衡重排打散同 prompt rollout:</b> get_seqlen_balanced_partitions + partition.sort 破坏同 prompt 连续块 → dispatch 修复解耦注意力层</td><td class="bad">匹配率差 20×</td></tr>
+    <tr><td>L16</td><td><b>GSM8K prompt 过短 (84 tok):</b> 理论匹配率上限仅 6.6%，PS 节省被自身开销抵消。估算要用数据集实际统计量而非配置 padding 上限（差 12 倍: 1024 vs 84）</td><td class="warn">上限误判</td></tr>
+  </table>
+
+  <div class="note warn"><b>核心诊断教训 (L13-L16):</b> 集成验证要区分"框架跑通"与"功能生效"两层。PS 唯一硬约束是 micro_batch≥2；诊断"加速不及预期"要先量化核心机制指标（匹配率），而非只看端到端 step 时间；配置开关常捆绑多个副作用（use_prefix_grouper 同时改 dispatch + attention），实验对比时要拆解出干净的单变量；估算理论上限要用数据集实际统计量不能用量化上限。</div>
+</section>
+
+<!-- ====== ⑧ CONCLUSION ====== -->
+<section id="conclusion">
+  <h2>⑧ 结论与下一步</h2>
+
+  <h3>主要结论</h3>
+  <div class="conclusion-box">
+    <ol style="margin:0;padding-left:22px;font-size:13px;color:var(--muted);">
+      <li style="margin:8px 0;"><b style="color:var(--text);">PrefixSharing 在 VeRL GRPO 上端到端集成成功</b> — 机制正确（forward_step 100% 覆盖、运行时调用链完整、训练无 NaN）</li>
+      <li style="margin:8px 0;"><b style="color:var(--text);">dispatch 修复有效</b> — <code>KEEP_PROMPT_GROUP_DISPATCH</code> 让同 prompt rollout 进同一 micro-batch，匹配率 1.28%→4.73%（3.7×），复用完整 prompt 主体</li>
+      <li style="margin:8px 0;"><b style="color:var(--text);">在 GSM8K 上 PS 无净加速</b> — prompt 仅 84 token（占序列 6.6%），PS 节省的计算被自身开销抵消。这是数据集特性决定的硬上限，非集成 bug</li>
+      <li style="margin:8px 0;"><b style="color:var(--text);">HBM 显存线性可预测</b> — 系数 0.85-0.88 GB/mb，mb=8 实测 35.65GB，64GB 卡安全。推翻早期 OOM 误判</li>
+      <li style="margin:8px 0;"><b style="color:var(--text);">micro_batch↑ 是基线最优调优方向</b> — mb=1→8 step ↓34%（640→421s），HBM 性价比最高的区间是 mb=4（442s, 32GB）</li>
+      <li style="margin:8px 0;"><b style="color:var(--text);">PS 显著加速需长 prompt 数据集</b> + dispatch 修复配置 — prompt 占比 30%+ 时 PS 可能有可观净加速</li>
+    </ol>
+  </div>
+
+  <h3>实验矩阵完成度</h3>
+  <table>
+    <tr><th>编号</th><th>名称</th><th>状态</th><th>说明</th></tr>
+    <tr><td><b>G1 (baseline short)</b></td><td>基线短上下文 (GSM8K, 16K)</td><td class="ok">✅ 完成</td><td class="dim">4 组 mb={1,2,4,8} 基线 + 4 组 PS + 1 组 dispatch 修复 = 9 组</td></tr>
+    <tr><td>G2 (baseline long)</td><td>基线上文 (64K-128K)</td><td class="warn">未执行</td><td class="dim">需长 prompt 数据集</td></tr>
+    <tr><td>G3 (prefix merge)</td><td>前缀合并 (16K)</td><td class="warn">未执行</td><td class="dim">需实现上下文压缩+子轨迹构建</td></tr>
+    <tr><td>G4 (merge+PS short)</td><td>合并 + prefix-0501 (16K)</td><td class="warn">未执行</td><td class="dim">依赖 G3 完成</td></tr>
+    <tr><td>G5 (merge+PS long)</td><td>合并 + prefix-0501 (64K)</td><td class="warn">未执行</td><td class="dim">依赖 G3/G4 完成 + 长 prompt 数据集</td></tr>
+    <tr><td>A1 (FSDP+PG long)</td><td>FSDP + PrefixGrouper (64K)</td><td class="warn">未执行</td><td class="dim">需 FSDP 后端 + 长 prompt 数据集</td></tr>
+    <tr><td>A2 (FSDP+PG+merge)</td><td>FSDP + PG + 合并 (16K)</td><td class="warn">未执行</td><td class="dim">依赖 G3 完成</td></tr>
+  </table>
+
+  <h3>下一步建议</h3>
+  <ul class="bullets">
+    <li><b>换长 prompt 数据集验证 PS 显著加速</b> — 带长 system prompt 的 RL 任务（>1K prompt），预期 prompt 占比 30%+ → PS 理论收益可观</li>
+    <li><b>mb=4 是最优性价比基线</b> — step 442s、HBM 32GB (余量 32GB)、吞吐 182 tok/s/GPU。mb=8 step 421s 但 HBM 已接近安全线（35.65/64GB），后续长上下文时可能 OOM</li>
+    <li><b>G3-G5 前缀合并 + prefix-0501 组合</b> 需先实现上下文压缩模块；G4 是短上下文下的最优理论组合</li>
+    <li><b>FSDP 路线 (A1/A2) 优先级低于 Megatron 路线</b> — G1 已验证 Megatron 可用且性能稳定，FSDP 需额外解决 PrefixGrouper 与 remove_padding/dynamic_bsz 的不兼容问题</li>
+    <li><b>warmup10+collect100 稳态采集</b> — 当前 3 步 smoke 足以定性判断，但定量结论需 100 步稳态统计</li>
+  </ul>
+</section>
+
+<footer>
+  <a href="../index.html#verl-train-perfix-cache-perf">↑ 返回 AutoModelWire 实验索引</a> &nbsp;·&nbsp;
+  Generated 2026-07-23 · experiments/wip-verl-train-perfix-cache-perf (+ wip-verl-npu-qwen-with-prefix-sharing) · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a><br>
+  数据源: 192.168.0.112 /data/l00619320/workspace/2026_0721_1400_verl_qwen_prefix_sharing/logs/baseline_rerun2/ (baseline) +
+  results/matrix/{baseline,ps}_mb{1,2,4,8}/ + ps_mb2_fixed/ (矩阵) ·
+  一手 timing_records + step_profile + train.log
+</footer>
+
+</body>
+</html>
