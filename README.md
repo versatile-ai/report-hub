@@ -4,8 +4,6 @@
 >
 > 🌐 在线访问:<https://versatile-ai.github.io/report-hub/>
 
-[在线访问](https://versatile-ai.github.io/report-hub/) · [设计规范](docs/design-guide.md) · [模块说明](CLAUDE.md)
-
 ## 概述
 
 report-hub 把 versatile-ai 下各仓库的实验/阶段报告聚合为一个纯静态站点:每份报告是单个 HTML 文件,内联全部 CSS/JS,无构建、无外部依赖、无后端。URL 即路径,可直链分享,托管于 GitHub Pages 或任意静态服务器。
