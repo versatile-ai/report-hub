@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="<!-- 一句话摘要,用于分享预览 -->">
+<title><!-- <实验名> — <报告类型> (YYYY-MM-DD) --></title>
+<style>
+  /* ───────────────────────────────────────────────────────────
+     深态 token —— 原样复制自 docs/design-guide.md §2,勿改任何值。
+     报告页统一深色:沉稳,适合长文+数据+代码。accent 紫贯穿全站。
+     ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  }
+
+  /* Display 角色:标题、大数字、日期、tag 用等宽,工程控制台质感 */
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+  }
+
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ── Breadcrumb(每份报告顶部必须有)── */
+  .breadcrumb{
+    max-width:1100px;margin:0 auto;padding:20px 48px 0;
+    font-size:12px;color:var(--tertiary);letter-spacing:0.2px;
+  }
+  .breadcrumb a{color:var(--muted)}
+  .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)}
+  .breadcrumb .current{color:var(--text)}
+
+  /* ── Header ── */
+  header{
+    max-width:1100px;margin:0 auto;padding:28px 48px 32px;
+    border-bottom:1px solid var(--border);
+  }
+  h1{
+    font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;
+    margin-bottom:10px;color:var(--text);
+  }
+  .meta{font-size:13px;color:var(--muted);line-height:1.6}
+  .meta b{color:var(--text);font-weight:500}
+
+  /* ── TOC(section ≥ 4 时必备)── */
+  .toc{
+    max-width:1100px;margin:0 auto;padding:24px 48px;
+    border-bottom:1px solid var(--border);
+  }
+  .toc-label{
+    font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)}
+  .toc a:hover{color:var(--accent)}
+
+  /* ── Main container ── */
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+
+  section{margin-bottom:48px}
+  section:last-child{margin-bottom:0}
+  h2{
+    font-size:20px;font-weight:600;letter-spacing:-0.3px;
+    margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)}
+  p.muted,.muted{color:var(--muted)}
+  ul,ol{margin:0 0 14px 22px}
+  li{margin-bottom:6px}
+
+  /* ── Metric / Stat 卡片(§3)── */
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;margin-bottom:20px;
+  }
+  .metric,.stat{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 18px;
+  }
+  .metric .v,.stat .v{
+    font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  .metric .label,.stat .label{
+    font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary);
+  }
+  .v.good,.mv-good{color:var(--green)}
+  .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)}
+  .v.info,.mv-info{color:var(--info)}
+
+  /* ── Table(§3)── */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{
+    background:var(--surface-2);color:var(--accent);text-align:left;
+    font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+  }
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+
+  /* ── Timeline(§3)── */
+  .timeline{position:relative;padding-left:22px;margin-bottom:20px}
+  .timeline::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin-bottom:18px}
+  .tl-item::before{
+    content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 3px var(--bg);
+  }
+  .tl-item.ok::before{background:var(--green)}
+  .tl-item.warn::before{background:var(--yellow)}
+  .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary);margin-bottom:2px}
+  .tl-body{color:var(--text)}
+
+  /* ── Badge / Tag(§3)── */
+  .badge{
+    display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+    font-weight:600;letter-spacing:0.4px;
+  }
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
+  .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{
+    display:inline-block;padding:3px 9px;border-radius:3px;font-size:11px;
+    color:var(--tertiary);background:var(--surface-2);letter-spacing:0.2px;margin:0 6px 6px 0;
+  }
+
+  /* ── Note(强调块,§3)── */
+  .note{
+    border-left:3px solid var(--accent);background:var(--info-bg);
+    padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px;
+  }
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+
+  /* ── Code block(§3)── */
+  pre{
+    background:var(--code-bg);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;overflow-x:auto;margin-bottom:16px;font-size:13px;
+    font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text);
+  }
+  code{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+    background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text);
+  }
+  pre code{background:none;padding:0}
+
+  /* ── Footer ── */
+  footer{
+    max-width:1100px;margin:0 auto;padding:24px 48px 40px;
+    border-top:1px solid var(--border);font-size:12px;color:var(--tertiary);
+  }
+  footer a{color:var(--accent)}
+
+  /* ── Responsive ── */
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px}
+    h2{font-size:18px}
+  }
+
+  /* ── Accessibility(硬要求 §5)── */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<!-- Breadcrumb(必须)—— 修改链接与文案 -->
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html"><!-- 仓库名 --></a><span class="sep">/</span>
+  <a href="../index.html#<!-- experiment-id -->"><!-- 实验名 --></a><span class="sep">/</span>
+  <span class="current"><!-- 报告类型 --></span>
+</nav>
+
+<header>
+  <h1><!-- 实验标题 --></h1>
+  <div class="meta">
+    <!-- 报告类型 --> · <!-- 周期 YYYY-MM-DD → YYYY-MM-DD --> · <!-- 集群 --> · <!-- branch --> · 报告日期 <!-- YYYY-MM-DD -->
+  </div>
+</header>
+
+<!-- TOC:section ≥ 4 个时必备;每个 <section> 须有 id,<h2> 文案与条目一致 -->
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">关键指标</a></li>
+    <li><a href="#summary">概述</a></li>
+    <!-- 每个section一条 -->
+  </ol>
+</nav>
+
+<main class="container">
+
+  <!-- ── 关键指标 ── -->
+  <section id="metrics">
+    <h2>关键指标</h2>
+    <!-- Metric 卡:大数字(Display,语义色)+ 小标签(uppercase,tertiary) -->
+    <div class="metrics">
+      <div class="metric"><div class="v good"><!-- 值 --></div><div class="label"><!-- 标签 --></div></div>
+      <div class="metric"><div class="v warn"><!-- 值 --></div><div class="label"><!-- 标签 --></div></div>
+      <div class="metric"><div class="v info"><!-- 值 --></div><div class="label"><!-- 标签 --></div></div>
+    </div>
+  </section>
+
+  <!-- ── 概述 ── -->
+  <section id="summary">
+    <h2>概述</h2>
+    <p class="muted"><!-- 一段话概述本报告内容与结论 --></p>
+
+    <!-- Note 强调块示例 -->
+    <div class="note ok">
+      <div class="note-title">达成</div>
+      <!-- 一句话 -->
+    </div>
+  </section>
+
+  <!-- ── 表格示例 ── -->
+  <section id="table">
+    <h2>数据表格</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>项目</th><th class="num">基线</th><th class="num">优化后</th><th class="num">变化</th>
+        </tr></thead>
+        <tbody>
+          <tr><td><!-- 项目 --></td><td class="num"><!-- 基线 --></td><td class="num"><!-- 优化后 --></td><td class="num ok"><!-- 变化 --></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 时间线示例 ── -->
+  <section id="timeline">
+    <h2>开发时间线</h2>
+    <div class="timeline">
+      <div class="tl-item ok">
+        <div class="tl-date">YYYY-MM-DD</div>
+        <div class="tl-body"><!-- 事件 --></div>
+      </div>
+      <div class="tl-item warn">
+        <div class="tl-date">YYYY-MM-DD</div>
+        <div class="tl-body"><!-- 事件 --></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 代码块示例 ── -->
+  <section id="code">
+    <h2>代码改动位置</h2>
+    <p class="muted"><!-- 说明 --></p>
+    <pre><code><!-- 代码片段,自包含,无外链 --></code></pre>
+  </section>
+
+</main>
+
+<footer>
+  Generated <!-- YYYY-MM-DD --> · <a href="<!-- 仓库 GitHub URL -->">GitHub</a>
+</footer>
+
+</body>
+</html>
