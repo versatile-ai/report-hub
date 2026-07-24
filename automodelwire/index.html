@@ -566,6 +566,13 @@ const EXPERIMENTS=[
    reports:[
    {title:"依赖关系图 (HTML 可视化)",subtitle:"分层架构图 · v0.13/v0.20/v0.23 三 Tab · 差异对比 · 组件版本链",file:"deepseek-v4-npu-operator-deps/index.html",date:"2026-07-23",type:"stage"}
   ]
+  },
+  {id:"cann-ops-version-diff",name:"CANN 算子版本差异矩阵",subtitle:"CANN 9.0.0 → 9.0.1 算子级 diff · ops-math/ops-nn/ops-transformer 三库实测 · DeepSeek V4 watchlist 33 算子专题 · submodule tag 可复现",status:"active",startDate:"2026-07-24",lastUpdate:"2026-07-24",
+   tags:["CANN","9.0.0","9.0.1","ops-transformer","ops-nn","ops-math","DeepSeek-V4","算子矩阵","ACLNN","版本diff","A5硬件"],
+   metrics:[{label:"新增算子",value:"+109",tone:"good"},{label:"移除",value:"0",tone:"good"},{label:"A5硬件变更",value:"6",tone:"warn"},{label:"watchlist",value:"33",tone:"info"},{label:"submodule",value:"3",tone:"info"},{label:"DSV4新增",value:"3",tone:"good"}],
+   reports:[
+   {title:"CANN 9.0.1 vs 9.0.0 算子差异报告 — DeepSeek V4 专题",subtitle:"全量 +63/+33/+13 · 0 移除 · 6 项 FlashAttention A5 支持 · watchlist 存在性矩阵 · 命名修正 · 对抗性审查",file:"cann-ops-version-diff/2026-07-24-9.0.0-vs-9.0.1-deepseek-v4.html",date:"2026-07-24",type:"stage"}
+  ]
   }
 ];
 

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CANN 9.0.1 vs 9.0.0 算子差异 — DeepSeek V4 专题</title>
+<style>
+:root {
+  --bg:#0d1117; --surface:#161b22; --surface-raised:#1c2530; --border:#30363d; --border-emphasis:#484f58;
+  --text:#e6edf3; --text-secondary:#8b949e; --text-tertiary:#656d76;
+  --accent:#58a6ff; --accent-bg:rgba(88,166,255,0.10); --accent-border:rgba(88,166,255,0.30);
+  --green:#3fb950; --green-bg:rgba(63,185,80,0.12); --green-border:rgba(63,185,80,0.30);
+  --red:#f85149; --red-bg:rgba(248,81,73,0.12); --red-border:rgba(248,81,73,0.30);
+  --purple:#a371f7; --purple-bg:rgba(163,113,247,0.12); --purple-border:rgba(163,113,247,0.30);
+  --orange:#f0883e; --orange-bg:rgba(240,136,62,0.12); --orange-border:rgba(240,136,62,0.30);
+  --yellow:#d29922; --yellow-bg:rgba(210,153,34,0.12); --yellow-border:rgba(210,153,34,0.30);
+  --radius:8px; --radius-sm:5px;
+  --font-body:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"SF Mono","Fira Code","Consolas","Courier New",monospace;
+  --max-width:1400px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);line-height:1.6;font-size:14px;-webkit-font-smoothing:antialiased}
+.container{max-width:var(--max-width);margin:0 auto;padding:32px 24px 80px}
+h1{font-size:26px;font-weight:600;margin-bottom:8px;letter-spacing:-0.01em}
+h2{font-size:20px;font-weight:600;margin:40px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+h3{font-size:16px;font-weight:600;margin:24px 0 12px;color:var(--accent)}
+.meta{color:var(--text-secondary);font-size:13px;margin-bottom:24px}
+.meta div{margin:2px 0}
+.meta code{font-family:var(--font-mono);color:var(--text);background:var(--surface);padding:1px 6px;border-radius:4px;font-size:12px}
+.subtitle{color:var(--text-secondary);font-weight:400;font-size:16px;margin-bottom:24px}
+
+/* 摘要卡片 */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:20px 0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px}
+.card .repo{font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);margin-bottom:8px}
+.card .nums{display:flex;gap:18px;align-items:baseline;margin-bottom:10px}
+.card .nums .from{color:var(--text-tertiary);font-size:13px}
+.card .nums .arrow{color:var(--text-tertiary)}
+.card .nums .to{color:var(--text);font-size:18px;font-weight:600}
+.card .deltas{display:flex;gap:10px;flex-wrap:wrap}
+.delta{font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid;font-family:var(--font-mono)}
+.d-add{color:var(--green);background:var(--green-bg);border-color:var(--green-border)}
+.d-rm{color:var(--red);background:var(--red-bg);border-color:var(--red-border)}
+.d-hw{color:var(--orange);background:var(--orange-bg);border-color:var(--orange-border)}
+
+/* 表格 */
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{background:var(--surface);color:var(--text-secondary);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.04em}
+td.op{font-family:var(--font-mono);font-size:12px;color:var(--accent)}
+td.op .alias{color:var(--text-tertiary);font-size:11px}
+tr:hover td{background:rgba(88,166,255,0.03)}
+td.center,th.center{text-align:center}
+
+/* 徽章 */
+.badge{display:inline-block;min-width:20px;padding:1px 6px;border-radius:4px;font-size:12px;font-weight:600;border:1px solid}
+.b-yes{color:var(--green);background:var(--green-bg);border-color:var(--green-border)}
+.b-no{color:var(--text-tertiary);background:var(--surface);border-color:var(--border)}
+.b-unk{color:var(--yellow);background:var(--yellow-bg);border-color:var(--yellow-border)}
+.vbadge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid;white-space:nowrap}
+.v-new{color:var(--green);background:var(--green-bg);border-color:var(--green-border)}
+.v-remove{color:var(--red);background:var(--red-bg);border-color:var(--red-border)}
+.v-hw{color:var(--orange);background:var(--orange-bg);border-color:var(--orange-border)}
+.v-missing{color:var(--text-tertiary);background:var(--surface);border-color:var(--border)}
+.v-both{color:var(--accent);background:var(--accent-bg);border-color:var(--accent-border)}
+
+/* 算子列表 chip */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{font-family:var(--font-mono);font-size:11px;padding:3px 8px;border-radius:4px;background:var(--surface);border:1px solid var(--border);color:var(--text-secondary)}
+.chip-new{color:var(--green);border-color:var(--green-border);background:var(--green-bg)}
+
+/* 详情卡 */
+.opitem{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin:8px 0;font-size:13px}
+.opitem code{font-family:var(--font-mono);color:var(--accent)}
+.opitem .loc{color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px}
+
+/* 可折叠附录 */
+details{margin:12px 0;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+details summary{cursor:pointer;padding:12px 16px;font-weight:600;color:var(--text-secondary);font-size:13px}
+details[open] summary{border-bottom:1px solid var(--border)}
+details .inner{padding:12px 16px}
+
+.note{background:var(--surface);border-left:3px solid var(--accent);padding:12px 16px;border-radius:0 var(--radius-sm) var(--radius-sm) 0;margin:12px 0;font-size:13px;color:var(--text-secondary)}
+.note ul{margin:6px 0 0 18px}
+.note li{margin:3px 0}
+.note code{font-family:var(--font-mono);color:var(--text);background:var(--surface-raised);padding:1px 5px;border-radius:3px;font-size:12px}
+.legend{font-size:12px;color:var(--text-secondary);margin:8px 0 16px;display:flex;gap:14px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>CANN 9.0.1 <span style="color:var(--text-tertiary)">vs</span> 9.0.0 算子差异报告 <span class="subtitle">DeepSeek V4 专题</span></h1>
+<div class="meta">
+  <div>对比轴:version(<code>9.0.0</code> → <code>9.0.1</code>) ｜ 脚本:<code>render_html.py v0.1.0</code></div>
+  <div>数据来源:<code>matrix/support_matrix.csv</code> ← <code>scan_ops.py</code> 扫描 submodule <code>docs/zh/op_api_list.md</code></div>
+  <div>扫描仓库:<code>ops-math</code>, <code>ops-nn</code>, <code>ops-transformer</code></div>
+</div>
+
+<h2 id="commits">submodule commit(可复现)</h2><table>
+<tr><th>仓库</th><th>tag</th><th>commit</th></tr>
+<tr><td class="op">ops-math</td><td><code>v9.0.0</code></td><td><code>ce515930d</code></td></tr>
+<tr><td class="op">ops-math</td><td><code>v9.0.1</code></td><td><code>3675c1840</code></td></tr>
+<tr><td class="op">ops-nn</td><td><code>v9.0.0</code></td><td><code>0413e303e</code></td></tr>
+<tr><td class="op">ops-nn</td><td><code>v9.0.1</code></td><td><code>ffcbad031</code></td></tr>
+<tr><td class="op">ops-transformer</td><td><code>v9.0.0</code></td><td><code>afe72144f</code></td></tr>
+<tr><td class="op">ops-transformer</td><td><code>v9.0.1</code></td><td><code>8038339a9</code></td></tr>
+</table>
+<h2 id="summary">一、全量差异摘要(所有算子)</h2><div class="cards">
+<div class="card"><div class="repo">ops-math</div><div class="nums"><span class="from">316</span><span class="arrow">→</span><span class="to">379</span></div><div class="deltas"><span class="delta d-add">+63 新增</span><span class="delta d-rm">−0 移除</span><span class="delta d-hw">⟳0 硬件变更</span></div></div>
+<div class="card"><div class="repo">ops-nn</div><div class="nums"><span class="from">363</span><span class="arrow">→</span><span class="to">396</span></div><div class="deltas"><span class="delta d-add">+33 新增</span><span class="delta d-rm">−0 移除</span><span class="delta d-hw">⟳0 硬件变更</span></div></div>
+<div class="card"><div class="repo">ops-transformer</div><div class="nums"><span class="from">156</span><span class="arrow">→</span><span class="to">169</span></div><div class="deltas"><span class="delta d-add">+13 新增</span><span class="delta d-rm">−0 移除</span><span class="delta d-hw">⟳6 硬件变更</span></div></div>
+</div>
+<h2 id="watchlist">二、DeepSeek V4 watchlist 存在性矩阵</h2>
+<div class="meta">watchlist 共 33 个 aclnn API(来源 <code>docs/operator-trace-table.md</code>)。</div>
+<div class="legend"><span><span class="vbadge v-both">✅</span> 两版本均在</span><span><span class="vbadge v-new">🆕</span> 9.0.1 新增</span><span><span class="vbadge v-remove">❌</span> 9.0.1 移除</span><span><span class="vbadge v-hw">🔀</span> 硬件变更</span><span><span class="vbadge v-missing">⚪</span> 清单未收录</span></div>
+<h3>MLA Prolog</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnMlaPrologV2WeightNz</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMlaPrologV3WeightNz</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+</table>
+<h3>DSA / Flash Attention</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnFusedInferAttentionScoreV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnFusedInferAttentionScoreV3</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnFusedInferAttentionScoreV4</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnSparseFlashAttention</td><td class="center"><span class="badge badge-no" title="不存在">—</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-new">🆕 新增</span></td></tr>
+<tr><td class="op">aclnnKvQuantSparseFlashAttention</td><td class="center"><span class="badge badge-no" title="不存在">—</span></td><td class="center"><span class="badge badge-no" title="不存在">—</span></td><td>(无)</td><td><span class="vbadge v-missing">⚪ 未收录</span></td></tr>
+</table>
+<h3>Lightning Indexer</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnLightningIndexer</td><td class="center"><span class="badge badge-no" title="不存在">—</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-new">🆕 新增</span></td></tr>
+<tr><td class="op">aclnnQuantLightningIndexer</td><td class="center"><span class="badge badge-no" title="不存在">—</span></td><td class="center"><span class="badge badge-no" title="不存在">—</span></td><td>(无)</td><td><span class="vbadge v-missing">⚪ 未收录</span></td></tr>
+</table>
+<h3>KV Cache</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnScatterPaKvCache</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnScatterNdUpdateV2<div class="alias">清单规范名 <code>aclnnScatterNdUpdate</code>(trace table 原名有误已修正)</div></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnGatherPaKVCache<div class="alias">清单规范名 <code>aclnnGatherPaKvCache</code>(trace table 原名有误已修正)</div></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+</table>
+<h3>RoPE</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnApplyRotaryPosEmb</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnApplyRotaryPosEmbV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+</table>
+<h3>量化</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnDynamicQuant</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnDynamicBlockQuant</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnRmsNorm</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnSwiGluQuantV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnDequantSwigluQuantV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnAddRmsNormQuantV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+</table>
+<h3>MoE</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnMoeGatingTopK</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeInitRoutingV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeFinalizeRoutingV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeDistributeDispatch</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeDistributeDispatchV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeDistributeCombine</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeDistributeCombineV2</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeTokenPermuteWithRoutingMap</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnMoeTokenUnpermuteWithRoutingMap</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+</table>
+<h3>GroupedMatmul</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnGroupedMatmul</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnGroupedMatmulSwigluQuantWeightNzV2</td><td class="center"><span class="badge badge-no" title="不存在">—</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-transformer</td><td><span class="vbadge v-new">🆕 新增</span></td></tr>
+</table>
+<h3>基础</h3><table>
+<tr><th>aclnn API</th><th class="center">9.0.0</th><th class="center">9.0.1</th><th>仓库</th><th>判定</th></tr>
+<tr><td class="op">aclnnBatchMatMul</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-nn</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+<tr><td class="op">aclnnCast</td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td class="center"><span class="badge badge-yes" title="存在">✅</span></td><td>ops-math</td><td><span class="vbadge v-both">✅ 两版本均在</span></td></tr>
+</table>
+<h2 id="new">三、DeepSeek V4 新增算子(9.0.1 新出现)</h2>
+<div class="opitem"><code>aclnnSparseFlashAttention</code> — 仓库 ops-transformer<br><span class="loc">清单位置 docs/zh/op_api_list.md:170 ｜ commit <code>8038339a9</code></span></div>
+<div class="opitem"><code>aclnnLightningIndexer</code> — 仓库 ops-transformer<br><span class="loc">清单位置 docs/zh/op_api_list.md:89 ｜ commit <code>8038339a9</code></span></div>
+<div class="opitem"><code>aclnnGroupedMatmulSwigluQuantWeightNzV2</code> — 仓库 ops-transformer<br><span class="loc">清单位置 docs/zh/op_api_list.md:83 ｜ commit <code>8038339a9</code></span></div>
+<h2 id="removed">四、DeepSeek V4 移除算子(9.0.1 消失)</h2>
+<div class="chips"><div class="note">(无)</div></div>
+<h2 id="hw">五、DeepSeek V4 算子硬件支持变更</h2>
+<div class="note">(watchlist 内无硬件支持变更)</div>
+<h2 id="missing">六、watchlist 中清单未收录的 API(需关注命名一致性)</h2>
+<div class="note">以下 API 在 ops-math/ops-nn/ops-transformer 的 <code>op_api_list.md</code> 两版本均未出现。可能为 op-plugin 绑定层 API、ATB 内部 API,或命名不一致(已用 <code>DSV4_ALIASES</code> 修正的可修正项不在此列)。</div>
+<div class="chips"><span class="chip">aclnnKvQuantSparseFlashAttention</span><span class="chip">aclnnQuantLightningIndexer</span></div>
+<h2 id="appendix">附录:全量新增/移除算子明细</h2>
+<details><summary>ops-math — +63 新增 / −0 移除 / ⟳0 硬件变更</summary><div class="inner">
+<div style="color:var(--green);font-size:12px;margin-bottom:6px">新增 63 个</div>
+<div class="chips"><span class="chip chip-new">aclnnAdds</span><span class="chip chip-new">aclnnAffineGrid</span><span class="chip chip-new">aclnnArgsort</span><span class="chip chip-new">aclnnBernoulli</span><span class="chip chip-new">aclnnBernoulliTensor</span><span class="chip chip-new">aclnnCalculateConvolutionWeightSize</span><span class="chip chip-new">aclnnCalculateMatmulWeightSize</span><span class="chip chip-new">aclnnCalculateMatmulWeightSizeV2</span><span class="chip chip-new">aclnnCdist</span><span class="chip chip-new">aclnnCoalesceSparse</span><span class="chip chip-new">aclnnDiag</span><span class="chip chip-new">aclnnDigamma</span><span class="chip chip-new">aclnnDivMod</span><span class="chip chip-new">aclnnDivMods</span><span class="chip chip-new">aclnnDivs</span><span class="chip chip-new">aclnnDropout</span><span class="chip chip-new">aclnnDropoutBackward</span><span class="chip chip-new">aclnnDropoutGenMask</span><span class="chip chip-new">aclnnDropoutGenMaskV2</span><span class="chip chip-new">aclnnDropoutGenMaskV2Tensor</span><span class="chip chip-new">aclnnGeTensor</span><span class="chip chip-new">aclnnGroupedBiasAddGradV2</span><span class="chip chip-new">aclnnInplaceAdds</span><span class="chip chip-new">aclnnInplaceBernoulli</span><span class="chip chip-new">aclnnInplaceBernoulliTensor</span><span class="chip chip-new">aclnnInplaceBitwiseAndScalar</span><span class="chip chip-new">aclnnInplaceBitwiseAndTensor</span><span class="chip chip-new">aclnnInplaceDivMod</span><span class="chip chip-new">aclnnInplaceDivMods</span><span class="chip chip-new">aclnnInplaceDivs</span><span class="chip chip-new">aclnnInplaceGeTensor</span><span class="chip chip-new">aclnnInplaceNormal</span><span class="chip chip-new">aclnnInplaceRandom</span><span class="chip chip-new">aclnnInplaceSubs</span><span class="chip chip-new">aclnnInplaceUniform</span><span class="chip chip-new">aclnnIsInTensorScalar</span><span class="chip chip-new">aclnnLgamma</span><span class="chip chip-new">aclnnLinalgCholesky</span><span class="chip chip-new">aclnnLinalgCross</span><span class="chip chip-new">aclnnLinalgQr</span><span class="chip chip-new">aclnnLogAddExp</span><span class="chip chip-new">aclnnLogAddExp2</span><span class="chip chip-new">aclnnLogdet</span><span class="chip chip-new">aclnnLogicalXor</span><span class="chip chip-new">aclnnMatmulCompressDequant</span><span class="chip chip-new">aclnnMultinomial</span><span class="chip chip-new">aclnnMultinomialTensor</span><span class="chip chip-new">aclnnNormalFloatFloat</span><span class="chip chip-new">aclnnPolar</span><span class="chip chip-new">aclnnPrecisionCompare</span><span class="chip chip-new">aclnnQr</span><span class="chip chip-new">aclnnRandperm</span><span class="chip chip-new">aclnnRsubs</span><span class="chip chip-new">aclnnSearchSorteds</span><span class="chip chip-new">aclnnSilentCheckV2</span><span class="chip chip-new">aclnnSimThreadExponential</span><span class="chip chip-new">aclnnSlogdet</span><span class="chip chip-new">aclnnStridedSlice</span><span class="chip chip-new">aclnnSubs</span><span class="chip chip-new">aclnnSvd</span><span class="chip chip-new">aclnnTrace</span><span class="chip chip-new">aclnnTransConvolutionWeight</span><span class="chip chip-new">aclnnVarCorrection</span></div>
+<div style="color:var(--red);font-size:12px;margin:10px 0 6px">移除 0 个</div>
+<div class="chips"><span class="note">(无)</span></div>
+</div></details>
+<details><summary>ops-nn — +33 新增 / −0 移除 / ⟳0 硬件变更</summary><div class="inner">
+<div style="color:var(--green);font-size:12px;margin-bottom:6px">新增 33 个</div>
+<div class="chips"><span class="chip chip-new">aclnnAdaptiveMaxPool2dBackward</span><span class="chip chip-new">aclnnAddRelu</span><span class="chip chip-new">aclnnApplyAdamWQuant</span><span class="chip chip-new">aclnnBinaryCrossEntropyWithLogitsBackward</span><span class="chip chip-new">aclnnClippedSwiglu</span><span class="chip chip-new">aclnnCrossEntropyLossGrad</span><span class="chip chip-new">aclnnDynamicMxQuantWithDualAxis</span><span class="chip chip-new">aclnnExpandIntoJaggedPermute</span><span class="chip chip-new">aclnnFusedCrossEntropyLossWithMaxSum</span><span class="chip chip-new">aclnnFusedQuantMatmulWeightNz</span><span class="chip chip-new">aclnnIndexFill</span><span class="chip chip-new">aclnnInplaceAddRelu</span><span class="chip chip-new">aclnnInplaceAddmm</span><span class="chip chip-new">aclnnInplaceIndexFill</span><span class="chip chip-new">aclnnInplaceQuantScatterV2</span><span class="chip chip-new">aclnnInplaceScatterValue</span><span class="chip chip-new">aclnnInverse</span><span class="chip chip-new">aclnnMatmulCompress</span><span class="chip chip-new">aclnnMaxUnpool2d</span><span class="chip chip-new">aclnnMaxUnpool3d</span><span class="chip chip-new">aclnnModulate</span><span class="chip chip-new">aclnnModulateBackward</span><span class="chip chip-new">aclnnMseLossOut</span><span class="chip chip-new">aclnnQuantMatmulDequant</span><span class="chip chip-new">aclnnRepeatInterleaveInt</span><span class="chip chip-new">aclnnRepeatInterleaveIntWithDim</span><span class="chip chip-new">aclnnRepeatInterleaveTensor</span><span class="chip chip-new">aclnnRepeatInterleaveWithDim</span><span class="chip chip-new">aclnnScatterValue</span><span class="chip chip-new">aclnnSparse4to2QuantMatmulWeightNz</span><span class="chip chip-new">aclnnTfScatterAdd</span><span class="chip chip-new">aclnnTopKTopPSample</span><span class="chip chip-new">aclnnTransSparse4to2Para</span></div>
+<div style="color:var(--red);font-size:12px;margin:10px 0 6px">移除 0 个</div>
+<div class="chips"><span class="note">(无)</span></div>
+</div></details>
+<details><summary>ops-transformer — +13 新增 / −0 移除 / ⟳6 硬件变更</summary><div class="inner">
+<div style="color:var(--green);font-size:12px;margin-bottom:6px">新增 13 个</div>
+<div class="chips"><span class="chip chip-new">aclnnAlltoAllvQuantGroupedMatMul</span><span class="chip chip-new">aclnnBlockSparseAttention</span><span class="chip chip-new">aclnnFlashAttentionScoreV4</span><span class="chip chip-new">aclnnGroupedMatmulAddV2</span><span class="chip chip-new">aclnnGroupedMatmulSwigluQuantWeightNzV2</span><span class="chip chip-new">aclnnLightningIndexer</span><span class="chip chip-new">aclnnQuantAllReduce</span><span class="chip chip-new">aclnnQuantGroupedMatmulDequant</span><span class="chip chip-new">aclnnQuantGroupedMatmulInplaceAdd</span><span class="chip chip-new">aclnnRotaryPositionEmbeddingV2</span><span class="chip chip-new">aclnnSparseFlashAttention</span><span class="chip chip-new">aclnnSwinAttentionScoreQuant</span><span class="chip chip-new">aclnnSwinTransformerLnQkvQuant</span></div>
+<div style="color:var(--red);font-size:12px;margin:10px 0 6px">移除 0 个</div>
+<div class="chips"><span class="note">(无)</span></div>
+<div style="color:var(--orange);font-size:12px;margin:10px 0 6px">硬件变更 6 项</div><table>
+<tr><th>算子</th><th>硬件</th><th>9.0.0</th><th>9.0.1</th></tr>
+<tr><td class="op">aclnnFlashAttentionScore</td><td>A5</td><td><span class="badge b-no">no</span></td><td><span class="badge b-yes">yes</span></td></tr>
+<tr><td class="op">aclnnFlashAttentionScoreV2</td><td>A5</td><td><span class="badge b-no">no</span></td><td><span class="badge b-yes">yes</span></td></tr>
+<tr><td class="op">aclnnFlashAttentionScoreV3</td><td>A5</td><td><span class="badge b-no">no</span></td><td><span class="badge b-yes">yes</span></td></tr>
+<tr><td class="op">aclnnFlashAttentionVarLenScoreV3</td><td>A5</td><td><span class="badge b-no">no</span></td><td><span class="badge b-yes">yes</span></td></tr>
+<tr><td class="op">aclnnFlashAttentionVarLenScoreV4</td><td>A5</td><td><span class="badge b-no">no</span></td><td><span class="badge b-yes">yes</span></td></tr>
+<tr><td class="op">aclnnFlashAttentionVarLenScoreV5</td><td>A5</td><td><span class="badge b-no">no</span></td><td><span class="badge b-yes">yes</span></td></tr>
+</table>
+</div></details>
+<h2 id="limits">局限性说明</h2><div class="note"><ul>
+<li><b>硬件维度</b>:清单 <code>A2/A3</code> 为合并列,无法区分 A2 vs A3,记为 <code>A2A3</code> 桶;<code>Ascend 950</code> 列记为 <code>A5</code>。废弃提示行缺硬件列时记 <code>unknown</code>。</li>
+<li><b>场景维度</b>:<code>op_api_list.md</code> 不区分 inference/training,scenario 一律 <code>unknown</code>;训练支持需看 <code>aclnnXxxGrad</code> 反向变体。</li>
+<li><b>覆盖范围</b>:仅 ops-math/ops-nn/ops-transformer。op-plugin(7.3.0 分支无 9.0.x tag)、ATB(9.0.1 沿用 9.0.0 分支)、torch_npu(版本不变)未纳入。</li>
+<li><b>watchlist 命名</b>:已用 <code>DSV4_ALIASES</code> 修正 trace table 的大小写/后缀误写(<code>aclnnGatherPaKVCache</code>→<code>aclnnGatherPaKvCache</code>、<code>aclnnScatterNdUpdateV2</code>→<code>aclnnScatterNdUpdate</code>)。</li>
+<li><b>计数方法学</b>:每行按首个链接归属;描述中跨仓引用链接(如 ops-transformer 第 197 行描述里的 <code>[aclnnRmsNorm](...ops-nn...)</code>)不计为本仓 API,故 ops-transformer 计 156/169(朴素 grep 会多算至 157/170)。<code>aclnnRmsNorm</code> 实属 ops-nn。</li>
+<li><b>上游重复</b>:<code>aclnnMlaPrologV2WeightNz</code> 在 ops-transformer 清单两版本各出现 2 次(上游重复),inventory 保留两行作证据,diff 为集合运算不受影响。</li>
+<li><b>证据</b>:每条结论可经 <code>git -C submodules/&lt;repo&gt; show &lt;tag&gt;:docs/zh/op_api_list.md</code> + 行号复现。</li>
+</ul></div>
+</div></body></html>
