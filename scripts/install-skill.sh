@@ -6,8 +6,10 @@
 #   1. 确定 report-hub 本地路径(参数 / 自检 cwd / 交互询问)
 #   2. 检测本机已安装的 agent:claude code / codex / opencode
 #   3. 交互选择装到哪个(或 --agent / --all 非交互)
-#   4. 把 skills/report-hub-build-publish/ 拷到目标 agent 的 skills 目录,
-#      并把 config.json 中的 {{REPO_PATH}} 替换为 report-hub 绝对路径
+#   4. 在目标 agent 的 skills 目录创建软链接指向本仓库的 skill,
+#      并写一份本机专属 config.json(填入 report-hub 绝对路径)。
+#      软链接方式:仓库 git pull 后 SKILL.md / templates 自动更新,无需重装;
+#      仅 repo_path 这一本机路径写在真实 config.json 里。
 #
 # 用法:
 #   bash scripts/install-skill.sh                       # 全交互
@@ -147,21 +149,21 @@ else
   fi
 fi
 
-# ── 4. 拷贝并写入 repo_path ──
+# ── 4. 软链接 + 本机 config.json ──
 install_one() {
   local target_dir="$1"  # skills 目录
   local dest="$target_dir/$SKILL_NAME"
   mkdir -p "$target_dir"
   rm -rf "$dest"
-  cp -R "$SKILL_SRC" "$dest"
-  # 替换 config.json 占位
+  mkdir -p "$dest"
+  # SKILL.md / templates 软链接到仓库源:随仓库更新自动生效
+  ln -s "$SKILL_SRC/SKILL.md" "$dest/SKILL.md"
+  ln -s "$SKILL_SRC/templates" "$dest/templates"
+  # config.json 为本机真实文件,写入 repo_path(不软链,因含本机绝对路径)
   local cfg="$dest/config.json"
-  if [[ -f "$cfg" ]]; then
-    # 兼容 macOS(BSD sed)与 GNU sed:先写临时文件再替换
-    local tmp="${cfg}.tmp"
-    sed "s|{{REPO_PATH}}|$REPORT_HUB_PATH|g" "$cfg" >"$tmp" && mv "$tmp" "$cfg"
-  fi
+  sed "s|{{REPO_PATH}}|$REPORT_HUB_PATH|g" "$SKILL_SRC/config.json" >"$cfg"
   echo "✔ 已安装 → $dest"
+  echo "    软链 SKILL.md / templates → $SKILL_SRC(随仓库更新)"
   echo "    config.json: repo_path = $REPORT_HUB_PATH"
 }
 

@@ -38,13 +38,11 @@ bash scripts/install-skill.sh
 
 ### 用法示例
 
-在 agent 会话里执行 `/report-hub-build-publish`,告诉它仓库、实验、报告类型和素材即可,它会生成报告页、登记导航、本地提交,推送前等你确认:
+在 agent 会话里执行 `/report-hub-build-publish`,给出标题与素材即可。skill 会根据当前工作目录和上下文自动识别仓库与实验,生成报告页、登记导航、本地提交,推送前等你确认:
 
 ```
 /report-hub-build-publish
-
-给 automodelwire / deepseek-v4-npu-dspark 发一份 stage 报告,
-标题「Phase Report — Draft Graph 落盘」,素材见下……
+发一份 stage 报告,标题「Phase Report — Draft Graph 落盘」,素材见下……
 ```
 
 ## 目录结构
