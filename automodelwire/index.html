@@ -552,12 +552,13 @@ const EXPERIMENTS=[
    {title:"Phase Report — Draft Graph",subtitle:"Draft Graph 突破 · torch.npu.graph 直接捕获 · TPOT 36ms · DP=2 vs DP=4 对比 · 13 Lessons Learned · 路线图",file:"deepseek-v4-npu-dspark/2026-07-22-phase-report.html",date:"2026-07-22",type:"stage"}
   ]
   },
-  {id:"verl-train-perfix-cache-perf",name:"verl 训练 PrefixSharing 性能验证",subtitle:"PrefixSharing (prefix-0501) 在 VeRL GRPO 上的集成验证 · Qwen3-8B · 9 组矩阵实测 · dispatch 根因修复 · 两层限制模型 · 16 条教训",status:"active",startDate:"2026-07-21",lastUpdate:"2026-07-23",
-   tags:["verl","GRPO","Megatron","Ascend 910B","Qwen3-8B","PrefixSharing","prefix-0501","dispatch修复","两层限制模型"],
-   metrics:[{label:"mb=8 step",value:"417s",tone:"good"},{label:"PS mb=2",value:"-47% actor",tone:"good"},{label:"匹配率修复",value:"3.7×",tone:"good"},{label:"PS net speedup",value:"≈0 (GSM8K)",tone:"warn"},{label:"HBM mb=8",value:"35.7GB",tone:"good"},{label:"矩阵",value:"9 组",tone:"info"}],
+  {id:"verl-train-perfix-cache-perf",name:"verl 训练 PrefixSharing 性能验证",subtitle:"PrefixSharing (prefix-0501) 在 VeRL GRPO 上的集成验证 · Qwen3-8B · 9 组矩阵实测 · dispatch 根因修复 · 两层限制模型 · 16 条教训",status:"active",startDate:"2026-07-21",lastUpdate:"2026-07-24",
+   tags:["verl","GRPO","Megatron","Ascend 910B","Qwen3-8B","PrefixSharing","prefix-0501","dispatch修复","三层限制模型","10K甜区","HBM斜率不对称"],
+   metrics:[{label:"10K step 净加速",value:"1.28× (mb4)",tone:"good"},{label:"actor_update",value:"2.92× (mb4)",tone:"good"},{label:"reuse_ratio",value:"84% (mb8)",tone:"good"},{label:"mb8 可行性",value:"baseline OOM / PS 跑通",tone:"warn"},{label:"HBM 节省",value:"+8.1GB (mb4)",tone:"good"},{label:"矩阵",value:"15 组 (GSM8K+10K)",tone:"info"}],
    reports:[
    {title:"基线数据报告",subtitle:"Batch 层级 · Forward/Backward/Update 计数 · 阶段耗时分解 · 8 卡一致性 · micro-batch 前向耗时分布 · 采集可靠性教训",file:"verl-train-perfix-cache-perf/2026-07-22-baseline-report.html",date:"2026-07-22",type:"stage"},
-   {title:"集成效果验证报告",subtitle:"9 组矩阵实测 · micro_batch 定标 · PS 加速效果 · dispatch 根因定位与修复 · HBM 线性定标 · 两层限制模型 · 16 条集成教训 · 结论与下一步",file:"verl-train-perfix-cache-perf/2026-07-23-stage-report.html",date:"2026-07-23",type:"stage"}
+   {title:"集成效果验证报告",subtitle:"9 组矩阵实测 · micro_batch 定标 · PS 加速效果 · dispatch 根因定位与修复 · HBM 线性定标 · 两层限制模型 · 16 条集成教训 · 结论与下一步",file:"verl-train-perfix-cache-perf/2026-07-23-stage-report.html",date:"2026-07-23",type:"stage"},
+   {title:"10K 并发矩阵: baseline vs PS 对比",subtitle:"10K 上下文 6 组实测 · PS 首次净加速 1.16-1.28× · actor_update 2.92× · HBM 斜率不对称 (+3 vs +10.5 GB/2×mb) · mb8 baseline OOM / PS 跑通 · 三层限制模型 · 10K 甜区",file:"verl-train-perfix-cache-perf/2026-07-24-stage-report.html",date:"2026-07-24",type:"stage"}
   ]
   },
   {id:"deepseek-v4-npu-operator-deps",name:"DeepSeek V4 × vLLM-Ascend 算子依赖分析",subtitle:"CANN 生态全景 · 50 算子源码追溯 · v0.13→v0.20→v0.23 三版本矩阵 · op-plugin → ACLNN API 完整调用链",status:"active",startDate:"2026-07-23",lastUpdate:"2026-07-23",

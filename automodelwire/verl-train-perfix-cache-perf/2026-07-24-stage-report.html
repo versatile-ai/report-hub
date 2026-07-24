@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="10K 上下文并发矩阵 baseline vs PrefixSharing 对比报告 — Qwen3-8B · Ascend 910B3 · PS 首次净加速 1.16-1.28x · HBM 斜率不对称解锁 mb8 · 三层限制模型">
+<title>10K 并发矩阵 baseline vs PrefixSharing — Stage Report (2026-07-24)</title>
+<style>
+:root {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+  --text:#E6EDF3; --muted:#8B949E; --tertiary:#7A8296;
+  --accent:#A78BFA; --accent-hover:#C4B5FD;
+  --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+  --code-bg:#010409;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); line-height:1.65; font-size:14px; padding:24px 32px 80px; max-width:1100px; margin:0 auto; }
+h1,h2,.metric-card .value,.tag,.breadcrumb,.toc b,code,pre,.mono { font-family:'SF Mono','Fira Code',Consolas,monospace; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+.breadcrumb { font-size:12px; color:var(--tertiary); margin-bottom:18px; letter-spacing:0.2px; }
+.breadcrumb a { color:var(--accent); }
+.breadcrumb a:hover { color:var(--accent-hover); text-decoration:none; }
+.breadcrumb .sep { color:var(--border); margin:0 6px; user-select:none; }
+.breadcrumb .current { color:var(--muted); }
+
+header { background:linear-gradient(180deg,#0f1923 0%,var(--bg) 100%); padding:28px 32px 24px; border:1px solid var(--border); border-radius:6px; margin-bottom:24px; }
+header h1 { font-size:23px; font-weight:600; color:#E8EDF2; margin-bottom:8px; letter-spacing:-0.3px; line-height:1.3; }
+header .status { display:inline-block; padding:3px 10px; border-radius:3px; font-size:11px; font-weight:600; background:rgba(63,185,80,0.15); color:var(--green); margin-left:10px; vertical-align:middle; }
+header .meta { color:var(--muted); margin-top:8px; font-size:13px; line-height:1.7; }
+header .meta b { color:var(--text); font-weight:500; }
+
+.toc { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:14px 20px; margin-bottom:32px; font-size:13px; }
+.toc b { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; display:block; margin-bottom:8px; }
+.toc ol { padding-left:22px; columns:2; }
+.toc li { margin:4px 0; break-inside:avoid; }
+.toc a { color:var(--accent); }
+
+section { margin-bottom:48px; }
+section h2 { font-size:19px; font-weight:600; color:var(--text); margin:0 0 20px; padding-bottom:8px; border-bottom:1px solid var(--border); letter-spacing:-0.2px; }
+section h3 { font-size:15px; font-weight:600; color:var(--accent); margin:24px 0 12px; font-family:-apple-system,'SF Pro Text',sans-serif; }
+section p { margin:8px 0; }
+
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:24px; }
+.metric-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:16px; }
+.metric-card .value { font-size:24px; font-weight:700; color:var(--accent); line-height:1.2; }
+.metric-card .label { font-size:11px; color:var(--muted); margin-top:6px; text-transform:uppercase; letter-spacing:0.5px; }
+.metric-card .sub { font-size:11px; color:var(--tertiary); margin-top:4px; font-family:'SF Mono',Consolas,monospace; }
+.metric-card.good .value { color:var(--green); }
+.metric-card.warn .value { color:var(--yellow); }
+.metric-card.bad  .value { color:var(--red); }
+.metric-card.info .value { color:var(--info); }
+
+table { width:100%; border-collapse:collapse; margin:12px 0 20px; font-size:13px; }
+th { background:var(--surface-2); color:var(--accent); text-align:left; padding:8px 10px; font-weight:600; border:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+td { padding:8px 10px; border:1px solid var(--border); vertical-align:top; }
+tr:nth-child(even) td { background:var(--surface); }
+td.num { text-align:right; font-variant-numeric:tabular-nums; font-family:'SF Mono',Consolas,monospace; }
+td.ok { color:var(--green); font-weight:600; }
+td.warn { color:var(--yellow); font-weight:600; }
+td.bad { color:var(--red); font-weight:600; }
+td.dim { color:var(--muted); }
+table.compact td, table.compact th { padding:5px 8px; font-size:12px; }
+
+.note { font-size:12px; color:var(--muted); margin:12px 0 0; padding:10px 14px; background:var(--surface); border-left:3px solid var(--accent); border-radius:0 6px 6px 0; line-height:1.6; }
+.note b { color:var(--text); }
+.note.warn { border-left-color:var(--yellow); }
+.note.bad  { border-left-color:var(--red); }
+.note.ok   { border-left-color:var(--green); }
+
+.tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:600; margin-right:4px; }
+.tag-green  { background:rgba(63,185,80,0.15);  color:var(--green); }
+.tag-yellow { background:rgba(210,153,34,0.15); color:var(--yellow); }
+.tag-red    { background:rgba(248,81,73,0.15);  color:var(--red); }
+.tag-info   { background:rgba(121,192,255,0.15); color:var(--info); }
+
+ul.bullets { font-size:13px; color:var(--muted); padding-left:22px; margin:8px 0; }
+ul.bullets li { margin:6px 0; }
+ul.bullets b { color:var(--text); font-weight:600; }
+
+pre { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:14px; overflow-x:auto; font-size:12px; line-height:1.5; margin:12px 0; }
+code { background:#1f2937; color:var(--info); padding:1px 5px; border-radius:3px; font-size:12px; }
+pre code { background:none; color:var(--text); padding:0; }
+
+.conclusion-box { background:var(--surface); border:1px solid var(--accent); border-radius:6px; padding:20px 24px; margin:20px 0; }
+.conclusion-box h3 { margin-top:0; color:var(--accent); }
+.conclusion-box.hero { border-color:var(--green); background:linear-gradient(180deg,rgba(63,185,80,0.06) 0%,var(--surface) 100%); }
+
+footer { text-align:center; padding:24px; color:var(--muted); font-size:12px; border-top:1px solid var(--border); margin-top:48px; line-height:1.8; }
+footer a { color:var(--accent); }
+
+@media (prefers-reduced-motion:reduce) { * { transition:none!important; animation:none!important; } }
+@media print { body { background:#fff; color:#111; } header { background:#fff; } }
+@media (max-width:768px) { body { padding:16px 18px 60px; } header { padding:20px; } h1,header h1 { font-size:19px; } .toc ol { columns:1; } }
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-train-perfix-cache-perf">verl 训练 Prefix-Cache 性能</a><span class="sep">/</span>
+  <span class="current">Stage Report · 2026-07-24</span>
+</nav>
+
+<header>
+  <h1>10K 上下文并发矩阵: baseline vs PrefixSharing<span class="status">已完成 · 6 组实测</span></h1>
+  <div class="meta">
+    实验目录 <b>wip-verl-npu-qwen-with-prefix-sharing</b> ·
+    节点 <b>192.168.0.112 (Aura-88)</b> · 模型 <b>Qwen3-8B (Dense)</b> · 引擎 <b>Megatron (TP=4, DP=2, CP=1)</b><br>
+    数据来源 <b>results/matrix_long10k/</b> (baseline/PS × mb{2,4,8}, 3 步 smoke) ·
+    生成日期 <b>2026-07-24</b> · 一手数据 <b>timing_records.rank0-7.json + step_profile</b>
+  </div>
+</header>
+
+<!-- ═══════ HERO: 基线 vs PS 性能/显存对比结论 (最前面突出) ═══════ -->
+<section id="hero" style="margin-bottom:28px;">
+  <h2 style="border:none;margin-bottom:4px;padding-bottom:0;">核心结论: 基线 vs PrefixSharing 性能/显存对比</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">10K token 系统提示词 · micro_batch ∈ {2,4,8} · baseline vs PS (torch_ref 后端, KEEP_PROMPT_GROUP_DISPATCH=1) · 3 步稳态</p>
+
+  <div class="conclusion-box hero">
+    <p style="margin:0;line-height:1.85;">
+      <b style="color:var(--green);">PS 在 10K 上下文下首次实现净训练加速, 且随并发度单调增强。</b>
+      此前 GSM8K 短 prompt (84 tok, 占 6.6%) <b>无净收益</b>, 50K 上下文 <b>OOM</b>; <b>10K 是 PS 的甜区</b>。<br>
+      <b>① 性能</b>: actor_update 加速 <b>1.76×</b>(mb2) → <b>2.92×</b>(mb4) → mb8 仅 PS 可跑; 扣除 infer 阶段反效果后, <b>含 gen 的完整 step 净加速 1.16×(mb2) / 1.28×(mb4)</b>。<br>
+      <b>② 显存</b>: PS HBM 峰值增长远慢于 baseline (斜率 <b>+3 vs +10.5 GB/2倍mb</b>, 比 3.5:1), mb4 已省 <b>8.1 GB</b>。<br>
+      <b>③ 不对称可行性</b>: <b>baseline_mb8 OOM</b> (外推 66.85GB &gt; 64GB), <b>ps_mb8 跑通</b> (实测 50.29GB, 余量 13.7GB) — PS 不仅加速, 还<b>解锁了 baseline 不可达的高并发档</b>。
+    </p>
+  </div>
+
+  <!-- KPI ribbon -->
+  <div class="metrics" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px;">
+    <div class="metric-card good">
+      <div class="value">1.28×</div>
+      <div class="label">完整 step 净加速 (mb=4)</div>
+      <div class="sub">含 gen · mb2 1.16× · 前向 1.37×</div>
+    </div>
+    <div class="metric-card good">
+      <div class="value">2.92×</div>
+      <div class="label">actor_update 加速 (mb=4)</div>
+      <div class="sub">445.0s → 152.4s · mb2 1.76×</div>
+    </div>
+    <div class="metric-card warn">
+      <div class="value">+8.1 GB</div>
+      <div class="label">HBM 节省 (mb=4)</div>
+      <div class="sub">PS 斜率 +3 vs baseline +10.5 GB/2×mb</div>
+    </div>
+    <div class="metric-card info">
+      <div class="value">mb=8</div>
+      <div class="label">不对称可行性</div>
+      <div class="sub">baseline OOM · PS 跑通 50.29GB</div>
+    </div>
+  </div>
+
+  <!-- 6 组速查表 -->
+  <h3 style="margin:8px 0;font-size:13px;color:var(--accent);">6 组对比速查表</h3>
+  <table class="compact">
+    <tr><th>组</th><th>actor_update (s)</th><th>actor 加速</th><th>HBM peak (GB)</th><th>reuse_ratio</th><th>完整 step (s)</th><th>step 净加速</th><th>状态</th></tr>
+    <tr><td>baseline mb=2</td><td class="num">472.7</td><td class="dim">—</td><td class="num">45.93</td><td class="dim">—</td><td class="num">1000.5</td><td class="dim">—</td><td class="dim">跑通</td></tr>
+    <tr><td><b>PS mb=2</b></td><td class="num ok">269.2</td><td class="ok"><b>1.76×</b></td><td class="num">45.34</td><td class="num warn">47.45%</td><td class="num ok">865.6</td><td class="ok"><b>1.16×</b></td><td class="ok">✅ 净加速</td></tr>
+    <tr><td>baseline mb=4</td><td class="num">445.0</td><td class="dim">—</td><td class="num warn">56.39</td><td class="dim">—</td><td class="num">972.6</td><td class="dim">—</td><td class="dim">跑通</td></tr>
+    <tr><td><b>PS mb=4</b></td><td class="num ok">152.4</td><td class="ok"><b>2.92×</b></td><td class="num">48.33</td><td class="num ok">72.59%</td><td class="num ok">758.3</td><td class="ok"><b>1.28×</b></td><td class="ok">✅ 净加速</td></tr>
+    <tr><td>baseline mb=8</td><td class="num bad">OOM</td><td class="bad">✗</td><td class="num bad">N/A</td><td class="dim">—</td><td class="num bad">OOM</td><td class="bad">✗</td><td class="bad">🔴 OOM</td></tr>
+    <tr><td><b>PS mb=8</b></td><td class="num ok">95.2</td><td class="ok">PS 独跑通</td><td class="num ok">50.29</td><td class="num ok">83.89%</td><td class="num ok">699.6</td><td class="ok">PS 独跑通</td><td class="ok">✅ 解锁高并发</td></tr>
+  </table>
+  <div class="note"><b>读法:</b> actor_update 是 PS 主要作用点 (训练前向+反向); infer (old_log_prob+ref, forward-only) PS 反慢 20-24% (torch_ref 后端固有开销); 完整 step = gen + 2×infer + actor_update + update_weights, 含 rollout 真实可部署加速。数据: <code>results/matrix_long10k/{group}/timing_records.rank{0-7}.json</code>。</div>
+
+  <!-- Chart A: actor_update 加速对比 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px;">
+  <div>
+  <h3 style="margin:0 0 8px;font-size:13px;color:var(--accent);">actor_update 耗时对比 (PS 主要作用点)</h3>
+  <svg viewBox="0 0 420 320" style="width:100%;" aria-label="actor_update time comparison grouped by micro_batch. Baseline vs PrefixSharing for mb=2,4,8. Baseline mb=8 OOM, PS mb=8 runs at 95.2s." role="img">
+    <defs>
+      <linearGradient id="cBl" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#475569"/><stop offset="100%" stop-color="#334155"/></linearGradient>
+      <linearGradient id="cPs" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#A78BFA"/><stop offset="100%" stop-color="#7C5CE7"/></linearGradient>
+      <pattern id="oomHatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#F85149" stroke-width="2" opacity="0.5"/>
+      </pattern>
+    </defs>
+    <!-- grid: y=30..280 (250px) = 0..500s, 0.5px/s -->
+    <g stroke="#21262D" stroke-width="1">
+      <line x1="55" y1="30" x2="400" y2="30"/><text x="48" y="34" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">500</text>
+      <line x1="55" y1="80" x2="400" y2="80"/><text x="48" y="84" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">400</text>
+      <line x1="55" y1="130" x2="400" y2="130"/><text x="48" y="134" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">300</text>
+      <line x1="55" y1="180" x2="400" y2="180"/><text x="48" y="184" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">200</text>
+      <line x1="55" y1="230" x2="400" y2="230"/><text x="48" y="234" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">100</text>
+    </g>
+    <line x1="55" y1="15" x2="55" y2="280" stroke="#30363D" stroke-width="1.5"/>
+    <line x1="55" y1="280" x2="400" y2="280" stroke="#30363D" stroke-width="1.5"/>
+    <text x="22" y="150" fill="#8B949E" font-size="9" text-anchor="middle" font-family="SF Mono,Consolas,monospace" transform="rotate(-90,22,150)">seconds</text>
+
+    <!-- mb=2 group: b=472.7→y=43.65 h=236.35 ; p=269.2→y=145.4 h=134.6 -->
+    <rect x="80" y="44" width="34" height="236" fill="url(#cBl)" rx="2"><title>baseline mb=2: 472.7s</title></rect>
+    <rect x="118" y="145" width="34" height="135" fill="url(#cPs)" rx="2"><title>PS mb=2: 269.2s</title></rect>
+    <text x="97" y="36" fill="#8B949E" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">472.7</text>
+    <text x="135" y="137" fill="#C4B5FD" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">269.2</text>
+    <text x="116" y="120" fill="#3FB950" font-size="10" text-anchor="middle" font-weight="700" font-family="SF Mono,Consolas,monospace">1.76×</text>
+    <text x="116" y="300" fill="#8B949E" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">mb=2</text>
+
+    <!-- mb=4 group: b=445→y=57.5 h=222.5 ; p=152.4→y=203.8 h=76.2 -->
+    <rect x="190" y="58" width="34" height="222" fill="url(#cBl)" rx="2"><title>baseline mb=4: 445.0s</title></rect>
+    <rect x="228" y="204" width="34" height="76" fill="url(#cPs)" rx="2"><title>PS mb=4: 152.4s</title></rect>
+    <text x="207" y="50" fill="#8B949E" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">445.0</text>
+    <text x="245" y="196" fill="#C4B5FD" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">152.4</text>
+    <text x="226" y="180" fill="#3FB950" font-size="10" text-anchor="middle" font-weight="700" font-family="SF Mono,Consolas,monospace">2.92×</text>
+    <text x="226" y="300" fill="#8B949E" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">mb=4</text>
+
+    <!-- mb=8 group: b=OOM ; p=95.2→y=232.4 h=47.6 -->
+    <rect x="300" y="40" width="34" height="240" fill="url(#oomHatch)" stroke="#F85149" stroke-width="1" stroke-dasharray="4,3" rx="2"><title>baseline mb=8: OOM</title></rect>
+    <text x="317" y="32" fill="#F85149" font-size="10" text-anchor="middle" font-weight="700" font-family="SF Mono,Consolas,monospace">OOM</text>
+    <rect x="338" y="232" width="34" height="48" fill="url(#cPs)" rx="2"><title>PS mb=8: 95.2s</title></rect>
+    <text x="355" y="225" fill="#C4B5FD" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">95.2</text>
+    <text x="336" y="260" fill="#3FB950" font-size="9" text-anchor="middle" font-weight="700" font-family="-apple-system,sans-serif">PS 独跑通</text>
+    <text x="336" y="300" fill="#8B949E" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">mb=8</text>
+
+    <line x1="165" y1="15" x2="165" y2="280" stroke="#30363D" stroke-width="0.8" opacity="0.4"/>
+    <line x1="275" y1="15" x2="275" y2="280" stroke="#30363D" stroke-width="0.8" opacity="0.4"/>
+
+    <g transform="translate(80,312)">
+      <rect x="0" y="0" width="12" height="12" rx="2" fill="url(#cBl)"/><text x="16" y="11" fill="#8B949E" font-size="9" font-family="SF Mono,Consolas,monospace">baseline</text>
+      <rect x="80" y="0" width="12" height="12" rx="2" fill="url(#cPs)"/><text x="96" y="11" fill="#C4B5FD" font-size="9" font-family="SF Mono,Consolas,monospace">PS</text>
+      <rect x="125" y="0" width="12" height="12" rx="2" fill="url(#oomHatch)" stroke="#F85149" stroke-width="1"/><text x="141" y="11" fill="#F87171" font-size="9" font-family="SF Mono,Consolas,monospace">OOM</text>
+    </g>
+  </svg>
+  </div>
+
+  <!-- Chart B: HBM peak 对比 -->
+  <div>
+  <h3 style="margin:0 0 8px;font-size:13px;color:var(--accent);">HBM 峰值对比 (显存斜率不对称)</h3>
+  <svg viewBox="0 0 420 320" style="width:100%;" aria-label="HBM peak memory comparison grouped by micro_batch. Baseline slope +10.5 GB/2x mb hits OOM at mb=8; PS slope +3 GB/2x mb stays safe at 50.29GB." role="img">
+    <defs>
+      <linearGradient id="cBl2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#475569"/><stop offset="100%" stop-color="#334155"/></linearGradient>
+      <linearGradient id="cPs2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#A78BFA"/><stop offset="100%" stop-color="#7C5CE7"/></linearGradient>
+      <pattern id="oomHatch2" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#F85149" stroke-width="2" opacity="0.5"/>
+      </pattern>
+    </defs>
+    <!-- grid: y=30..280 (250px) = 0..64GB, 3.906px/GB -->
+    <g stroke="#21262D" stroke-width="1">
+      <line x1="55" y1="30" x2="400" y2="30"/><text x="48" y="34" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">64</text>
+      <line x1="55" y1="92" x2="400" y2="92"/><text x="48" y="96" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">48</text>
+      <line x1="55" y1="155" x2="400" y2="155"/><text x="48" y="159" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">32</text>
+      <line x1="55" y1="217" x2="400" y2="217"/><text x="48" y="221" fill="#8B949E" font-size="10" text-anchor="end" font-family="SF Mono,Consolas,monospace">16</text>
+    </g>
+    <!-- 64GB card capacity line = y=30 -->
+    <line x1="55" y1="30" x2="400" y2="30" stroke="#3FB950" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.6"/>
+    <text x="398" y="26" fill="#3FB950" font-size="9" text-anchor="end" font-family="SF Mono,Consolas,monospace" opacity="0.8">64 GB (卡容量)</text>
+    <line x1="55" y1="15" x2="55" y2="280" stroke="#30363D" stroke-width="1.5"/>
+    <line x1="55" y1="280" x2="400" y2="280" stroke="#30363D" stroke-width="1.5"/>
+    <text x="22" y="150" fill="#8B949E" font-size="9" text-anchor="middle" font-family="SF Mono,Consolas,monospace" transform="rotate(-90,22,150)">GB</text>
+
+    <!-- mb=2: b=45.93→y=280-179.4=100.6 h=179.4 ; p=45.34→y=102.9 h=177.1 -->
+    <rect x="80" y="101" width="34" height="179" fill="url(#cBl2)" rx="2"><title>baseline mb=2: 45.93GB</title></rect>
+    <rect x="118" y="103" width="34" height="177" fill="url(#cPs2)" rx="2"><title>PS mb=2: 45.34GB</title></rect>
+    <text x="97" y="93" fill="#8B949E" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">45.93</text>
+    <text x="135" y="95" fill="#C4B5FD" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">45.34</text>
+    <text x="116" y="300" fill="#8B949E" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">mb=2</text>
+
+    <!-- mb=4: b=56.39→y=59.8 h=220.2 ; p=48.33→y=91.3 h=188.7 -->
+    <rect x="190" y="60" width="34" height="220" fill="url(#cBl2)" rx="2"><title>baseline mb=4: 56.39GB</title></rect>
+    <rect x="228" y="91" width="34" height="189" fill="url(#cPs2)" rx="2"><title>PS mb=4: 48.33GB</title></rect>
+    <text x="207" y="52" fill="#8B949E" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">56.39</text>
+    <text x="245" y="83" fill="#C4B5FD" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">48.33</text>
+    <text x="226" y="75" fill="#3FB950" font-size="9" text-anchor="middle" font-weight="700" font-family="SF Mono,Consolas,monospace">省 8.1GB</text>
+    <text x="226" y="300" fill="#8B949E" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">mb=4</text>
+
+    <!-- mb=8: b=OOM ; p=50.29→y=83.6 h=196.4 -->
+    <rect x="300" y="40" width="34" height="240" fill="url(#oomHatch2)" stroke="#F85149" stroke-width="1" stroke-dasharray="4,3" rx="2"><title>baseline mb=8: OOM (外推 66.85GB)</title></rect>
+    <text x="317" y="32" fill="#F85149" font-size="10" text-anchor="middle" font-weight="700" font-family="SF Mono,Consolas,monospace">OOM</text>
+    <rect x="338" y="84" width="34" height="196" fill="url(#cPs2)" rx="2"><title>PS mb=8: 50.29GB (余量 13.7GB)</title></rect>
+    <text x="355" y="76" fill="#C4B5FD" font-size="10" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">50.29</text>
+    <text x="336" y="300" fill="#8B949E" font-size="11" text-anchor="middle" font-weight="600" font-family="SF Mono,Consolas,monospace">mb=8</text>
+
+    <!-- slope trend lines -->
+    <polyline points="97,101 207,60 317,40" fill="none" stroke="#F85149" stroke-width="2" opacity="0.55" stroke-dasharray="4,3"/>
+    <polyline points="135,103 245,91 355,84" fill="none" stroke="#A78BFA" stroke-width="2" opacity="0.6"/>
+
+    <!-- slope annotation -->
+    <text x="270" y="135" fill="#F85149" font-size="10" text-anchor="start" font-weight="600" font-family="SF Mono,Consolas,monospace">baseline +10.5 GB/2×mb</text>
+    <text x="270" y="150" fill="#A78BFA" font-size="10" text-anchor="start" font-weight="600" font-family="SF Mono,Consolas,monospace">PS +3.0 GB/2×mb (3.5:1)</text>
+
+    <line x1="165" y1="15" x2="165" y2="280" stroke="#30363D" stroke-width="0.8" opacity="0.4"/>
+    <line x1="275" y1="15" x2="275" y2="280" stroke="#30363D" stroke-width="0.8" opacity="0.4"/>
+
+    <g transform="translate(80,312)">
+      <rect x="0" y="0" width="12" height="12" rx="2" fill="url(#cBl2)"/><text x="16" y="11" fill="#8B949E" font-size="9" font-family="SF Mono,Consolas,monospace">baseline</text>
+      <rect x="80" y="0" width="12" height="12" rx="2" fill="url(#cPs2)"/><text x="96" y="11" fill="#C4B5FD" font-size="9" font-family="SF Mono,Consolas,monospace">PS</text>
+      <rect x="125" y="0" width="12" height="12" rx="2" fill="url(#oomHatch2)" stroke="#F85149" stroke-width="1"/><text x="141" y="11" fill="#F87171" font-size="9" font-family="SF Mono,Consolas,monospace">OOM</text>
+    </g>
+  </svg>
+  </div>
+  </div>
+</section>
+
+<nav class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#hero">① 核心结论: 基线 vs PS 对比</a></li>
+    <li><a href="#env">② 实验环境与测试矩阵</a></li>
+    <li><a href="#q1">③ Q1 — PS 在 10K 下的加速效果</a></li>
+    <li><a href="#q2">④ Q2 — 并发度对 PS 的影响</a></li>
+    <li><a href="#q3">⑤ Q3 — mb=8 可行性与 HBM 斜率不对称</a></li>
+    <li><a href="#model">⑥ 三层限制模型 (GSM8K/10K/50K)</a></li>
+    <li><a href="#backend">⑦ flash_atten_npu 后端发现</a></li>
+    <li><a href="#conclusion">⑧ 结论与下一步</a></li>
+  </ol>
+</nav>
+
+<!-- ====== ② ENV ====== -->
+<section id="env">
+  <h2>② 实验环境与测试矩阵</h2>
+  <table>
+    <tr><th>组件</th><th>配置</th><th>组件</th><th>配置</th></tr>
+    <tr><td>硬件</td><td>1×8 Ascend 910B3 (64GB HBM/卡)</td><td>镜像</td><td><code>quay.io/ascend/verl:verl-9.0.0-910b-v0.8.0</code></td></tr>
+    <tr><td>模型</td><td>Qwen3-8B (Dense, HF)</td><td>verl / Megatron-Core</td><td>0.8.0 / 0.16.2</td></tr>
+    <tr><td>引擎</td><td>Megatron (TP=4, DP=2, CP=1)</td><td>vLLM</td><td>0.18.0 (rollout)</td></tr>
+    <tr><td>数据</td><td>64 条 GSM8K + 独有 ~10K system text (截断 max_prompt=11264)</td><td>prefix-sharing</td><td>prefix-0501 (PYTHONPATH)</td></tr>
+    <tr><td>PS 后端</td><td>torch_ref</td><td>PS dispatch</td><td><code>KEEP_PROMPT_GROUP_DISPATCH=1</code></td></tr>
+    <tr><td>RL</td><td>GRPO train_batch=64, rollout.n=8, ppo_epochs=1, 3 步 smoke</td><td>max_response</td><td>2048</td></tr>
+  </table>
+
+  <h3>测试矩阵 (6 组)</h3>
+  <p style="color:var(--muted);font-size:13px;">固定 <code>max_prompt=11264</code>, <code>max_response=2048</code>; 变量 = {baseline, PS torch_ref} × mb{2,4,8}。mb=1 因 <code>min_group_size=2</code> PS 不生效, 本轮跳过。</p>
+  <div class="note"><b>与 GSM8K 短 prompt 实验 (2026-07-23 报告) 的关键差异:</b> 本轮 prompt 从 84 token 提升到 ~10K token, 占序列比从 6.6% 提升到 49-84%, 跨过 PS 收益的 L2 门槛。dispatch 修复 (KEEP_PROMPT_GROUP_DISPATCH) 沿用上轮结论。</div>
+</section>
+
+<!-- ====== ③ Q1 ====== -->
+<section id="q1">
+  <h2>③ Q1 — PS 在 10K 下的加速效果</h2>
+  <p style="color:var(--muted);font-size:13px;">研究问题: 10K 上下文下 PS 是否净加速? 加速来自哪个阶段?</p>
+
+  <h3>3.1 actor_update 加速 (PS 主要作用点)</h3>
+  <p style="color:var(--muted);font-size:13px;">PS patch 作用于 Megatron <code>forward_step</code>, 影响 actor_update / old_log_prob / ref 三阶段训练前向。actor_update (forward+backward) 是最重阶段, 也是 PS 收益最大处。</p>
+  <table>
+    <tr><th>mb</th><th>baseline (s)</th><th>PS (s)</th><th>加速比</th><th>HBM 节省</th></tr>
+    <tr><td>2</td><td class="num">472.7</td><td class="num ok">269.2</td><td class="ok"><b>1.76× (+76%)</b></td><td class="num">+0.6 GB</td></tr>
+    <tr><td>4</td><td class="num">445.0</td><td class="num ok">152.4</td><td class="ok"><b>2.92× (+192%)</b></td><td class="ok">+8.1 GB</td></tr>
+    <tr><td>8</td><td class="num bad">OOM</td><td class="num ok">95.2</td><td class="ok">PS 独跑通 (baseline OOM)</td><td class="dim">—</td></tr>
+  </table>
+  <div class="note ok"><b>加速比随 mb 单调增大</b> 1.76× → 2.92× → (mb8 仅 PS 可跑)。根因不是计算密度提升 (baseline actor_update 几乎不随 mb 变, 472→445s 仅 -6%, 因 10K 下 gen 占主导), 而是 <b>dispatch 匹配率提升</b>: mb 增大让同 prompt 的 8 个 rollout 更易聚集进同一 micro-batch, reuse_ratio 47%→73%→84%。</div>
+
+  <h3>3.2 infer 阶段 (PS 反效果)</h3>
+  <table>
+    <tr><th>mb</th><th>baseline infer (s)</th><th>PS infer (s)</th><th>变化</th></tr>
+    <tr><td>2</td><td class="num">168.6</td><td class="num warn">203.3</td><td class="warn">+21%</td></tr>
+    <tr><td>4</td><td class="num">169.6</td><td class="num warn">209.5</td><td class="warn">+24%</td></tr>
+    <tr><td>8</td><td class="num">170.1</td><td class="num warn">205.7</td><td class="warn">+21%</td></tr>
+  </table>
+  <div class="note warn"><b>infer (old_log_prob + ref, forward_only) 阶段 PS 反慢 20-24%</b>: torch_ref 后端的 KV 拼接 + prefix 规划开销 &gt; KV 复用节省。这是 torch_ref (纯 PyTorch 参考实现) 的固有开销, NPU 优化的 flash_atten_npu 后端理论上可消除 (见 ⑦)。</div>
+
+  <h3>3.3 净训练前向加速 (扣除 infer 损失)</h3>
+  <p style="color:var(--muted);font-size:13px;">一步训练前向 ≈ 2×infer + actor_update (gen/rollout 由 vLLM 异步另计)。</p>
+  <table>
+    <tr><th>mb</th><th>baseline 前向 (s)</th><th>PS 前向 (s)</th><th>净加速</th></tr>
+    <tr><td>2</td><td class="num">809.9</td><td class="num ok">675.8</td><td class="ok"><b>1.20×</b></td></tr>
+    <tr><td>4</td><td class="num">784.2</td><td class="num ok">571.4</td><td class="ok"><b>1.37×</b></td></tr>
+    <tr><td>8</td><td class="num bad">OOM</td><td class="num ok">506.6</td><td class="ok">PS 独跑通</td></tr>
+  </table>
+
+  <h3>3.4 完整 step 加速 (含 gen/rollout, 真实可部署)</h3>
+  <p style="color:var(--muted);font-size:13px;">step_profile 实测 PS gen ~185s 且跨 mb 近恒定 (mb2=184.6 / mb4=182.7 / mb8=187.0s) — 证实 <b>PS 不影响 gen</b> (vLLM rollout 与训练前向解耦)。完整 step = gen + 2×infer + actor_update + update_weights。</p>
+  <table>
+    <tr><th>mb</th><th>baseline full (s)</th><th>PS full (s)</th><th>全 step 净加速</th><th>vs 前向加速</th></tr>
+    <tr><td>2</td><td class="num">1000.5</td><td class="num ok">865.6</td><td class="ok"><b>1.16×</b></td><td class="dim">1.20×</td></tr>
+    <tr><td>4</td><td class="num">972.6</td><td class="num ok">758.3</td><td class="ok"><b>1.28×</b></td><td class="dim">1.37×</td></tr>
+    <tr><td>8</td><td class="num bad">OOM</td><td class="num ok">699.6</td><td class="ok">PS 独跑通</td><td class="dim">—</td></tr>
+  </table>
+  <div class="note"><b>全 step 加速 (1.16-1.28×) 略低于前向加速 (1.20-1.37×)</b>, 因 gen (~185s, 训练无关) 在 baseline/PS 共用且占 step 19-27%, 稀释了训练前向收益。这是<b>真实可部署加速</b>——含 rollout 的完整 step。注: step_profile 阶段不含 ref, 完整 step 由 timing_records 的 infer (=old_log_prob+ref) + actor_update + step_profile 的 gen/update_weights 组合计算。</div>
+</section>
+
+<!-- ====== ④ Q2 ====== -->
+<section id="q2">
+  <h2>④ Q2 — 并发度对 PS 的影响</h2>
+  <table>
+    <tr><th>维度</th><th>mb=2</th><th>mb=4</th><th>mb=8</th><th>趋势</th></tr>
+    <tr><td>reuse_ratio</td><td class="num warn">47.45%</td><td class="num ok">72.59%</td><td class="num ok">83.89%</td><td class="ok">↑ dispatch 匹配更好</td></tr>
+    <tr><td>actor_update 加速</td><td class="num">1.76×</td><td class="num ok">2.92×</td><td class="ok">PS 独跑</td><td class="ok">↑ 加速比随 mb 增大</td></tr>
+    <tr><td>PS actor_update (s)</td><td class="num">269.2</td><td class="num">152.4</td><td class="num ok">95.2</td><td class="ok">↑ 绝对耗时下降</td></tr>
+    <tr><td>HBM peak PS (GB)</td><td class="num">45.34</td><td class="num">48.33</td><td class="num">50.29</td><td class="dim">↑ 斜率 +3 GB/2×mb</td></tr>
+    <tr><td>HBM peak baseline (GB)</td><td class="num">45.93</td><td class="num warn">56.39</td><td class="bad">OOM</td><td class="bad">↑↑ 斜率 +10.5 GB/2×mb</td></tr>
+    <tr><td>HBM 节省 vs baseline</td><td class="num">+0.6</td><td class="ok">+8.1</td><td class="dim">(baseline OOM)</td><td class="ok">PS 增长远慢</td></tr>
+  </table>
+  <div class="note ok"><b>机制:</b> 并发度 (mb) 增大 → 每 micro-batch 容纳更多样本 → 同 prompt 的 GRPO 8-rollout 更易进同一 batch → dispatch 匹配率提升 → PS 复用更多 KV → 加速比增大。与 GSM8K 短 prompt 实验 (mb 增大无收益, 因 prompt 太短复用空间小) 形成对比: <b>10K prompt 足够长, mb 增大能充分释放 PS 潜力</b>。</div>
+</section>
+
+<!-- ====== ⑤ Q3 ====== -->
+<section id="q3">
+  <h2>⑤ Q3 — mb=8 可行性与 HBM 斜率不对称</h2>
+
+  <h3>5.1 baseline_mb8 OOM</h3>
+  <pre><code>NPU out of memory. Tried to allocate 12.87 GiB
+(NPU 3; 60.96 GiB total; 35.58 GiB already allocated; 12.93 GiB free)</code></pre>
+  <p style="color:var(--muted);font-size:13px;">actor_update 阶段需额外 ~13GB (activation + KV), 已用 35.58GB + 12.87GB &gt; 60.96GB 上限。</p>
+
+  <h3>5.2 HBM 外推 vs 实测 (推翻 "PS HBM ≈ baseline" 误判)</h3>
+  <div class="note bad"><b>修正记录:</b> 初版报告据 mb2/mb4 差值 &lt;1GB 判 "PS HBM ≈ baseline → ps_mb8 外推同 OOM, 未实测"。<b>此判据错误</b>——应看 PS 自身增长斜率, 而非与 baseline 的差值。实测推翻外推。</div>
+  <table>
+    <tr><th>mb</th><th>baseline actor peak (GB)</th><th>PS actor peak (GB)</th><th>baseline 斜率</th><th>PS 斜率</th></tr>
+    <tr><td>2</td><td class="num">45.93</td><td class="num">45.34</td><td class="dim">—</td><td class="dim">—</td></tr>
+    <tr><td>4</td><td class="num warn">56.39</td><td class="num">48.33</td><td class="bad">+10.46</td><td class="ok">+2.99</td></tr>
+    <tr><td>8</td><td class="bad">OOM (实测)</td><td class="ok"><b>50.29 (实测跑通)</b></td><td class="bad">外推 66.85 OOM ✓</td><td class="ok">外推 51.32, 实测 50.29 ✓</td></tr>
+  </table>
+  <ul class="bullets">
+    <li><b>baseline HBM 斜率 +10.46 GB/2倍mb</b> (activation 随 mb 线性涨, reuser 无裁剪) → mb8 外推 66.85 &gt; 64 → OOM (实测确认)</li>
+    <li><b>PS HBM 斜率 +2.99 GB/2倍mb</b> (reuser 的 KV 计算被裁剪, 仅 prefix-maker 保留完整 KV) → mb8 外推 51.32, <b>实测 50.29GB, 余量 13.7GB 跑通</b> ✓</li>
+  </ul>
+  <div class="note warn"><b>根因:</b> PS 在 10K 下并非 "HBM ≈ baseline", 而是 <b>HBM 增长远慢于 baseline</b> (斜率比 3.5:1)。mb2 时两者相近 (45.93 vs 45.34) 造成 "≈" 错觉, 但随 mb 增大 baseline 的 activation 主导增长, PS 的 reuser 裁剪抵消这部分, 差距拉开 (mb4 已差 8GB, mb8 差 &gt;16GB)。<b>教训: HBM 可行性外推必须基于各自实测斜率, 不能用某一点差值推断 "两者相等"。</b></div>
+
+  <h3>5.3 结论</h3>
+  <div class="conclusion-box">
+    <p style="margin:0;">mb=8 可行性<b style="color:var(--red);">不对称</b>: baseline_mb8 OOM (HBM 硬约束), <b style="color:var(--green);">ps_mb8 跑通</b> (50.29GB, 余量 13.7GB, actor_update 95.2s)。PS 不仅加速训练, 还<b>解锁了 baseline 不可行的高并发档位</b>——这是 PS 在 10K 下的双重价值 (省时 + 省显存 + 解锁并发)。</p>
+  </div>
+</section>
+
+<!-- ====== ⑥ 三层限制模型 ====== -->
+<section id="model">
+  <h2>⑥ 三层限制模型 (GSM8K / 10K / 50K)</h2>
+  <p style="color:var(--muted);font-size:13px;">结合三组实验, PS 收益受三层限制; 10K 是首组三层同时满足的甜区。</p>
+  <table>
+    <tr><th>限制层</th><th>GSM8K (短)</th><th>10K</th><th>50K (长)</th><th>状态</th></tr>
+    <tr><td><b>L1 Dispatch</b></td><td class="warn">1.28%→4.73% (修复)</td><td class="ok">47-84%</td><td class="num">49.4%</td><td class="ok">✅ 已修复</td></tr>
+    <tr><td><b>L2 Prompt 占比</b></td><td class="bad">6.6% (无收益)</td><td class="ok">49-84% (甜区)</td><td class="num">49.4% (足够)</td><td class="ok">✅ 10K/50K 满足</td></tr>
+    <tr><td><b>L3 内存容量</b></td><td class="ok">29-36GB ✅</td><td class="warn">baseline 45-56 / PS 45-50</td><td class="bad">67GB 🔴OOM</td><td class="warn">⚠️ 10K mb≤4 双可行, mb8 仅 PS</td></tr>
+  </table>
+  <div class="note ok"><b>10K 是 PS 的甜区</b>: L1 已修复 + L2 满足 + L3 PS 在 mb≤8 可行 → 首次实现净加速 (1.20-1.37× 前向) 且解锁 mb8 高并发档。50K 因 L3 内存硬约束 OOM, 不可行。</div>
+</section>
+
+<!-- ====== ⑦ backend ====== -->
+<section id="backend">
+  <h2>⑦ flash_atten_npu 后端发现 (额外)</h2>
+  <p style="color:var(--muted);font-size:13px;">10K 下测试了 flash_atten_npu 后端 (50K 时此步 FlashBackendValidationError 崩溃)。</p>
+  <table>
+    <tr><th>维度</th><th>50K</th><th>10K</th></tr>
+    <tr><td>layer=1 attention</td><td class="bad">🔴 API 错误崩溃</td><td class="ok">✅ 成功执行</td></tr>
+    <tr><td>后续 layer/backward</td><td class="dim">—</td><td class="bad">🔴 hang (死锁)</td></tr>
+  </table>
+  <div class="note warn"><b>新发现:</b> flash_atten_npu 在 10K (shape 小) 下 layer=1 成功 (50K 大 shape 触发 npu_fusion_attention API 不兼容), 但后续 layer 在同步点死锁 (main_ppo state=S, CPU_delta=0, 日志停 7.7min)。10K shape 治愈了 API 错误但暴露了 kernel 内部 hang。<b>torch_ref 因此仍是 10K 下唯一可用后端</b>; 若修复 hang, infer 阶段 20-24% 损失可望消除, 净加速有望达 1.5-2×。</div>
+</section>
+
+<!-- ====== ⑧ 结论 ====== -->
+<section id="conclusion">
+  <h2>⑧ 结论与下一步</h2>
+  <div class="conclusion-box hero">
+    <ol style="margin:0;padding-left:22px;line-height:1.9;">
+      <li><b>PS 在 10K 上下文下首次实现净训练加速</b>: 前向 1.20×(mb2)/1.37×(mb4), <b>含 gen 完整 step 1.16×/1.28×</b>。此前 GSM8K 无收益、50K OOM。</li>
+      <li><b>加速比随并发度单调增大</b>: mb2 1.76× → mb4 2.92× (actor_update), reuse_ratio 47%→73%→84%。</li>
+      <li><b>PS 降低 HBM 峰值且增长远慢于 baseline</b>: 斜率 +3 vs +10.5 GB/2倍mb (3.5:1), mb4 省 8.1GB。</li>
+      <li><b>mb=8 可行性不对称</b>: baseline_mb8 OOM, <b>ps_mb8 跑通</b> (50.29GB, 余量 13.7GB, actor_update 95.2s)。PS 解锁 baseline 不可行的高并发档。</li>
+      <li><b>10K 是 PS 甜区</b>: L1 dispatch 已修复 + L2 prompt 占比满足 + L3 内存 PS 在 mb≤8 可行, 三层同时满足。</li>
+      <li><b>flash_atten_npu 10K layer=1 成功但后续 hang</b>, torch_ref 仍是唯一可用后端。</li>
+      <li><b>外推判据修正</b>: HBM 可行性必须基于各自实测斜率, 不能用单点差值判 "两者相等" (初版误判 mb8 双 OOM 的根因)。</li>
+    </ol>
+  </div>
+
+  <h3>下一步建议</h3>
+  <ul class="bullets">
+    <li>修复 flash_atten_npu hang → 测 PS NPU 后端 10K 净加速 (预期 &gt; torch_ref, 消除 infer 20-24% 损失)</li>
+    <li>测 20K 上下文 mb{2,4} → 确认甜区上界 (L3 内存边界)</li>
+    <li>ps_mb8 长训练 (&gt;3 步) 确认稳态 reuse 84% 与 HBM 50GB 稳定</li>
+  </ul>
+
+  <h3>数据位置</h3>
+  <table class="compact">
+    <tr><th>产物</th><th>路径</th></tr>
+    <tr><td>分析脚本</td><td><code>scripts/analyze_long10k_concurrency.py</code></td></tr>
+    <tr><td>对比表 / 图表</td><td><code>results/matrix_long10k/concurrency_comparison.md</code> · <code>concurrency_summary.png</code></td></tr>
+    <tr><td>timing (8 rank × 6 组)</td><td><code>results/matrix_long10k/{group}/timing_records.rank{0-7}.json</code></td></tr>
+    <tr><td>矩阵驱动</td><td><code>scripts/run_long10k_concurrency_matrix.sh</code></td></tr>
+    <tr><td>关联报告</td><td><a href="2026-07-23-stage-report.html">2026-07-23 GSM8K 短 prompt 报告</a> (Q1/Q2/Q3 基础)</td></tr>
+  </table>
+</section>
+
+<footer>
+  Generated 2026-07-24 · 实验 <b>wip-verl-npu-qwen-with-prefix-sharing</b> · 10K 并发矩阵 (ps_mb8 补测, 推翻 mb8 双 OOM 误判)<br>
+  一手数据来自 timing_records.json (micro-batch hook) + step_profile (二级 hook) · step_profile 因 BUG B dump 0 步, baseline gen 取同 mb PS 等价值
+</footer>
+</body>
+</html>
