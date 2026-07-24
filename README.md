@@ -1,5 +1,7 @@
 # report-hub
 
+> 🌐 **在线访问:<https://versatile-ai.github.io/report-hub/>**
+
 > versatile-ai 各仓库的**自包含 HTML 报告聚合站点**。
 > 顶层 `index.html` 做多仓库导航,每个仓库在子目录下维护自己的实验与报告页面。
 
