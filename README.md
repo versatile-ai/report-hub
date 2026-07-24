@@ -34,7 +34,18 @@ python3 -m http.server 8000
 bash scripts/install-skill.sh
 ```
 
-交互模式:自动检测本机已装的 agent(claude code / codex / opencode)并选择安装目标。安装后在 agent 会话执行 `/report-hub-build-publish` 即可按设计规范自动生成报告、登记导航、提交,推送前会征求确认。已运行的 agent 会话需重启以加载新 skill。
+交互模式:自动检测本机已装的 agent(claude code / codex / opencode)并选择安装目标。已运行的 agent 会话需重启以加载新 skill。
+
+### 用法示例
+
+在 agent 会话里执行 `/report-hub-build-publish`,告诉它仓库、实验、报告类型和素材即可,它会生成报告页、登记导航、本地提交,推送前等你确认:
+
+```
+/report-hub-build-publish
+
+给 automodelwire / deepseek-v4-npu-dspark 发一份 stage 报告,
+标题「Phase Report — Draft Graph 落盘」,素材见下……
+```
 
 ## 目录结构
 
