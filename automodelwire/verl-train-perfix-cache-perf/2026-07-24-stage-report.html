@@ -321,6 +321,25 @@ footer a { color:var(--accent); }
     <tr><td>RL</td><td>GRPO train_batch=64, rollout.n=8, ppo_epochs=1, 3 步 smoke</td><td>max_response</td><td>2048</td></tr>
   </table>
 
+  <h3>数据集生成方式 (10K / 50K 共用机制)</h3>
+  <p style="color:var(--muted);font-size:13px;">10K 与 50K 长上下文数据集由同一生成器产出, 仅 <code>--target-prompt-tokens</code> 参数不同, 确保 PS 实验的"组内共享前缀 + 组间不共享"结构一致、可比。</p>
+  <table>
+    <tr><th>维度</th><th>设计</th></tr>
+    <tr><td>生成器</td><td><code>prepare_long_prompt_data.py</code> (位于姊妹实验 <code>wip-verl-train-perfix-cache-perf/tools/</code>); 10K 由 <code>scripts/prepare_long10k_data.sh</code> 包一层调用, 仅把 <code>--target-prompt-tokens</code> 从 50000 改为 10000</td></tr>
+    <tr><td>基础题目</td><td>64 条 GSM8K (verl parquet 格式, 含 prompt/reward_model 列), 分 train/test 各跑一次</td></tr>
+    <tr><td>语料素材</td><td>内置英文技术参考语料 (ML Systems / 分布式训练 / Attention 优化 / RLHF-GRPO / MoE 等), 足够生成不重复内容</td></tr>
+    <tr><td>独有性</td><td>每道题按<b>不同偏移</b>从语料切分一段独有 system text, 不同题之间<b>不共享前缀</b> → 模拟真实"每用户有不同长文档"场景</td></tr>
+    <tr><td>组内共享</td><td>GRPO <code>rollout.n=8</code> → 同一 prompt 的 8 条 rollout <b>共享相同 system prompt</b>; dispatch 修复后同 prompt rollout 进同一 micro-batch, PS 在组内生效</td></tr>
+    <tr><td>语料规模</td><td>10K: 64×10K = <b>640K token</b> · 50K: 64×50K = <b>3.2M token</b>, 均无重叠</td></tr>
+    <tr><td>tokenizer</td><td><code>AutoTokenizer</code> 加载 <code>Qwen3-8B</code> 计 token, 精确到目标长度</td></tr>
+  </table>
+  <table class="compact">
+    <tr><th>数据集</th><th>target prompt</th><th>实际 max_prompt</th><th>是否截断</th><th>用途 / 结论</th></tr>
+    <tr><td><b>gsm8k_long10k</b></td><td class="num">10000</td><td class="num">11264</td><td class="ok">否 (prompt ~10K 直接用)</td><td class="ok">本轮 6 组矩阵 · PS 甜区, 净加速 1.16-1.28×</td></tr>
+    <tr><td><b>gsm8k_long50k</b></td><td class="num">50000</td><td class="num">39936</td><td class="warn">是 (截断至 40K)</td><td class="bad">50K 实验 · L3 内存 OOM (67GB &gt; 64GB), 不可行</td></tr>
+  </table>
+  <div class="note warn"><b>为什么 10K 不能复用 50K 数据集 + 截断:</b> <code>launch.sh</code> 的 <code>truncation=left</code> 会从<b>序列前部</b>截断 → 切掉 system text 的共享前缀 → PS 前缀检测失效。因此 10K 必须用 target=10000 <b>重新生成</b>独有 ~10K system text 的数据集, 而非复用 long50k 截断。这是两数据集分别生成、而非一份数据改参数的根本原因。</div>
+
   <h3>测试矩阵 (6 组)</h3>
   <p style="color:var(--muted);font-size:13px;">固定 <code>max_prompt=11264</code>, <code>max_response=2048</code>; 变量 = {baseline, PS torch_ref} × mb{2,4,8}。mb=1 因 <code>min_group_size=2</code> PS 不生效, 本轮跳过。</p>
   <div class="note"><b>与 GSM8K 短 prompt 实验 (2026-07-23 报告) 的关键差异:</b> 本轮 prompt 从 84 token 提升到 ~10K token, 占序列比从 6.6% 提升到 49-84%, 跨过 PS 收益的 L2 门槛。dispatch 修复 (KEEP_PROMPT_GROUP_DISPATCH) 沿用上轮结论。</div>
