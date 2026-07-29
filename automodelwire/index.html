@@ -574,6 +574,13 @@ const EXPERIMENTS=[
    reports:[
    {title:"CANN 9.0.1 vs 9.0.0 算子差异报告 — DeepSeek V4 专题",subtitle:"全量 +63/+33/+13 · 0 移除 · 6 项 FlashAttention A5 支持 · watchlist 存在性矩阵 · 命名修正 · 对抗性审查",file:"cann-ops-version-diff/2026-07-24-9.0.0-vs-9.0.1-deepseek-v4.html",date:"2026-07-24",type:"stage"}
   ]
+  },
+  {id:"kimi-k3-cann-operator-support",name:"Kimi-K3 训推算子 → CANN 版本支持分析",subtitle:"跳板机 /data/model 权重扫描 · KDA 线性注意力+MLA+MoE 混合架构 · mxfp4/bf16/w4a8 三量化路径 · CANN 9.0.0/9.0.1 + vllm-ascend + MindSpeed-LLM 三维交叉核验 · 训推全算子溯源",status:"active",startDate:"2026-07-29",lastUpdate:"2026-07-29",
+   tags:["Kimi-K3","KDA","Gated-DeltaRule","MLA","MoE","CANN","9.0.0","9.0.1","vllm-ascend","MindSpeed-LLM","mxfp4","w4a8","算子矩阵","线性注意力","ACLNN","triton"],
+   metrics:[{label:"KDA 层",value:"69/93",tone:"info"},{label:"MoE 专家",value:"896",tone:"info"},{label:"推理版本",value:"9.0.0",tone:"good"},{label:"训练硬缺口",value:"2",tone:"bad"},{label:"Grad 算子",value:"38",tone:"info"},{label:"量化路径",value:"3",tone:"info"}],
+   reports:[
+   {title:"Kimi-K3 训推算子支持分析 — mxfp4/bf16/w4a8 + 训练三维矩阵",subtitle:"权重扫描 · 架构剖析 · 推理算子矩阵 · KDA 深度分析 · 训练算子矩阵 · 缺口裁定 · 全量行号溯源",file:"kimi-k3-cann-operator-support/2026-07-29-kimi-k3-operator-support.html",date:"2026-07-29",type:"stage"}
+   ]
   }
 ];
 

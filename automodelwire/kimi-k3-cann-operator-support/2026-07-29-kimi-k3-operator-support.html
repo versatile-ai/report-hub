@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kimi-K3 训推算子 → CANN 版本支持分析（v2 复核版）</title>
+<style>
+:root{
+  --bg:#0b0e14;--panel:#11151f;--panel2:#161b28;--ink:#e6e8ec;--mut:#8a93a6;
+  --acc:#5b9dff;--good:#3ecf8e;--bad:#ff5c5c;--warn:#f5a623;--info:#62d4e8;
+  --bd:#222a3a;--bd2:#2c364c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif;
+  font-size:14px;line-height:1.65}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 20px 80px}
+header{padding:18px 22px;background:linear-gradient(135deg,#141b2b,#0e1320);
+  border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+.breadcrumb{color:var(--mut);font-size:12px;margin-bottom:8px}
+.breadcrumb a{color:var(--acc);text-decoration:none}
+h1{margin:0 0 6px;font-size:22px;font-weight:600}
+.subtitle{color:var(--mut);font-size:13px}
+.meta{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;font-size:11px}
+.tag{background:#1a2236;border:1px solid var(--bd2);padding:2px 8px;border-radius:10px;color:var(--mut)}
+.ver{background:#1f2a1a;border:1px solid #2f4a2a;color:var(--good);padding:2px 8px;border-radius:10px}
+.toc{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin-bottom:16px}
+.toc h3{margin:0 0 8px;font-size:13px;color:var(--mut)}
+.toc ol{margin:0;padding-left:20px}
+.toc li{margin:3px 0}
+.toc a{color:var(--acc);text-decoration:none;font-size:13px}
+.toc a:hover{text-decoration:underline}
+.section{background:var(--panel);border:1px solid var(--bd);border-radius:10px;
+  padding:18px 22px;margin-bottom:14px}
+.section h2{margin:0 0 12px;font-size:17px;font-weight:600;border-bottom:1px solid var(--bd);padding-bottom:8px}
+.section h3{margin:16px 0 6px;font-size:14px;color:var(--acc);font-weight:600}
+.section h4{margin:12px 0 4px;font-size:13px;color:var(--info);font-weight:600}
+p{margin:6px 0}
+code{background:#0d121d;border:1px solid var(--bd);padding:1px 5px;border-radius:4px;
+  font-family:"SF Mono",Consolas,Menlo,monospace;font-size:12px;color:#cdd6e4}
+pre{background:#0d121d;border:1px solid var(--bd);border-radius:6px;padding:10px;overflow-x:auto;
+  font-family:"SF Mono",Consolas,Menlo,monospace;font-size:12px;color:#cdd6e4}
+.metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:10px 0}
+.metric{background:var(--panel2);border:1px solid var(--bd);border-radius:8px;padding:10px 12px}
+.metric .v{font-size:20px;font-weight:600}
+.metric .l{font-size:11px;color:var(--mut);margin-top:2px}
+.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}.info{color:var(--info)}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
+th,td{border:1px solid var(--bd);padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#1a2236;color:#cdd6e4;font-weight:600}
+tr:nth-child(even){background:#0e1320}
+.pill{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-weight:600}
+.p-ok{background:#16291c;color:var(--good);border:1px solid #2f5a3a}
+.p-no{background:#2a1616;color:var(--bad);border:1px solid #5a2f2f}
+.p-partial{background:#2a2116;color:var(--warn);border:1px solid #5a4a2f}
+.p-na{background:#1a1a24;color:var(--mut);border:1px solid var(--bd2)}
+.note{background:#131a26;border-left:3px solid var(--acc);padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0;font-size:13px}
+.warnbox{background:#2a2116;border-left:3px solid var(--warn);padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0;font-size:13px}
+.badbox{background:#2a1616;border-left:3px solid var(--bad);padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0;font-size:13px}
+.goodbox{background:#16291c;border-left:3px solid var(--good);padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0;font-size:13px}
+.evid{color:var(--mut);font-size:11px;font-family:monospace}
+ul{margin:6px 0;padding-left:20px}li{margin:3px 0}
+.small{font-size:12px;color:var(--mut)}
+.kbd{background:#1a2236;border:1px solid var(--bd2);border-bottom-width:2px;border-radius:4px;padding:1px 6px;font-size:11px;font-family:monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<div class="breadcrumb"><a href="../../index.html">automodelwire</a> / <a href="../index.html">reports</a> / kimi-k3-operator-support</div>
+<h1>Kimi-K3 训推算子 → CANN 版本支持分析 <span class="small">(v2 复核版 — 三维矩阵 + 算子遗漏修正)</span></h1>
+<div class="subtitle">基于跳板机 192.168.0.112:/data/model/Kimi-K3 权重 config.json + modeling 源码 + CANN 9.0.0/9.0.1 算子矩阵 + vllm-ascend(t0-test) + MindSpeed-LLM 静态扫描</div>
+<div class="meta">
+<span class="tag">Kimi-K3</span><span class="tag">KDA</span><span class="tag">Gated-DeltaRule</span><span class="tag">MLA</span><span class="tag">MoE-Latent</span>
+<span class="tag">SiTU</span><span class="tag">W4A16-MXFP4</span><span class="tag">CANN-9.0.0/9.0.1</span>
+<span class="ver">扫描日期 2026-07-29</span>
+<span class="tag">证据: 源码行号 + 矩阵 CSV + config.json</span>
+</div>
+</header>
+
+<div class="toc">
+<h3>目录</h3>
+<ol>
+<li><a href="#s1">执行摘要 + v2 复核结论</a></li>
+<li><a href="#s2">K3 架构与确认配置</a></li>
+<li><a href="#s3">算子清单复核（按 mxfp4/bf16/w4a8 + 视觉/MoE/KDA/MLA 分路）</a></li>
+<li><a href="#s4">三维支持矩阵（CANN × torch_npu/op-plugin × MindSpeed/vllm-ascend）</a></li>
+<li><a href="#s5">量化路径分析（W4A16/W4A8/W4A4/bf16 分开）</a></li>
+<li><a href="#s6">训练可行性</a></li>
+<li><a href="#s7">推理可行性</a></li>
+<li><a href="#s8">结论与建议</a></li>
+</ol>
+</div>
+<div class="section open" id="s1">
+<h2>1. 执行摘要 + v2 复核结论</h2>
+
+<p>本报告为 <b>v2 复核版</b>，相对 v1 做了三件事：(1) 按 mxfp4 / bf16 / w4a8 + 训练 <b>分路复核</b>算子遗漏与误判；(2) 对每个识别算子在 <b>三个维度</b>（CANN aclnn / torch_npu·op-plugin·ATB / MindSpeed-LLM·vllm-ascend）重新核验支持情况；(3) 据此刷新结论。</p>
+
+<div class="metrics">
+<div class="metric"><div class="v info">69/93</div><div class="l">KDA 线性注意力层</div></div>
+<div class="metric"><div class="v info">24/93</div><div class="l">MLA 全注意力层</div></div>
+<div class="metric"><div class="v info">896</div><div class="l">路由专家 (16 选 + 2 共享)</div></div>
+<div class="metric"><div class="v info">96</div><div class="l">KDA 头数 (head_dim=128)</div></div>
+<div class="metric"><div class="v good">9.0.0</div><div class="l">推理 CANN 基线</div></div>
+<div class="metric"><div class="v bad">3</div><div class="l">训练硬缺口 (v1 为 2，复核 +1)</div></div>
+<div class="metric"><div class="v warn">W4A16</div><div class="l">实际量化路径 (非 W4A8)</div></div>
+<div class="metric"><div class="v bad">0</div><div class="l">vllm-ascend 中 K3 模型注册</div></div>
+</div>
+
+<h3>v2 复核修正项（v1 误判 / 遗漏）</h3>
+<table>
+<tr><th>#</th><th>v1 结论</th><th>v2 复核结论</th><th>证据</th></tr>
+<tr><td>1</td><td>量化路径笼统记为 "mxfp4 / w4a8"</td><td><b>K3 checkpoint 实际为 W4A16-MXFP4（weight-only）</b>，<code>input_activations=null</code>、<code>output_activations=null</code>。W4A8 是需 A5 SoC 的备选动态量化路径，<b>非 K3 默认</b>。</td><td class="evid">config.json quantization_config: format=mxfp4-pack-quantized, targets=Linear, dynamic=false</td></tr>
+<tr><td>2</td><td>MoE 路由为 "DeepSeek 式 grouped topk"</td><td><b>K3 不走 grouped topk</b>：<code>num_expert_group=1, topk_group=1</code>，<code>KimiMoEGate.forward</code> 中 <code>num_expert_group > 1</code> 分支为死代码。实际为 sigmoid + 简单 topk + renormalize。</td><td class="evid">config.json + modeling_kimi_linear.py:724</td></tr>
+<tr><td>3</td><td>未提及 latent MoE</td><td><b>K3 为 latent MoE</b>：<code>routed_expert_hidden_size=3584</code>，路由专家外层套 <code>routed_expert_down_proj</code> + <code>routed_expert_up_proj</code>（+ 可选 norm），多 2 个 Linear。</td><td class="evid">config.json + modeling_kimi_linear.py:776-813</td></tr>
+<tr><td>4</td><td>视觉塔一笔带过</td><td><b>补全视觉塔算子</b>：Conv2d patch embed、2D RoPE（complex mul）、<code>F.interpolate</code>+<code>torch.compile(dynamic=True)</code> 动态形状、flash_attn_varlen_func（非因果）、PatchMergerMLPV2、tpool 时域池化。</td><td class="evid">modeling_kimi_k3.py:162-169, 308, 621-646, 783-815</td></tr>
+<tr><td>5</td><td>"GDR backward 缺失" 笼统</td><td><b>精确化</b>：MindSpeed 有 <code>npu_chunk_gated_delta_rule_bwd_dhu</code>（仅 h 态 + dhu 梯度），但参数为 <code>q,k,v,g,beta,scale</code> <b>无 A_log/dt_bias/key-dependent beta</b>，与 KDA 的 KDA-specific 参数不兼容 → KDA bwd 实际无可用实现。</td><td class="evid">flash_gated_delta_rule.py:165; chunk_gated_delta_rule.py:77-153</td></tr>
+<tr><td>6</td><td>未点明 vllm-ascend 集成缺口</td><td><b>vllm-ascend(t0-test) 无 K3 模型注册</b>，仅 <code>patch_kimi_k25.py</code>（K2.5）。K3 文本骨干 <code>kimi_linear</code>/<code>KimiK3ForConditionalGeneration</code> 未接入；KDA 相关仅 7 个 forward-only triton 文件。</td><td class="evid">grep -ril kimi vllm_ascend/ → 仅 k25 patch</td></tr>
+<tr><td>7</td><td>未列 SiTU / output_gate / attn_res</td><td><b>补全 K3-specific 算子</b>：SiTU 激活（β·tanh(g/β)·sigmoid(g)·up）、MLA output_gate（g_proj+sigmoid+mul）、block residual（attn_res_block_size=12，RMSNorm+Linear→1+softmax+matmul）。</td><td class="evid">modeling_kimi_linear.py:64-82, 470-472, 1075-1088</td></tr>
+<tr><td>8</td><td>训练硬缺口 2 个</td><td><b>复核后 3 个</b>：① KDA backward；② mxfp4 训练（无支持）；③ <b>新增</b>：MoE 训练 — 参考实现 <code>KimiSparseMoeBlock</code> 显式 <code>raise NotImplementedError("Training mode is not supported")</code> + gate <code>assert not self.training</code>。</td><td class="evid">modeling_kimi_linear.py:721, 827</td></tr>
+</table>
+
+<div class="badbox"><b>核心结论（v2）</b>：K3 在 CANN 9.0.0/9.0.1 上 <b>推理可行但需补 vllm-ascend 模型注册 + 96 头 KDA prefill 通道</b>；<b>训练在当前栈不可行</b>（KDA bwd / mxfp4 bwd / MoE bwd 三缺口，且参考实现本身禁用 MoE 训练）。最现实路径：<b>bf16 推理 + triton KDA forward</b>，或 <b>W4A16-MXFP4 权重量化推理</b>（待 2026-03 torch_npu 发布符号）。</div>
+</div>
+
+<div class="section open" id="s2">
+<h2>2. K3 架构与确认配置</h2>
+
+<p><code>KimiK3ForConditionalGeneration</code> = MoonViT3d 视觉塔 + mm_projector(PatchMergerMLPV2) + <code>KimiLinear</code> 文本骨干（93 层）。文本骨干为 <b>KDA 线性注意力 (69 层) + MLA (24 层) + Latent MoE</b> 混合架构。</p>
+
+<h3>2.1 确认配置（来自 112 节点 config.json，非推测）</h3>
+<table>
+<tr><th>项</th><th>值</th><th>说明</th></tr>
+<tr><td>num_hidden_layers</td><td>93</td><td>KDA 69 + MLA 24</td></tr>
+<tr><td>linear_attn.num_heads</td><td>96</td><td><span class="bad">> aclnn chunk GDR 约束 Nk≤64</span></td></tr>
+<tr><td>linear_attn.head_dim</td><td>128</td><td>= aclnn 约束上限 Dk/Dv≤128</td></tr>
+<tr><td>linear_attn.short_conv_kernel_size</td><td>4</td><td>ShortConvolution Conv1d k=4 + silu</td></tr>
+<tr><td>num_experts / per_token / shared</td><td>896 / 16 / 2</td><td>sigmoid 路由</td></tr>
+<tr><td>moe_router_activation_func</td><td>sigmoid</td><td>非 softmax</td></tr>
+<tr><td>topk_method</td><td>noaux_tc</td><td>aux-loss-free</td></tr>
+<tr><td>num_expert_group / topk_group</td><td>1 / 1</td><td><span class="warn">grouped topk 死代码，实际简单 topk</span></td></tr>
+<tr><td>routed_expert_hidden_size</td><td>3584</td><td><b>latent MoE</b>，专家外层 down/up proj</td></tr>
+<tr><td>first_k_dense_replace / moe_layer_freq</td><td>1 / 1</td><td>仅 layer 0 稠密，1-92 全 MoE</td></tr>
+<tr><td>mla_use_output_gate</td><td>true</td><td>MLA 输出门 g_proj+sigmoid</td></tr>
+<tr><td>attn_res_block_size</td><td>12</td><td>每 12 层 block residual</td></tr>
+<tr><td>hidden_act</td><td>situ</td><td>SiTU 激活（K3 专属）</td></tr>
+<tr><td>q_lora_rank / kv_lora_rank</td><td>1536 / 512</td><td>MLA 低秩</td></tr>
+<tr><td>qk_nope/rope_head_dim, v_head_dim</td><td>128 / 64 / 128</td><td>MLA 头维</td></tr>
+<tr><td>quantization</td><td>mxfp4-pack-quantized</td><td><b>weight-only</b>（act null）, group_size=32, targets=Linear</td></tr>
+</table>
+
+<h3>2.2 KDA vs 标准 GDR 差异（关键，决定算子是否可复用）</h3>
+<p>K3 的 KDA（Key-Dependent Accumulation）是 Gated DeltaNet/DeltaRule 家族的 <b>变体</b>，<code>chunk_kda</code> 调用参数包含标准 GDR 没有的 KDA-specific 项：</p>
+<pre>chunk_kda(q,k,v,g,beta,
+  A_log,               # log A，非 GDR 的 A/g
+  dt_bias,             # dt 偏置，GDR 无
+  use_qk_l2norm_in_kernel=True,
+  use_gate_in_kernel=True,
+  use_beta_sigmoid_in_kernel=True,
+  safe_gate, lower_bound,  # 门控下界，GDR 无
+  transpose_state_layout=True)</pre>
+<p class="evid">证据：modeling_kimi_linear.py:610-627</p>
+<p>这意味着 <b>MindSpeed 的标准 <code>chunk_gated_delta_rule</code> bwd（参数 q,k,v,g,beta,scale,initial_state）不能直接用于 K3</b>——缺 A_log/dt_bias/key-dependent beta 的梯度通路。</p>
+</div>
+<div class="section" id="s3">
+<h2>3. 算子清单复核（按路径分路）</h2>
+<p>按用户要求，<b>mxfp4 / bf16 / w4a8 + 训练 分开分析</b>，并补全 v1 遗漏的视觉塔、MoE 细节、K3-specific 算子。</p>
+
+<h3>3.1 文本骨干 — KDA 线性注意力（69 层，推理 + 训练分述）</h3>
+<table>
+<tr><th>算子/原语</th><th>源码</th><th>推理支持</th><th>训练支持</th></tr>
+<tr><td>ShortConvolution (Conv1d k=4 + silu, 带 cache 状态)</td><td class="evid">:504-518</td><td><span class="pill p-partial">triton (fla)</span> 走 triton-ascend，非 aclnn</td><td><span class="pill p-partial">triton fwd 仅</span> 无独立 bwd 核</td></tr>
+<tr><td>chunk_kda (prefill，96 头)</td><td class="evid">:610-627</td><td><span class="pill p-partial">triton kda.py</span> vllm-ascend 自带 forward；<span class="pill p-no">aclnn ChunkGatedDeltaRule</span> 受 Nk≤64 约束不可用</td><td><span class="pill p-no">无 bwd</span> triton KDA 7 文件 0 个 bwd/grad</td></tr>
+<tr><td>fused_recurrent_kda (decode，步进)</td><td class="evid">:629-645</td><td><span class="pill p-partial">triton</span> 走 fused_recurrent_kda.py</td><td><span class="pill p-na">N/A</span> decode 仅推理</td></tr>
+<tr><td>A_log / dt_bias 参数</td><td class="evid">:520-527</td><td>参数加载即可</td><td><span class="pill p-no">无梯度通路</span></td></tr>
+<tr><td>q/k L2norm (in-kernel)</td><td class="evid">:620</td><td><span class="pill p-ok">triton l2norm.py</span></td><td><span class="pill p-partial">l2norm_bwd 存在但属标准 GDR 路径</span></td></tr>
+<tr><td>FusedRMSNormGated (o_norm, sigmoid 门控)</td><td class="evid">:539-540</td><td><span class="pill p-ok">fla 模块</span></td><td><span class="pill p-partial">fla 支持，非 NPU 原生</span></td></tr>
+<tr><td>状态 layout transpose (transpose_state_layout)</td><td class="evid">:625</td><td>triton 内核内</td><td>同上</td></tr>
+</table>
+<div class="warnbox"><b>KDA 推理通道</b>：aclnn <code>ChunkGatedDeltaRule</code>（ops-transformer，9.0.0/9.0.1 均 1/2）受 README 约束 <code>Nv≤64, Nk≤64</code>，K3 用 96 头 → <b>不可用</b>；<code>RecurrentGatedDeltaRule</code>（decode）Nk/Nv≤256 但仅推理且 <code>L_i≤8</code>。实际推理靠 <b>vllm-ascend triton KDA</b>（forward-only）。<span class="evid">ops-transformer/attention/chunk_gated_delta_rule/README.md:142; op-plugin recurrent doc</span></div>
+
+<h3>3.2 文本骨干 — MLA 全注意力（24 层）</h3>
+<table>
+<tr><th>算子/原语</th><th>源码</th><th>推理支持</th><th>训练支持</th></tr>
+<tr><td>q_a/q_b/kv_a/kv_b/o_proj Linear (低秩)</td><td class="evid">:364-394</td><td><span class="pill p-ok">Matmul</span></td><td><span class="pill p-ok">Matmul+bwd</span></td></tr>
+<tr><td>RMSNorm (q_a/kv_a layernorm)</td><td class="evid">:368,383</td><td><span class="pill p-ok">aclnnRmsNorm</span></td><td><span class="pill p-ok">+Grad</span></td></tr>
+<tr><td>flash_attention_2 (强制，q_head_dim≠v_head_dim 需 pad)</td><td class="evid">:446-466</td><td><span class="pill p-ok">flash-attn-ascend / aclnnFlashAttentionScore</span></td><td><span class="pill p-ok">FA-ascend bwd</span></td></tr>
+<tr><td>output_gate: g_proj + sigmoid + mul</td><td class="evid">:470-472</td><td><span class="pill p-ok">sigmoid+mul</span></td><td><span class="pill p-ok">原生</span></td></tr>
+<tr><td>rope (MLA k_rot 部分)</td><td class="evid">:435-440</td><td>注意：K3 MLA <b>不显式 apply rope</b>（rotary_emb=None，k_rot 直传）</td><td>—</td></tr>
+<tr><td>KV cache update (KimiDynamicCache)</td><td class="evid">:442-444</td><td><span class="pill p-ok">PagedAttention</span></td><td><span class="pill p-na">N/A</span></td></tr>
+</table>
+<div class="goodbox"><b>MLA 训练完整</b>：MindSpeed-LLM 有 <code>SparseFlashMlaFunction</code>（含 backward，npu_sparse_flash_mla.py:125,268）。MLA 是 K3 训练侧唯一无短板的注意力路径。</div>
+
+<h3>3.3 文本骨干 — Latent MoE（92 层）</h3>
+<table>
+<tr><th>算子/原语</th><th>源码</th><th>推理支持</th><th>训练支持</th></tr>
+<tr><td>gate Linear + sigmoid 路由</td><td class="evid">:707-712</td><td><span class="pill p-ok">sigmoid</span></td><td><span class="pill p-no">assert not training</span></td></tr>
+<tr><td>简单 topk + e_score_correction_bias + renormalize</td><td class="evid">:723-757</td><td><span class="pill p-ok">torch.topk</span></td><td><span class="pill p-no">同上</span></td></tr>
+<tr><td>grouped topk（<b>死代码，n_group=1</b>）</td><td class="evid">:724</td><td><span class="pill p-na">未触发</span></td><td><span class="pill p-na">未触发</span></td></tr>
+<tr><td>moe_init_routing / finalize_routing / token permute</td><td class="evid">vllm-ascend fused_moe</td><td><span class="pill p-ok">npu_moe_init_routing_v / npu_moe_finalize_routing / npu_moe_token_permute</span></td><td><span class="pill p-no">参考实现禁用</span></td></tr>
+<tr><td>grouped_matmul (专家 GEMM)</td><td class="evid">vllm-ascend</td><td><span class="pill p-ok">npu_grouped_matmul / aclnnGroupedMatmul V1-V5</span></td><td><span class="pill p-no">无 GroupedMatmulGrad</span></td></tr>
+<tr><td>EP distribute dispatch/combine</td><td class="evid">vllm-ascend</td><td><span class="pill p-ok">npu_moe_distribute_dispatch_v / combine_v</span></td><td><span class="pill p-na">N/A</span></td></tr>
+<tr><td>latent MoE: routed_expert_down_proj / up_proj (+norm)</td><td class="evid">:804-813</td><td><span class="pill p-ok">Linear</span></td><td><span class="pill p-no">受 MoE block 禁训连带</span></td></tr>
+<tr><td>shared_experts (KimiMLP, SiTU)</td><td class="evid">:797-801,836</td><td><span class="pill p-ok">Linear+SiTU</span></td><td><span class="pill p-partial">MLP 可训，但与 MoE block 同前向</span></td></tr>
+<tr><td>专家内 SiTU 激活 (KimiBlockSparseMLP)</td><td class="evid">:253-270</td><td><span class="pill p-partial">分解为 tanh+sigmoid+mul</span></td><td>同左</td></tr>
+</table>
+<div class="badbox"><b>MoE 训练硬缺口（v2 新增）</b>：参考实现 <code>KimiSparseMoeBlock.forward</code> 显式 <code>raise NotImplementedError("Training mode is not supported")</code>（:827），<code>KimiMoEGate.forward</code> 有 <code>assert not self.training</code>（:721）。即便补齐 aclnn 算子，仍需重写 MoE 训练路径（GroupedMatmulGrad 在矩阵中缺失）。</div>
+
+<h3>3.4 文本骨干 — 共享算子（所有层）</h3>
+<table>
+<tr><th>算子</th><th>源码</th><th>CANN aclnn</th><th>训练</th></tr>
+<tr><td>KimiRMSNorm</td><td class="evid">:226-236</td><td><span class="pill p-ok">aclnnRmsNorm +Grad</span></td><td><span class="pill p-ok">支持</span></td></tr>
+<tr><td>SiTU 激活 (β·tanh(g/β)·sigmoid(g)·up, 可选 linear_beta)</td><td class="evid">:64-82</td><td><span class="pill p-partial">无融合算子，分解 tanh+sigmoid+mul</span></td><td><span class="pill p-partial">可分解训</span></td></tr>
+<tr><td>block residual _apply_attn_res (RMSNorm+Linear→1+softmax+matmul)</td><td class="evid">:1075-1088</td><td><span class="pill p-ok">分解均原生</span></td><td><span class="pill p-ok">可训</span></td></tr>
+<tr><td>embed_tokens / lm_head (tied, vocab 163840)</td><td class="evid">:1096,1247</td><td><span class="pill p-ok">Embedding/Linear</span></td><td><span class="pill p-ok">支持</span></td></tr>
+<tr><td>CrossEntropyLoss (shift + mask 过滤)</td><td class="evid">:1235-1239</td><td><span class="pill p-ok">aclnnNLLLoss</span></td><td><span class="pill p-ok">支持</span></td></tr>
+<tr><td>create_causal_mask (MLA 用)</td><td class="evid">:1173</td><td>transformers 通用</td><td>支持</td></tr>
+</table>
+
+<h3>3.5 视觉塔 — MoonViT3d（v1 遗漏，补全）</h3>
+<table>
+<tr><th>算子/原语</th><th>源码</th><th>支持情况</th></tr>
+<tr><td>Conv2d patch embed (k=stride=patch_size)</td><td class="evid">:308-312</td><td><span class="pill p-ok">aclnnConv2d</span></td></tr>
+<tr><td>2D RoPE (view_as_complex/real + torch.polar + 复数乘)</td><td class="evid">:378-404,172-193</td><td><span class="pill p-partial">复数运算，NPU 走分解</span></td></tr>
+<tr><td>Learnable2DInterpPosEmb + get_rope_shape (<code>@torch.compile(dynamic=True)</code> + <code>F.interpolate</code> bicubic)</td><td class="evid">:162-169,260-283</td><td><span class="pill p-warn">torch.compile 动态形状 + interpolate</span> <b>NPU 已知痛点</b></td></tr>
+<tr><td>flash_attn_varlen_func (非因果, packed, qkv-packed)</td><td class="evid">:83,507-540</td><td><span class="pill p-partial">flash-attn-ascend varlen</span>，<code>is_flash_attn_2_available()</code> 守卫</td></tr>
+<tr><td>tpool_patch_merger (时域池化 mean over kernel)</td><td class="evid">:621-646</td><td><span class="pill p-ok">view+permute+mean</span></td></tr>
+<tr><td>PatchMergerMLPV2 (mm_projector: Linear+GELU+Linear+RMSNorm)</td><td class="evid">:783-815</td><td><span class="pill p-ok">原生</span></td></tr>
+<tr><td>ViT encoder: LayerNorm/RMSNorm + GELUTanh + MLP2</td><td class="evid">:461-564</td><td><span class="pill p-ok">原生</span></td></tr>
+<tr><td>3D pos embed (sincos) + time_weight</td><td class="evid">:196-283</td><td><span class="pill p-ok">numpy 预计算 + repeat</span></td></tr>
+</table>
+<div class="warnbox"><b>视觉塔风险</b>：<code>get_rope_shape</code> 用 <code>@torch.compile(dynamic=True)</code> 包装 <code>F.interpolate</code>，动态形状在 torch_npu/Ascend 上是已知弱项；若 <code>flash_attn_2_available()</code> 为 False 回退 eager attention（:102-133）则性能受限。视觉塔仅推理用（VLM 前向），无训练 bwd 需求（微调除外）。</div>
+
+<h3>3.6 量化路径算子（mxfp4 / w4a8 / w4a16 / w4a4 分开）</h3>
+<table>
+<tr><th>路径</th><th>激活</th><th>权重</th><th>核心 NPU 算子</th><th>矩阵证据</th><th>SoC 要求</th></tr>
+<tr><td><b>W4A16-MXFP4（K3 默认）</b></td><td>bf16</td><td>mxfp4 (e2m1)</td><td>npu_format_cast(…,29,customize_dtype=bf16) + npu_convert_weight_to_int4pack + Matmul</td><td class="evid">w4a16_mxfp4.py:206-212</td><td>A2+（weight-only）</td></tr>
+<tr><td>W4A8-MXFP4（备选）</td><td>fp8 e4m3 动态</td><td>mxfp4</td><td><b>npu_dynamic_mx_quant</b> + <b>npu_quant_matmul</b>(scale_dtype=e8m0fnu, pertoken_scale)</td><td class="evid">w4a8_mxfp4.py:72-85</td><td><span class="bad">A5 (Ascend950)</span> + 2026-03 torch_npu</td></tr>
+<tr><td>W4A4-MXFP4（备选）</td><td>mxfp4 动态</td><td>mxfp4</td><td>npu_dynamic_mx_quant + npu_quant_matmul（双 mxfp4）</td><td class="evid">w4a4_mxfp4.py:77-85</td><td>A5 + 新 torch_npu</td></tr>
+<tr><td>bf16（训练 / 推理基线）</td><td>bf16</td><td>bf16</td><td>Matmul + RMSNorm + FA</td><td class="evid">—</td><td>A2+ 通用</td></tr>
+</table>
+<p class="evid">矩阵相关项（9.0.0/9.0.1 均在）：aclnnQuantMatmul/V2-V5, aclnnWeightQuantBatchMatmul/V2/V3, aclnnFusedQuantMatmul, aclnnGroupedMatmulSwigluQuant, aclnnDynamicQuant/V2/V3, aclnnMoeInitRoutingQuantV2。注：aclnnQuantMatmulDequant 仅 9.0.1（9.0.0 缺）。</p>
+<div class="note"><b>复核结论</b>：K3 checkpoint 的 <code>quantization_config</code> 为 <b>weight-only mxfp4</b>（input/output activations = null），对应 <b>W4A16-MXFP4</b>。W4A8 需 A5 SoC 且 torch_npu 符号未发布（<code>ensure_mxfp4_linear_available</code> 守卫 <code>float8_e8m0fnu / npu_dynamic_mx_quant</code>）。<b>不要将 K3 默认量化误作 W4A8</b>。</div>
+</div>
+<div class="section" id="s4">
+<h2>4. 三维支持矩阵（CANN × torch_npu/op-plugin × MindSpeed/vllm-ascend）</h2>
+<p>对每个识别算子在三个维度核验。<b>维度1 CANN aclnn</b>（ops_index.csv 9.0.0/9.0.1）；<b>维度2 torch_npu / op-plugin / ACL</b>（Python→C++→ACLNN 路径）；<b>维度3 MindSpeed-LLM / vllm-ascend</b>（框架层注册/集成）。</p>
+
+<h3>4.1 注意力类</h3>
+<table>
+<tr><th>算子</th><th>① CANN aclnn</th><th>② torch_npu/op-plugin</th><th>③ MindSpeed / vllm-ascend</th></tr>
+<tr><td><b>chunk_kda (prefill, 96头)</b></td><td><span class="pill p-no">ChunkGatedDeltaRule</span> 9.0.0/9.0.1 均在但 <b>Nk≤64 约束→不可用</b></td><td>op-plugin <code>npu_recurrent_gated_delta_rule</code> 仅 decode/推理</td><td><span class="pill p-partial">vllm-ascend triton kda.py（fwd 仅）</span>；<span class="pill p-no">MindSpeed 无 KDA</span></td></tr>
+<tr><td><b>fused_recurrent_kda (decode)</b></td><td><span class="pill p-partial">RecurrentGatedDeltaRule</span> 9.0.0/9.0.1，Nk/Nv≤256, L_i≤8, 推理</td><td>op-plugin 同上（推理专用）</td><td><span class="pill p-partial">vllm-ascend triton fused_recurrent_kda.py（fwd）</span></td></tr>
+<tr><td><b>KDA backward</b></td><td><span class="pill p-no">矩阵无 *GatedDeltaRule*Grad</span></td><td><span class="pill p-no">op-plugin 无</span></td><td><span class="pill p-no">triton KDA 0 bwd</span>；<span class="pill p-partial">MindSpeed GDR bwd_dhu 仅 h 态、无 KDA 参数</span></td></tr>
+<tr><td><b>MLA flash attention</b></td><td><span class="pill p-ok">aclnnFlashAttentionScore/V2</span></td><td><span class="pill p-ok">op-plugin npu_flash_attention_*</span></td><td><span class="pill p-ok">MindSpeed SparseFlashMlaFunction(+bwd)</span>；vllm-ascend ops/mla.py</td></tr>
+<tr><td><b>ShortConvolution (Conv1d k=4+silu+cache)</b></td><td><span class="pill p-ok">aclnnConv1d 可分解</span></td><td><span class="pill p-ok">npu Conv1d</span></td><td><span class="pill p-partial">fla triton ShortConvolution（实际走 triton-ascend）</span></td></tr>
+<tr><td>2D RoPE (视觉, complex mul)</td><td><span class="pill p-partial">无专用，分解 polar/einsum</span></td><td>原生分解</td><td>vllm-ascend 无视觉集成</td></tr>
+<tr><td>flash_attn_varlen (视觉非因果)</td><td><span class="pill p-ok">aclnnFlashAttentionVarlenScore</span></td><td><span class="pill p-ok">FA-ascend varlen</span></td><td>transformers 通用，vllm-ascend 无 K3 VLM 集成</td></tr>
+</table>
+
+<h3>4.2 MoE / 路由类</h3>
+<table>
+<tr><th>算子</th><th>① CANN aclnn</th><th>② torch_npu/op-plugin</th><th>③ MindSpeed / vllm-ascend</th></tr>
+<tr><td>MoE init routing</td><td><span class="pill p-ok">aclnnMoeInitRouting/V2/V3 +Grad</span></td><td><span class="pill p-ok">npu_moe_init_routing_v</span></td><td><span class="pill p-ok">vllm-ascend fused_moe/experts_selector</span></td></tr>
+<tr><td>MoE finalize routing</td><td><span class="pill p-ok">aclnnGroupedMatmulFinalizeRouting V1-V3</span></td><td><span class="pill p-ok">npu_moe_finalize_routing</span></td><td><span class="pill p-ok">vllm-ascend</span></td></tr>
+<tr><td>Grouped matmul (专家 GEMM)</td><td><span class="pill p-ok">aclnnGroupedMatmul V1-V5 +Add +AllReduce</span></td><td><span class="pill p-ok">npu_grouped_matmul</span></td><td><span class="pill p-ok">vllm-ascend fused_moe</span></td></tr>
+<tr><td><b>Grouped matmul Grad</b></td><td><span class="pill p-no">矩阵无</span></td><td><span class="pill p-no">无</span></td><td><span class="pill p-no">无训练路径</span></td></tr>
+<tr><td>token permute/unpermute</td><td>—</td><td><span class="pill p-ok">npu_moe_token_permute/unpermute</span></td><td><span class="pill p-ok">vllm-ascend</span></td></tr>
+<tr><td>EP dispatch/combine</td><td>—</td><td><span class="pill p-ok">npu_moe_distribute_dispatch_v/combine_v</span></td><td><span class="pill p-ok">vllm-ascend</span></td></tr>
+<tr><td>sigmoid 路由 + topk + renormalize</td><td>原生</td><td><span class="pill p-ok">原生</span></td><td>vllm-ascend select_experts（grouped_topk 分支 K3 不触发）</td></tr>
+</table>
+
+<h3>4.3 量化 / 矩乘类</h3>
+<table>
+<tr><th>算子</th><th>① CANN aclnn</th><th>② torch_npu/op-plugin</th><th>③ MindSpeed / vllm-ascend</th></tr>
+<tr><td><b>npu_quant_matmul</b> (W4A8/W4A4)</td><td><span class="pill p-ok">aclnnQuantMatmul V1-V5</span></td><td><span class="pill p-partial">torch_npu 符号待 2026-03 发布</span></td><td><span class="pill p-ok">vllm-ascend w4a8/w4a4_mxfp4.py</span></td></tr>
+<tr><td><b>npu_dynamic_mx_quant</b></td><td><span class="pill p-ok">aclnnDynamicQuant V2/V3</span></td><td><span class="pill p-partial">符号待发布，<b>A5 SoC 融合才支持</b></span></td><td><span class="pill p-ok">vllm-ascend</span></td></tr>
+<tr><td>WeightQuantBatchMatmul (W4A16 weight-only)</td><td><span class="pill p-ok">aclnnWeightQuantBatchMatmul V1-V3/Nz</span></td><td><span class="pill p-partial">npu_format_cast(29) + convert_weight_to_int4pack</span></td><td><span class="pill p-ok">vllm-ascend w4a16_mxfp4.py</span></td></tr>
+<tr><td>FusedQuantMatmul / SwigluQuant</td><td><span class="pill p-ok">aclnnFusedQuantMatmul, GroupedMatmulSwigluQuant V1/V2</span></td><td>op-plugin</td><td>vllm-ascend</td></tr>
+<tr><td><b>mxfp4 训练 (bwd)</b></td><td><span class="pill p-no">矩阵无量化 bwd</span></td><td><span class="pill p-no">无</span></td><td><span class="pill p-no">无</span></td></tr>
+</table>
+
+<h3>4.4 归一化 / 激活 / 通用类</h3>
+<table>
+<tr><th>算子</th><th>① CANN aclnn</th><th>② torch_npu/op-plugin</th><th>③ MindSpeed / vllm-ascend</th></tr>
+<tr><td>RMSNorm (+Grad)</td><td><span class="pill p-ok">aclnnRmsNorm +Grad</span></td><td><span class="pill p-ok">npu_rms_norm</span></td><td><span class="pill p-ok">MindSpeed / vllm-ascend 均有</span></td></tr>
+<tr><td><b>SiTU 激活</b></td><td><span class="pill p-no">无融合算子</span></td><td>分解 tanh+sigmoid+mul</td><td><span class="pill p-no">无 K3 专属融合</span>（npu_swiglu 是 SwiGLU 非 SiTU）</td></tr>
+<tr><td>Conv2d (视觉 patch)</td><td><span class="pill p-ok">aclnnConv2d</span></td><td><span class="pill p-ok">npu Conv2d</span></td><td>transformers 通用</td></tr>
+<tr><td>GELU / GELUTanh (视觉)</td><td><span class="pill p-ok">aclnnGelu</span></td><td><span class="pill p-ok">原生</span></td><td>—</td></tr>
+<tr><td>Embedding / Linear / NLLLoss</td><td><span class="pill p-ok">全在</span></td><td><span class="pill p-ok">原生</span></td><td><span class="pill p-ok">均支持</span></td></tr>
+<tr><td>torch.compile(dynamic) + F.interpolate (视觉 pos)</td><td>—</td><td><span class="pill p-warn">torch_npu 动态形状弱项</span></td><td><span class="pill p-na">无集成</span></td></tr>
+</table>
+
+<div class="badbox"><b>三维矩阵关键缺口汇总</b>：① KDA prefill 96 头（aclnn 约束 + 无 KDA bwd）；② KDA/MoE/mxfp4 三类 <b>Grad 算子全缺</b>（矩阵 944 算子中 38 个 *Grad，无一是 KDA/MoE-GroupedMatmul/mxfp4）；③ SiTU 无融合算子（仅能分解）；④ vllm-ascend <b>无 K3 模型注册</b>（三维第 3 列大面积空白）。</div>
+</div>
+
+<div class="section" id="s5">
+<h2>5. 量化路径分析（分开）</h2>
+
+<h3>5.1 W4A16-MXFP4（K3 checkpoint 实际路径）</h3>
+<p><b>权重 mxfp4 (4-bit e2m1) + 激活 bf16</b>。流程：<code>npu_format_cast(weight, 29, customize_dtype=bf16)</code> → <code>npu_convert_weight_to_int4pack</code> → bf16 matmul。MoE 走 <code>ensure_mxfp4_moe_available</code> 守卫。</p>
+<ul>
+<li><b>CANN</b>：aclnnWeightQuantBatchMatmul V1/V2/V3 + Nz（9.0.0/9.0.1 均在）→ 矩阵层支持</li>
+<li><b>torch_npu</b>：需 <code>float4_e2m1fn_x2</code> / <code>float8_e8m0fnu</code> 符号（mxfp_compat.py 注释：2026-03 torch_npu 发布）</li>
+<li><b>训练</b>：<span class="pill p-no">不支持</span> mxfp4 权重量化训练，仅推理</li>
+<li><b>SoC</b>：A2+ 可（weight-only，无动态量化融合要求）</li>
+</ul>
+<div class="goodbox"><b>推荐推理量化路径</b>：W4A16-MXFP4 与 K3 checkpoint 对齐，权重 4-bit 显存约为 bf16 的 1/2，激活保持 bf16 精度无损。待 torch_npu 符号发布后可直接走 vllm-ascend w4a16_mxfp4 方法。</div>
+
+<h3>5.2 W4A8-MXFP4（备选，非默认）</h3>
+<p><b>权重 mxfp4 + 激活 fp8 e4m3 动态量化</b>。<code>npu_dynamic_mx_quant(x, dst_type=fp8_e4m3)</code> + <code>npu_quant_matmul(scale_dtype=e8m0fnu, pertoken_scale)</code>。</p>
+<ul>
+<li><b>SoC 硬约束</b>：<code>_is_dynamic_mx_quant_fusion_soc_supported()</code> 要求 <code>AscendDeviceType.A5</code>（Ascend950）。A2/A3 不可。</li>
+<li><b>torch_npu</b>：需 <code>npu_dynamic_mx_quant</code> + <code>npu_add_rms_norm_dynamic_mx_quant</code> 融合符号</li>
+<li><b>K3 不默认走此路径</b>：checkpoint activations=null，仅当用户显式改用动态量化才生效</li>
+</ul>
+
+<h3>5.3 W4A4-MXFP4（备选）</h3>
+<p>权重+激活均 mxfp4，<code>npu_dynamic_mx_quant</code> + <code>npu_quant_matmul</code> 双 mxfp4。同样需 A5 + 新 torch_npu。极致显存但精度损失大。</p>
+
+<h3>5.4 bf16（训练 / 推理基线）</h3>
+<p>无量化，全 bf16。所有算子走标准 aclnn Matmul/RMSNorm/FA。训练<b>除 KDA/MoE/mxfp4 三缺口外</b>其余可训。推理显存最高但兼容性最好。<b>这是当前唯一可立即跑通的训练前向基线</b>。</p>
+
+<div class="note"><b>路径选择建议</b>：推理 → W4A16-MXFP4（对齐 checkpoint，待 torch_npu 2026-03）；训练 → bf16（但受 §6 三缺口限制，仅能做 MLA 层 / 稠密层 / lm_head 局部训练，KDA+MoE 不可训）。</div>
+</div>
+<div class="section" id="s6">
+<h2>6. 训练可行性</h2>
+
+<h3>6.1 三大硬缺口（v2 复核：2 → 3）</h3>
+<table>
+<tr><th>缺口</th><th>根因</th><th>证据</th><th>影响</th></tr>
+<tr><td><b>① KDA backward</b></td><td>triton KDA 仅 fwd；aclnn 无 *Grad；MindSpeed GDR bwd_dhu 参数不匹配 KDA（无 A_log/dt_bias/key-dep beta）</td><td class="evid">vllm_ascend/ops/triton/kda/ 7 文件 0 bwd；flash_gated_delta_rule.py:165；chunk_gated_delta_rule.py:77-153</td><td>69/93 层不可训</td></tr>
+<tr><td><b>② mxfp4 训练</b></td><td>矩阵无量化 bwd 算子；W4A16 权重量化仅推理</td><td class="evid">ops_index.csv 无 *Quant*Grad</td><td>无法 mxfp4 微调，必须退 bf16</td></tr>
+<tr><td><b>③ MoE 训练（v2 新增）</b></td><td>参考实现显式禁训；无 GroupedMatmulGrad</td><td class="evid">modeling_kimi_linear.py:721,827</td><td>92 层 MoE 不可训</td></tr>
+</table>
+
+<h3>6.2 训练前向模式约束</h3>
+<ul>
+<li><code>KimiDeltaAttention</code>：<code>if self.training: assert mode == 'chunk'</code>（:562-563）—— 训练必须 chunk 模式，但 chunk KDA 无 bwd → 矛盾，前向可跑反传断</li>
+<li><code>KimiMoEGate</code>：<code>assert not self.training</code>（:721）</li>
+<li><code>KimiSparseMoeBlock</code>：<code>raise NotImplementedError("Training mode is not supported")</code>（:827）</li>
+<li><code>gradient_checkpointing = True</code>（:1120）—— 支持梯度检查点，但依赖各子算子有 bwd</li>
+</ul>
+
+<h3>6.3 训练侧可用栈（MindSpeed-LLM）</h3>
+<table>
+<tr><th>MindSpeed 算子</th><th>是否可复用于 K3</th><th>说明</th></tr>
+<tr><td>chunk_gated_delta_rule (fwd+bwd)</td><td><span class="pill p-no">不可直接复用</span></td><td>参数 q,k,v,g,beta,scale；缺 KDA 的 A_log/dt_bias/key-dep beta/safe_gate</td></tr>
+<tr><td>flash_gated_delta_rule (npu_chunk_gated_delta_rule_fwd_h/bwd_dhu)</td><td><span class="pill p-partial">仅 h 态部分</span></td><td>自注册 NPU 算子，仅 fwd_h + bwd_dhu，非完整 chunk bwd</td></tr>
+<tr><td>SparseFlashMlaFunction (+bwd)</td><td><span class="pill p-ok">可复用</span></td><td>MLA 训练完整，24 层可用</td></tr>
+<tr><td>FSDP2 / gradient_checkpointing</td><td><span class="pill p-ok">可用</span></td><td>框架层，与算子无关</td></tr>
+<tr><td>KDA / Kimi-K3 专属训练</td><td><span class="pill p-no">无</span></td><td>grep kda/kimi_k3/kimi_linear 在 MindSpeed 0 命中</td></tr>
+</table>
+
+<div class="badbox"><b>训练结论</b>：当前 CANN 9.0.0/9.0.1 + MindSpeed-LLM + vllm-ascend 栈下，<b>K3 端到端训练不可行</b>。69 层 KDA 无 bwd、92 层 MoE 参考实现禁训且无 GroupedMatmulGrad、mxfp4 无 bwd。仅 MLA 24 层 + 稠密 layer 0 + lm_head/embedding 局部可训。要做 K3 训练需先补齐 KDA bwd triton 核 + MoE 训练路径 + 退 bf16。</div>
+</div>
+
+<div class="section" id="s7">
+<h2>7. 推理可行性</h2>
+
+<h3>7.1 推理路径算子覆盖（9.0.0/9.0.1）</h3>
+<table>
+<tr><th>模块</th><th>算子</th><th>CANN</th><th>框架层</th><th>状态</th></tr>
+<tr><td>KDA prefill (96头)</td><td>chunk_kda</td><td><span class="pill p-no">aclnn 约束</span></td><td><span class="pill p-ok">vllm-ascend triton fwd</span></td><td><span class="pill p-partial">走 triton，非 aclnn</span></td></tr>
+<tr><td>KDA decode</td><td>fused_recurrent_kda</td><td><span class="pill p-partial">RecurrentGDR L_i≤8</span></td><td><span class="pill p-ok">triton fwd</span></td><td><span class="pill p-partial">triton 优先</span></td></tr>
+<tr><td>MLA</td><td>FlashAttention + 低秩</td><td><span class="pill p-ok">aclnnFA</span></td><td><span class="pill p-ok">vllm-ascend mla.py</span></td><td><span class="pill p-ok">就绪</span></td></tr>
+<tr><td>MoE 推理</td><td>MoeInitRouting + GroupedMatmul + EP</td><td><span class="pill p-ok">全在</span></td><td><span class="pill p-ok">vllm-ascend fused_moe</span></td><td><span class="pill p-ok">就绪</span></td></tr>
+<tr><td>RMSNorm / SiTU / output_gate</td><td>分解</td><td><span class="pill p-ok">原生</span></td><td>分解实现</td><td><span class="pill p-ok">可跑</span></td></tr>
+<tr><td>W4A16-MXFP4</td><td>WeightQuantBatchMatmul</td><td><span class="pill p-ok">aclnn 在</span></td><td><span class="pill p-partial">待 torch_npu 符号</span></td><td><span class="pill p-warn">待 2026-03</span></td></tr>
+<tr><td>视觉塔</td><td>Conv2d + 2DRoPE + FA-varlen + PatchMergerV2</td><td><span class="pill p-ok">多数在</span></td><td><span class="pill p-no">vllm-ascend 无 K3 VLM 注册</span></td><td><span class="pill p-warn">需集成</span></td></tr>
+<tr><td><b>K3 模型注册</b></td><td>KimiK3ForConditionalGeneration</td><td>—</td><td><span class="pill p-no">vllm-ascend 仅 K2.5 patch</span></td><td><span class="pill p-bad">缺口</span></td></tr>
+</table>
+
+<h3>7.2 推理前置工作清单</h3>
+<ol>
+<li><b>补 vllm-ascend K3 模型注册</b>：参考 <code>patch_kimi_k25.py</code> 为 <code>kimi_linear</code>/<code>KimiK3ForConditionalGeneration</code> 写 patch，接入 triton KDA forward + MLA + fused MoE</li>
+<li><b>KDA 96 头 triton 通道验证</b>：aclnn 不可用，依赖 triton-ascend kda.py 在 96 头/128 维下的前向正确性（fla 上游对齐）</li>
+<li><b>量化路径</b>：bf16 立即可跑；W4A16-MXFP4 待 torch_npu 2026-03 发布 <code>float4_e2m1fn_x2</code>/<code>float8_e8m0fnu</code> 符号</li>
+<li><b>视觉塔</b>：torch.compile(dynamic) + F.interpolate 在 NPU 上的回退/图编译策略需验证；FA-varlen 走 flash-attn-ascend</li>
+<li><b>MoE</b>：latent MoE（down/up_proj）+ shared experts + 896 专家 EP 分片策略</li>
+</ol>
+
+<div class="goodbox"><b>推理结论</b>：CANN 9.0.0/9.0.1 算子层<b>基本就绪</b>（MLA/MoE/RMSNorm/FA/Conv2d/量化 matmul 全在），主要缺口在 <b>框架集成层</b>——vllm-ascend 无 K3 模型注册、KDA prefill 依赖 triton 而非 aclnn（因 96 头超 aclnn 约束）。bf16 推理补注册后可跑通；W4A16-MXFP4 推理待 torch_npu 符号。</div>
+</div>
+
+<div class="section" id="s8">
+<h2>8. 结论与建议</h2>
+
+<h3>8.1 复核后定论</h3>
+<table>
+<tr><th>场景</th><th>可行性</th><th>前置</th></tr>
+<tr><td><b>bf16 推理</b></td><td><span class="pill p-ok">可行</span></td><td>补 vllm-ascend K3 注册 + triton KDA fwd 验证</td></tr>
+<tr><td><b>W4A16-MXFP4 推理</b></td><td><span class="pill p-warn">可行（待符号）</span></td><td>同上 + torch_npu 2026-03 发布</td></tr>
+<tr><td><b>W4A8/W4A4 推理</b></td><td><span class="pill p-no">A2/A3 不可</span></td><td>需 A5 (Ascend950) SoC</td></tr>
+<tr><td><b>bf16 训练</b></td><td><span class="pill p-no">端到端不可行</span></td><td>需补 KDA bwd + MoE 训练路径（参考实现禁训）</td></tr>
+<tr><td><b>mxfp4 训练</b></td><td><span class="pill p-no">不可行</span></td><td>无量化 bwd 算子</td></tr>
+</table>
+
+<h3>8.2 建议</h3>
+<ol>
+<li><b>推理优先</b>：先做 bf16 推理通路，验证 triton KDA 96 头前向 + MLA + latent MoE + 视觉塔，再切 W4A16-MXFP4 降显存</li>
+<li><b>不要走 W4A8</b>：K3 checkpoint 是 weight-only mxfp4，W4A8 需 A5 且非默认，误用会引入精度/硬件风险</li>
+<li><b>不要假设 grouped topk</b>：K3 n_group=1，路由为简单 sigmoid+topk，复用 DeepSeek-V3 grouped 路由代码时跳过该分支</li>
+<li><b>训练若必须</b>：优先补 KDA bwd triton 核（对齐 fla 上游 KDA bwd）+ 解除 MoE block 禁训 + 退 bf16，工作量集中在 KDA bwd</li>
+<li><b>vllm-ascend 集成</b>：以 <code>patch_kimi_k25.py</code> 为模板写 <code>patch_kimi_k3.py</code>，注册 <code>kimi_linear</code> text backbone + <code>KimiK3ForConditionalGeneration</code> VLM</li>
+</ol>
+
+<h3>8.3 数据来源与可复现</h3>
+<ul>
+<li>权重 config.json：跳板机 192.168.0.112:/data/model/Kimi-K3/config.json（2026-07-29 读取）</li>
+<li>modeling 源码：modeling_kimi_linear.py (1314 行) / modeling_kimi_k3.py (1318 行) / configuration_kimi_k3.py</li>
+<li>CANN 算子矩阵：matrix/ops_index.csv（944 unique ops，9.0.0/9.0.1，3582 records），commits 见 matrix/_meta.json</li>
+<li>vllm-ascend：分支 t0-test，vllm_ascend/quantization/methods/* + ops/triton/kda/* + ops/fused_moe/* + patch/worker/patch_kimi_k25.py</li>
+<li>MindSpeed-LLM：submodules/MindSpeed-LLM（chunk_gated_delta_rule.py / flash_gated_delta_rule.py / npu_sparse_flash_mla.py）</li>
+<li>纯静态扫描，未部署 NPU 实测；所有结论标注源码行号/矩阵 CSV/版本号</li>
+</ul>
+
+<div class="note" style="margin-top:14px"><b>复核声明</b>：本 v2 版按 mxfp4/bf16/w4a8+训练分路复核算子，并对每算子做三维（CANN / torch_npu·op-plugin / MindSpeed·vllm-ascend）核验。相对 v1 修正 8 项（量化路径、grouped topk、latent MoE、视觉塔、KDA bwd 精确化、vllm-ascend 集成缺口、SiTU/output_gate/attn_res、训练缺口 2→3）。</div>
+</div>
+
+</div>
+</body>
+</html>
