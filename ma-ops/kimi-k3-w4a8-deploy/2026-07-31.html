@@ -105,6 +105,44 @@ li{margin-bottom:6px}
 <div class="warn"><strong>注意</strong>：Kimi-K3 部署时启用了 <code>--reasoning-parser kimi_k3</code>，模型会在输出答案前进行内部 Chain-of-Thought 推理。这显著增加 TTFT，尤其对开放式 prompt。<strong>简单事实性 prompt（如 "1+1=?"）TTFT < 1s</strong>。</div>
 </section>
 
+
+<!-- ═══════════════════ 并发测试 ═══════════════════ -->
+<section>
+<h2>并发性能测试</h2>
+<p>测试配置：固定 output=256 tokens，变化 input 长度和并发数。所有请求共用同一 prompt 文本以评估 prefix cache 效果。</p>
+
+<h3>测试结果</h3>
+<table>
+  <tr><th>并发</th><th>Input</th><th>请求数</th><th>总耗时</th><th>Prompt Tok</th><th>Output Tok</th><th>tps</th></tr>
+  <tr><td>2</td><td>~4K</td><td>2/2</td><td>52.2s</td><td>2,966</td><td>512</td><td>9.8</td></tr>
+  <tr><td>2</td><td>~16K</td><td>2/2</td><td>100.5s</td><td>11,102</td><td>512</td><td>5.1</td></tr>
+  <tr><td>2</td><td>~32K</td><td>2/2</td><td>51.0s</td><td>21,952</td><td>512</td><td><span class="tag green">10.0 &#x2191;</span></td></tr>
+  <tr><td>4</td><td>~4K</td><td>4/4</td><td>94.4s</td><td>5,932</td><td>1,024</td><td>10.8</td></tr>
+  <tr><td>4</td><td>~16K</td><td>4/4</td><td>48.7s</td><td>22,204</td><td>1,024</td><td><span class="tag green">21.0 &#x2191;</span></td></tr>
+  <tr><td>4</td><td>~32K</td><td>4/4</td><td>53.8s</td><td>43,904</td><td>1,024</td><td><span class="tag green">19.1 &#x2191;</span></td></tr>
+</table>
+<div class="good"><strong>Prefix Cache 效果</strong>：后续测试 (32K) 比前面的 (16K) 更快，因为 vLLM 复用了已缓存的 KV 状态。prefix cache hit rate 在测试中达 30–80%。</div>
+
+<h3>vLLM 日志分析（测试期间采样）</h3>
+<table>
+  <tr><th>指标</th><th>值</th><th>说明</th></tr>
+  <tr><td>Peak Prompt Throughput</td><td>560 tok/s</td><td>单 engine prefill 吞吐峰值</td></tr>
+  <tr><td>Generation Throughput</td><td>5 – 13 tok/s/engine</td><td>decode 阶段，取决于并发请求数</td></tr>
+  <tr><td>Prefix Cache Hit Rate</td><td>30% – 80%</td><td>重复 prompt 文本带来高命中</td></tr>
+  <tr><td>KV Cache Usage</td><td>2% – 3%</td><td>负载极低，模型有大量 KV 余量</td></tr>
+  <tr><td>Active Engines</td><td>000, 001, 002</td><td>DP rank 内多 engine 并行</td></tr>
+</table>
+
+<h3>全部 15 个请求汇总（Prometheus delta）</h3>
+<div class="metrics">
+  <div class="metric"><div class="label">TTFT (新 8 请求)</div><div class="v">13.15<span class="unit">s</span></div><div class="note">大 input + 并发使 prefill 时间显著增加</div></div>
+  <div class="metric"><div class="label">TPOT (新 8 请求)</div><div class="v">172<span class="unit">ms</span></div><div class="note">5.8 tok/s，与之前 151ms 接近</div></div>
+  <div class="metric"><div class="label">E2E (新 8 请求)</div><div class="v">57.1<span class="unit">s</span></div><div class="note">长 prefill 主导总时间</div></div>
+  <div class="metric"><div class="label">累计请求</div><div class="v">15</div><div class="note">7 个初始 + 8 个并发测试</div></div>
+</div>
+<div class="warn"><strong>注意</strong>：TTFT 受 Kimi-K3 reasoning 模式显著影响。上述 TTFT 包含模型内部 CoT 思考时间。简单 prompt 的 TTFT < 1s，长/开放式 prompt 可 > 20s。TPOT (decode 速度) 较稳定，在 150–170ms 范围。</div>
+</section>
+
 <!-- ═══════════════════ 部署流程 ═══════════════════ -->
 <section>
 <h2>部署流程</h2>
