@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DeepSeek V4 Flash 2-node GRPO RL smoke test — 14 轮部署 10 个 bug, 9 steps 通过, ~85s/step, 功能验证完整链路打通">
+<title>DeepSeek V4 Flash 2-Node Smoke Test — 基线报告 (2026-07-31)</title>
+<style>
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  }
+
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+  }
+
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .breadcrumb{
+    max-width:1100px;margin:0 auto;padding:20px 48px 0;
+    font-size:12px;color:var(--tertiary);letter-spacing:0.2px;
+  }
+  .breadcrumb a{color:var(--muted)}
+  .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)}
+  .breadcrumb .current{color:var(--text)}
+
+  header{
+    max-width:1100px;margin:0 auto;padding:28px 48px 32px;
+    border-bottom:1px solid var(--border);
+  }
+  h1{
+    font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;
+    margin-bottom:10px;color:var(--text);
+  }
+  .meta{font-size:13px;color:var(--muted);line-height:1.6}
+  .meta b{color:var(--text);font-weight:500}
+
+  .toc{
+    max-width:1100px;margin:0 auto;padding:24px 48px;
+    border-bottom:1px solid var(--border);
+  }
+  .toc-label{
+    font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)}
+  .toc a:hover{color:var(--accent)}
+
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+
+  section{margin-bottom:48px}
+  section:last-child{margin-bottom:0}
+  h2{
+    font-size:20px;font-weight:600;letter-spacing:-0.3px;
+    margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)}
+  p.muted,.muted{color:var(--muted)}
+  ul,ol{margin:0 0 14px 22px}
+  li{margin-bottom:6px}
+
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;margin-bottom:20px;
+  }
+  .metric{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 18px;
+  }
+  .metric .v{
+    font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  .metric .label{
+    font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary);
+  }
+  .v.good{color:var(--green)}
+  .v.warn{color:var(--yellow)}
+  .v.bad{color:var(--red)}
+  .v.info{color:var(--info)}
+
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{
+    background:var(--surface-2);color:var(--accent);text-align:left;
+    font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+  }
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+
+  .timeline{position:relative;padding-left:22px;margin-bottom:20px}
+  .timeline::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin-bottom:18px}
+  .tl-item::before{
+    content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 3px var(--bg);
+  }
+  .tl-item.ok::before{background:var(--green)}
+  .tl-item.warn::before{background:var(--yellow)}
+  .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary);margin-bottom:2px}
+  .tl-body{color:var(--text)}
+
+  .badge{
+    display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+    font-weight:600;letter-spacing:0.4px;
+  }
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
+  .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{
+    display:inline-block;padding:3px 9px;border-radius:3px;font-size:11px;
+    color:var(--tertiary);background:var(--surface-2);letter-spacing:0.2px;margin:0 6px 6px 0;
+  }
+
+  .note{
+    border-left:3px solid var(--accent);background:var(--info-bg);
+    padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px;
+  }
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+
+  pre{
+    background:var(--code-bg);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;overflow-x:auto;margin-bottom:16px;font-size:13px;
+    font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text);
+  }
+  code{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+    background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text);
+  }
+  pre code{background:none;padding:0}
+
+  .bar-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .bar-label{width:160px;font-size:12px;color:var(--muted);text-align:right;flex-shrink:0}
+  .bar-track{flex:1;height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:4px}
+  .bar-fill.actor{background:var(--accent)}
+  .bar-fill.oldlp{background:var(--info)}
+  .bar-fill.reflp{background:#A371F7}
+  .bar-fill.hccl{background:var(--yellow)}
+  .bar-fill.rollout{background:var(--green)}
+  .bar-val{width:60px;font-size:12px;color:var(--text);text-align:left;flex-shrink:0;font-family:'SF Mono','Fira Code',Consolas,monospace}
+
+  .phase-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+    gap:12px;margin-bottom:20px;
+  }
+  .phase-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;
+  }
+  .phase-card .ph-title{font-weight:600;font-size:13px;margin-bottom:6px;color:var(--text)}
+  .phase-card .ph-detail{font-size:12px;color:var(--muted);line-height:1.6}
+
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media (max-width:768px){.two-col{grid-template-columns:1fr}}
+
+  footer{
+    max-width:1100px;margin:0 auto;padding:24px 48px 40px;
+    border-top:1px solid var(--border);font-size:12px;color:var(--tertiary);
+  }
+  footer a{color:var(--accent)}
+
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px}
+    h2{font-size:18px}
+    .bar-label{width:120px}
+    .phase-grid{grid-template-columns:1fr}
+  }
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-npu-deepseek-prefix-sharing">verl NPU DeepSeek PrefixSharing</a><span class="sep">/</span>
+  <span class="current">基线报告</span>
+</nav>
+
+<header>
+  <h1>DeepSeek V4 Flash 2-Node GRPO RL Smoke Test</h1>
+  <div class="meta">
+    基线报告 · 2026-07-26 &rarr; 2026-07-31 · Ascend 910B3 2-Node (16 NPU) · branch <b>experiments/deepseek-v4-flash</b> · 报告日期 <b>2026-07-31</b>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">关键指标</a></li>
+    <li><a href="#summary">概述</a></li>
+    <li><a href="#env">环境与版本</a></li>
+    <li><a href="#method">方法与并行策略</a></li>
+    <li><a href="#perf">性能分解</a></li>
+    <li><a href="#bugs">Bug 清单</a></li>
+    <li><a href="#timeline">部署时间线</a></li>
+    <li><a href="#diffs">代码修改清单</a></li>
+    <li><a href="#lessons">关键教训</a></li>
+    <li><a href="#next">后续路径</a></li>
+  </ol>
+</nav>
+
+<main class="container">
+
+<!-- ═══════════ 关键指标 ═══════════ -->
+<section id="metrics">
+  <h2>关键指标</h2>
+  <div class="metrics">
+    <div class="metric"><div class="v good">9</div><div class="label">Steps 完成</div></div>
+    <div class="metric"><div class="v info">~85s</div><div class="label">稳态 Step Time</div></div>
+    <div class="metric"><div class="v info">4.4-5.7</div><div class="label">Throughput (tok/s)</div></div>
+    <div class="metric"><div class="v warn">14</div><div class="label">部署轮次</div></div>
+    <div class="metric"><div class="v good">10</div><div class="label">Bug 修复</div></div>
+    <div class="metric"><div class="v info">~50GB</div><div class="label">训练侧 HBM (per NPU)</div></div>
+    <div class="metric"><div class="v info">2 &times; 8</div><div class="label">集群规模 (NPU)</div></div>
+    <div class="metric"><div class="v good">4-layer</div><div class="label">Surrogate 模型</div></div>
+  </div>
+</section>
+
+<!-- ═══════════ 概述 ═══════════ -->
+<section id="summary">
+  <h2>概述</h2>
+  <p class="muted">
+    在 2 节点 Ascend 910B (16 NPU) 上用 <b>4 层 DeepSeek V4 Flash 代理模型 + 真实 BF16 权重 (symlink)</b>，
+    跑通了完整的 verl GRPO RL 训练管线: vLLM rollout &rarr; reward &rarr; log_prob &rarr; advantage &rarr; actor update &rarr; HCCL 权重同步。
+    14 轮部署, 解决 10 个 bug, 最终 9 steps 稳态完成。
+  </p>
+
+  <div class="note ok">
+    <div class="note-title">核心结论</div>
+    mbridge + vLLM + MindSpeed-LLM + HCCL 全链路在 Ascend NPU 上可打通。训推分离 (112 训练 + 155 推理) 架构可行, 权重跨节点广播 15-16s/step 正常。
+  </div>
+
+  <div class="phase-grid">
+    <div class="phase-card">
+      <div class="ph-title"><span class="badge ok">通过</span> mbridge 权重桥接</div>
+      <div class="ph-detail">mcore &harr; HF 双向转换正确 (含 MoE expert + MLA attention), EP all_gather + 双格式 expert ID 解析</div>
+    </div>
+    <div class="phase-card">
+      <div class="ph-title"><span class="badge ok">通过</span> vLLM 推理</div>
+      <div class="ph-detail">generate, log_prob 计算, KV cache 正常; CP=1 block table Triton&rarr;PyTorch 替换</div>
+    </div>
+    <div class="phase-card">
+      <div class="ph-title"><span class="badge ok">通过</span> MindSpeed 训练</div>
+      <div class="ph-detail">forward, backward, optimizer.step 完整链路; G2 attention + MHC + Sinkhorn routing NPU 适配</div>
+    </div>
+    <div class="phase-card">
+      <div class="ph-title"><span class="badge ok">通过</span> HCCL 通信</div>
+      <div class="ph-detail">跨节点广播权重 15-16s/step, 无 timeout; HCCL checkpoint engine 训推分离</div>
+    </div>
+    <div class="phase-card">
+      <div class="ph-title"><span class="badge ok">通过</span> Router Replay</div>
+      <div class="ph-detail">训练侧 expert routing 在推理侧正确复现, 确保 MoE 推理路径与训练一致</div>
+    </div>
+    <div class="phase-card">
+      <div class="ph-title"><span class="badge warn">待解决</span> 全参 43 层训练</div>
+      <div class="ph-detail">4 层余量 ~30GB, 但 43 层全参 8 节点 + gradient streaming (DDP bucket 16.5GB) 仍需解决</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 环境与版本 ═══════════ -->
+<section id="env">
+  <h2>环境与版本</h2>
+
+  <h3>集群拓扑</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>节点</th><th>角色</th><th>NPU 数</th><th>IP</th><th>容器</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>112</td><td>训练 (train_node)</td><td class="num">8</td><td>192.168.0.112</td><td>dsv4-smoke</td></tr>
+        <tr><td>155</td><td>推理 (rollout_node)</td><td class="num">8</td><td>192.168.0.155</td><td>dsv4-smoke</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>镜像内组件版本</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>组件</th><th>版本</th><th>Commit</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>CANN</td><td>9.1.0-beta.3</td><td>&mdash;</td></tr>
+        <tr><td>verl</td><td>0.8.0.dev0</td><td><code>809f2d8f</code></td></tr>
+        <tr><td>vLLM</td><td>0.23.0</td><td><code>0decac0</code></td></tr>
+        <tr><td>vllm-ascend</td><td>releases/v0.23.0</td><td><code>5f6faa0c</code></td></tr>
+        <tr><td>mbridge</td><td>v0.15.1</td><td><code>0cd4ae2</code></td></tr>
+        <tr><td>MindSpeed-LLM</td><td>&mdash;</td><td><code>99f7fc1d</code></td></tr>
+        <tr><td>Megatron-LM</td><td>core_r0.12.0</td><td><code>a845aa7e1</code></td></tr>
+        <tr><td>Python</td><td>3.11.15</td><td>&mdash;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>模型与数据集</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>配置项</th><th>值</th></tr></thead>
+      <tbody>
+        <tr><td>模型</td><td>4 层 DeepSeek V4 Flash surrogate + symlink 真实 BF16 权重</td></tr>
+        <tr><td>模型构建</td><td>rsync 非权重文件 + ln -sf 权重 (零拷贝) + patch config.json</td></tr>
+        <tr><td>数据集</td><td>GSM8K train/test parquet</td></tr>
+        <tr><td>算法</td><td>GRPO (batch=16, n_resp=2)</td></tr>
+        <tr><td>Seq len</td><td>prompt=200, response=32, pos_emb=512</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ 方法与并行策略 ═══════════ -->
+<section id="method">
+  <h2>方法与并行策略</h2>
+
+  <h3>并行配置</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>角色</th><th>TP</th><th>PP</th><th>EP</th><th>ETP</th><th>DP</th><th>NPU 使用</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>训练 (112)</td><td class="num">2</td><td class="num">1</td><td class="num">4</td><td class="num">2</td><td class="num">1</td><td>2 &times; 4 &times; 1 = 8 &check;</td></tr>
+        <tr><td>推理 (155)</td><td class="num">8</td><td class="num">1</td><td class="num">8</td><td class="num">&mdash;</td><td class="num">1</td><td>8 &times; 1 = 8 &check;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>HBM 占用估算</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>组件</th><th class="num">大小 (GB)</th><th>说明</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>BF16 权重</td><td class="num">~8</td><td>4 层 &times; ~1B params &times; 2B</td></tr>
+        <tr><td>梯度</td><td class="num">~8</td><td>与权重同大小</td></tr>
+        <tr><td>Optimizer</td><td class="num">~0</td><td>CPU offload (hybrid optimizer)</td></tr>
+        <tr><td>运行时 (activation + buffer)</td><td class="num">~34</td><td>forward + backward 中间结果</td></tr>
+        <tr style="font-weight:600"><td>训练合计</td><td class="num">~50</td><td class="ok">&lt;&lt; 61GB 可用</td></tr>
+        <tr><td>推理 (4 层)</td><td class="num">~15-20</td><td>vLLM engine + KV cache</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>关键约束</h3>
+  <ul>
+    <li><b>GEN_EP == GEN_TP &times; GEN_DP</b>: 推理侧 EP=8 &rarr; 8 = 8 &times; 1 &check;</li>
+    <li><b>ETP=2</b>: MLA attention EP 切分要求 TP=2 (Bug H 根因)</li>
+    <li><b>Triton &rarr; identity decorator</b>: 所有 <code>triton.jit</code> subscript 调用在 Ascend 上失败, CP=1 block_table 用已有 PyTorch <code>_compute_pcp_dcp_slot_mapping</code> 替代</li>
+    <li><b>sparse_flash_attn=False</b>: 镜像未包含 <code>cann_ops_transformer</code> C 扩展</li>
+  </ul>
+</section>
+
+<!-- ═══════════ 性能分解 ═══════════ -->
+<section id="perf">
+  <h2>性能分解</h2>
+
+  <h3>稳态 Step 时间拆解</h3>
+  <div class="bar-row">
+    <span class="bar-label">vLLM generate</span>
+    <span class="bar-track"><span class="bar-fill rollout" style="width:7%"></span></span>
+    <span class="bar-val">1.6-6.8s</span>
+  </div>
+  <div class="bar-row">
+    <span class="bar-label">old_log_prob</span>
+    <span class="bar-track"><span class="bar-fill oldlp" style="width:30%"></span></span>
+    <span class="bar-val">21-33s</span>
+  </div>
+  <div class="bar-row">
+    <span class="bar-label">ref_log_prob</span>
+    <span class="bar-track"><span class="bar-fill reflp" style="width:28%"></span></span>
+    <span class="bar-val">~30s</span>
+  </div>
+  <div class="bar-row">
+    <span class="bar-label">update_actor</span>
+    <span class="bar-track"><span class="bar-fill actor" style="width:40%"></span></span>
+    <span class="bar-val">34-40s</span>
+  </div>
+  <div class="bar-row">
+    <span class="bar-label">HCCL weight sync</span>
+    <span class="bar-track"><span class="bar-fill hccl" style="width:17%"></span></span>
+    <span class="bar-val">15-16s</span>
+  </div>
+
+  <h3>阶段占比表</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>阶段</th><th class="num">耗时 (s)</th><th class="num">占比</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>vLLM generate (rollout)</td><td class="num">1.6-6.8 / 样本</td><td class="num">~8%</td></tr>
+        <tr><td>Old log prob</td><td class="num">21-33</td><td class="num">~30%</td></tr>
+        <tr><td>Ref log prob</td><td class="num">~30</td><td class="num">~30%</td></tr>
+        <tr><td>Update actor</td><td class="num">34-40</td><td class="num">~40%</td></tr>
+        <tr><td>HCCL weight sync</td><td class="num">15-16</td><td class="num">~17%</td></tr>
+        <tr style="font-weight:600"><td>Step total</td><td class="num ok">85-90</td><td class="num">100%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="muted">
+    主要瓶颈在训练侧 (old_log_prob + update_actor 占 ~70%)。HCCL 权重同步 15-16s 有优化空间 (bucketed weight transfer overlay 已准备但未启用)。
+    4 层模型吞吐 4.4-5.7 tok/s, 全参 43 层扩展到 8 节点后的性能待测。
+  </p>
+</section>
+
+<!-- ═══════════ Bug 清单 ═══════════ -->
+<section id="bugs">
+  <h2>Bug 清单</h2>
+
+  <div class="note warn">
+    <div class="note-title">10 个 Bug &mdash; 最昂贵: Bug J (Triton kernel 替换, 占 14 轮中的 7 轮)</div>
+    14 轮部署解决 10 个独立 bug, 分布在 config / mbridge / vllm-ascend / MindSpeed 各层。
+    最长的调试周期是 Bug J: Ascend NPU 上 Triton = identity decorator, CP=1 block_table 需 PyTorch 实现。
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Bug</th><th class="num">轮次</th><th>层</th><th>症状</th><th>根因</th><th>修复</th><th>耗时</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="badge bad">D</span></td>
+          <td class="num">1</td><td>Config</td>
+          <td>vLLM EP=1 OOM 54.6GB</td>
+          <td>256 experts 全装在一个 NPU</td>
+          <td>训推分离 + rollout EP=8</td>
+          <td>~30min</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">E</span></td>
+          <td class="num">1</td><td>Config</td>
+          <td>HCCL resource unavailable</td>
+          <td>多 communicator 同 port</td>
+          <td>PORT_RANGE=auto + node affinity bundle</td>
+          <td>~30min</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">F/G</span></td>
+          <td class="num">1</td><td>mbridge</td>
+          <td><code>ValueError: invalid literal for int()</code></td>
+          <td>EP 切分后 expert ID 解析失败</td>
+          <td>bridge.py EP all_gather + 双格式 ID</td>
+          <td>~1h</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">H</span></td>
+          <td class="num">1-2</td><td>mbridge</td>
+          <td><code>AssertionError: shape mismatch</code> (1D vs 2D)</td>
+          <td>MLA weights EP-sharded, never un-sharded</td>
+          <td>TP=1 &rarr; TP=2, ETP=2</td>
+          <td>~2h</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">I</span></td>
+          <td class="num">2-4</td><td>Config</td>
+          <td><code>max_tokens=0</code> &rarr; VLLMValidationError</td>
+          <td>GSM8K prompt 67-134 tokens &gt; MAX=32</td>
+          <td>MAX_PROMPT_LENGTH &rarr; 200</td>
+          <td>~2h</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">J</span></td>
+          <td class="num">5-12</td><td>vllm-ascend</td>
+          <td><code>TypeError: function not subscriptable</code></td>
+          <td>Triton jit &rarr; identity decorator on Ascend</td>
+          <td>CP=1 复用已有 PyTorch 路径</td>
+          <td class="bad">~5h</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">J2</span></td>
+          <td class="num">8-10</td><td>vllm-ascend</td>
+          <td><code>RuntimeError: Tensor with 4 elements</code></td>
+          <td>2D block_table 索引未 flatten</td>
+          <td>被 J v4 替代</td>
+          <td>(J 的一部分)</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">J3</span></td>
+          <td class="num">12</td><td>vllm-ascend</td>
+          <td><code>IndexError: index 8 out of size 8</code></td>
+          <td>stride &rarr; gpu 布局不匹配</td>
+          <td>被 J v4 替代</td>
+          <td>(J 的一部分)</td>
+        </tr>
+        <tr>
+          <td><span class="badge bad">K</span></td>
+          <td class="num">13</td><td>MindSpeed</td>
+          <td><code>Exception: custom_ops unavailable</code></td>
+          <td><code>cann_ops_transformer</code> 未装</td>
+          <td>use_sparse_flash_attn=False</td>
+          <td>~30min</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Bug J 深度分析 (最昂贵)</h3>
+  <p>占 14 轮中的 7 轮, 根因是 Ascend NPU 已知的设计选择 (Triton = identity decorator)。</p>
+  <div class="note bad">
+    <div class="note-title">错误路径: J v1 (PyTorch) &rarr; RuntimeError &rarr; J v2 (reshape) &rarr; RuntimeError &rarr; J v3 (max_num_blocks) &rarr; IndexError &rarr; J v4 (复用 CP&gt;1 path) &rarr; &check;</div>
+    选了"从零实现"而非"复用已有"的策略。每次修复只解决暴露的一个边界问题, 没有意识到 vllm-ascend 已有 CP&gt;1 的 <code>_compute_pcp_dcp_slot_mapping</code> 纯 PyTorch 实现完全可复用。
+  </div>
+
+  <p><b>下次如何避免</b>: 修复前先搜索项目中是否有类似功能的已有实现; 自研迭代 2 次无果 &rarr; 停线, 切换策略 (元规则 C); 优先问"这段逻辑在其他配置下是否已有工作实现?"</p>
+</section>
+
+<!-- ═══════════ 部署时间线 ═══════════ -->
+<section id="timeline">
+  <h2>部署时间线</h2>
+
+  <p class="muted">14 轮部署, 从 4-node &rarr; 8-node &rarr; 2-node 的探索路径, 最终 9 steps 稳态完成。</p>
+
+  <h3>宏观路径</h3>
+  <div class="timeline">
+    <div class="tl-item bad">
+      <div class="tl-date">Round 1-6 &middot; 2026-07-26</div>
+      <div class="tl-body"><b>4 节点基线 (skip rollout)</b>: 6 次 OOM &rarr; 证实数学不可行 (59.8GB &gt; 61GB HBM)。PP=2 也不可行: ETP(64) &gt; world_size(32)</div>
+    </div>
+    <div class="tl-item bad">
+      <div class="tl-date">Round 7 &middot; 2026-07-27</div>
+      <div class="tl-body"><b>8 节点 PP=2</b>: 模型构建成功 (5.69B/rank), 但 DDP gradient bucket 16.5GB &rarr; 总计 63.6GB &gt; 61GB OOM。需要 gradient streaming</div>
+    </div>
+    <div class="tl-item ok">
+      <div class="tl-date">Round 8-14 &middot; 2026-07-28 &rarr; 31</div>
+      <div class="tl-body"><b>2 节点 4 层 surrogate (功能验证)</b>: 10 个 bug 逐一修复, 最终 9 steps 成功 &check;</div>
+    </div>
+  </div>
+
+  <h3>2 节点详细时间线</h3>
+  <div class="timeline">
+    <div class="tl-item bad">
+      <div class="tl-date">Round 8 &middot; 07-28</div>
+      <div class="tl-body">Bug D/E/F/G/H: Config (EP OOM + HCCL port) + mbridge (expert ID + MLA shape)</div>
+    </div>
+    <div class="tl-item bad">
+      <div class="tl-date">Round 9-11 &middot; 07-29</div>
+      <div class="tl-body">Bug I + J: max_tokens=0 (prompt length misconfig) + Triton kernel 开始迭代</div>
+    </div>
+    <div class="tl-item bad">
+      <div class="tl-date">Round 12 &middot; 07-30</div>
+      <div class="tl-body">Bug J v4: 复用 CP&gt;1 <code>_compute_pcp_dcp_slot_mapping</code>, block_table 问题最终解决</div>
+    </div>
+    <div class="tl-item warn">
+      <div class="tl-date">Round 13 &middot; 07-30</div>
+      <div class="tl-body">Bug K: sparse_flash_attn=False, 训练跑通但 debug print 漏改 155 节点</div>
+    </div>
+    <div class="tl-item ok">
+      <div class="tl-date">Round 14 &middot; 07-31 00:31</div>
+      <div class="tl-body"><b>9 steps 成功</b>: 完整 GRPO 管线打通, ~85s/step 稳态 &check;</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 代码修改清单 ═══════════ -->
+<section id="diffs">
+  <h2>代码修改清单</h2>
+
+  <p class="muted">
+    共计 <b>39 个 overlay 文件</b> 覆盖 5 个组件 (Megatron-LM / MindSpeed-LLM / verl / vllm-ascend / mbridge), 分为"镜像能力补全"和"Bug 修复"两类。
+  </p>
+
+  <h3>镜像本身支持 &amp; 需补充的能力</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>能力</th><th>镜像支持</th><th>说明</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>verl GRPO 训练框架</td><td><span class="ok">&check;</span></td><td>verl 0.8.0.dev0, 含 MindSpeed 引擎后端</td></tr>
+        <tr><td>vLLM 推理引擎</td><td><span class="ok">&check;</span></td><td>v0.23.0, 含 vllm-ascend NPU 后端</td></tr>
+        <tr><td>DS V4 Flash 模型 spec</td><td><span class="ok">&check;</span></td><td>MindSpeed-LLM deepseek4_spec.py, G2/MHC/DSA indexer</td></tr>
+        <tr><td>Megatron-LM 训练框架</td><td><span class="ok">&check;</span></td><td>core_r0.12.0, TP/PP/EP/DP</td></tr>
+        <tr><td>mbridge 权重桥接</td><td><span class="ok">&check;</span></td><td>v0.15.1, mcore &harr; HF</td></tr>
+        <tr><td>HCCL 通信后端</td><td><span class="ok">&check;</span></td><td>NPU RDMA, 需 overlay checkpoint_engine</td></tr>
+        <tr><td>MoE EP 并行</td><td><span class="ok">&check;</span></td><td>256 experts, alltoall dispatcher</td></tr>
+        <tr><td>FP8 safetensor</td><td><span class="ok">&check;</span></td><td>FP8&rarr;BF16 dequant on the fly (BF16 权重不走此路径)</td></tr>
+        <tr><td>DS V4 MLA 注意力</td><td><span class="warn">部分</span></td><td>G2 + MHC 可用, 但 MLA 权重 EP 切分有 Bug (Bug H)</td></tr>
+        <tr><td>Triton kernel</td><td><span class="bad">&cross;</span></td><td><code>triton.jit</code> 退化 identity, subscript 调用全失败</td></tr>
+        <tr><td>sparse_flash_attn</td><td><span class="bad">&cross;</span></td><td>依赖 <code>cann_ops_transformer</code>, 镜像未包含</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Overlay 文件分布</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>组件</th><th class="num">文件数</th><th>关键文件</th><th>关联 Bug</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>mbridge</td><td class="num">5</td><td>bridge.py, llm_bridge.py, deepseek_v3.py, dequant_fp8_safetensor_io.py, register_dsv4.py</td><td>F/G, H</td></tr>
+        <tr><td>verl</td><td class="num">16</td><td>ray_trainer.py, hccl_checkpoint_engine.py, base.py, constants_ppo.py, transformer_impl.py, vllm_async_server.py, config_converter.py, ...</td><td>E, H, I</td></tr>
+        <tr><td>vllm-ascend</td><td class="num">1</td><td>block_table.py</td><td>J</td></tr>
+        <tr><td>MindSpeed-LLM</td><td class="num">14</td><td>pretrain_deepseek4.py, g2_attention.py, g2_attention_kernel.py, rmsnorm_without_weight.py, mhc_triton.py, sinkhorn.py, hybrid_optimizer.py, ...</td><td>K, prereq</td></tr>
+        <tr><td>Megatron-LM</td><td class="num">3</td><td>distrib_optimizer.py, p2p_communication.py, transformer_config.py</td><td>prereq</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>2 节点部署的 7 项关键改动</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>#</th><th>改动</th><th>目的</th><th>Bug</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>1</td><td>4 层 surrogate (43&rarr;4)</td><td>绕过 HBM 约束, 功能验证</td><td>D</td></tr>
+        <tr><td>2</td><td>训推分离 (112 train + 155 rollout)</td><td>推理 EP=1 OOM, 必须 EP 切分</td><td>D, E</td></tr>
+        <tr><td>3</td><td>TP=2 + ETP=2 (训练)</td><td>MLA attention EP 切分需要 TP</td><td>H</td></tr>
+        <tr><td>4</td><td>HCCL checkpoint engine</td><td>训推分离必须: 权重跨节点广播</td><td>E</td></tr>
+        <tr><td>5</td><td>MAX_PROMPT_LENGTH=200 (原 32)</td><td>GSM8K 实际 prompt 67-171 tokens</td><td>I</td></tr>
+        <tr><td>6</td><td>CP=1 block table PyTorch 替换</td><td>Ascend Triton identity decorator</td><td>J</td></tr>
+        <tr><td>7</td><td>use_sparse_flash_attn=False</td><td><code>cann_ops_transformer</code> 未安装</td><td>K</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ 关键教训 ═══════════ -->
+<section id="lessons">
+  <h2>关键教训</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>不该犯的错</h3>
+      <div class="note bad">
+        <div class="note-title">MAX_PROMPT_LENGTH=32 凭假设设</div>
+        成本 2h (3 轮)。没先打日志看数据分布, 应 <b>先测实际数据再设参数</b>。
+      </div>
+      <div class="note bad">
+        <div class="note-title">debug print 直接写容器漏改 155</div>
+        成本 10min。违反 R0: 禁止直接改远程文件。应 overlay &rarr; rsync &rarr; setup。
+      </div>
+      <div class="note bad">
+        <div class="note-title">J&rarr;J2&rarr;J3 三轮自造</div>
+        成本 4.5h (7 轮)。没搜索已有 CP&gt;1 路径, 应 <b>复用已有优于自造</b>。
+      </div>
+    </div>
+    <div>
+      <h3>模式级教训</h3>
+      <div class="note warn">
+        <div class="note-title">串行试错的低效</div>
+        核心问题: 看到错误 &rarr; 立刻改代码 &rarr; 部署验证 (7 分钟起跳) &rarr; 看下一个错误。<br>
+        应该是: 每个错误 <b>三问</b> (说啥/合理吗/根因在我改的东西里吗) 后才动手。
+      </div>
+      <div class="note warn">
+        <div class="note-title">多 bug 同源找共同假设</div>
+        D/E/F/G/H 同属"训推分离架构假设不完整", 应一次性解决而非逐个修。
+      </div>
+      <div class="note info">
+        <div class="note-title">可行性硬约束先算清</div>
+        模型大小 vs HBM: 4-node 数学不可行在首轮就应通过算术排除, 而非实测 OOM 6 次。
+      </div>
+    </div>
+  </div>
+
+  <h3>低效模式总结</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>错误</th><th>成本</th><th>根因</th><th>下次</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>MAX_PROMPT_LENGTH=32 凭假设设</td><td>2h (3 轮)</td><td>没先打日志看数据分布</td><td>先测实际数据再设参数</td></tr>
+        <tr><td>debug print 直接写容器漏改 155</td><td>10min</td><td>违反 R0: 禁止直接改远程文件</td><td>overlay &rarr; rsync &rarr; setup</td></tr>
+        <tr><td>hybrid Gen_EP=1 估错显存</td><td>1h (方案废弃)</td><td>把 MoE 当 Dense 算了</td><td>先算再动手</td></tr>
+        <tr><td>J&rarr;J2&rarr;J3 三轮自造</td><td class="bad">4.5h</td><td>没搜索已有 CP&gt;1 路径</td><td>复用已有优于自造</td></tr>
+        <tr><td>声称新版本多了某行实际同 commit</td><td>30min</td><td>未先 git log/diff 验证</td><td>所有结论有证据</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ 后续路径 ═══════════ -->
+<section id="next">
+  <h2>后续路径</h2>
+
+  <div class="metrics">
+    <div class="metric"><div class="v info">4&rarr;8&rarr;16</div><div class="label">增加层数找 2-node HBM 上限</div></div>
+    <div class="metric"><div class="v warn">8-node</div><div class="label">全参训练需 DDP gradient streaming</div></div>
+    <div class="metric"><div class="v info">extract</div><div class="label">提取 Bug J + F/G patch 提交上游</div></div>
+    <div class="metric"><div class="v info">PS</div><div class="label">PrefixSharing 集成验证</div></div>
+  </div>
+
+  <ol>
+    <li><b>增加层数</b>: 4 &rarr; 8 &rarr; 16 层, 找到 2 节点 HBM 上限, 为目标规模提供参考</li>
+    <li><b>8 节点全参</b>: 需要 DDP gradient streaming patch (16.5GB bucket OOM 问题)</li>
+    <li><b>提取 patch</b>: Bug J (block_table.py) + Bug F/G (bridge.py) 提取为独立 patch, 可提交上游社区</li>
+    <li><b>清理 overlay</b>: 删除 debug print (<code>vllm_async_server.py</code> max_tokens 行)</li>
+    <li><b>PrefixSharing 集成</b>: 在 2-node 或 8-node 上验证 PrefixSharing on/off 基线对照</li>
+  </ol>
+
+  <h3>已证明不可行的路径</h3>
+  <div class="note warn">
+    <div class="note-title">以下方案已证伪, 不必重试</div>
+    <ul>
+      <li>4 节点 32 NPU 全参: 数学不可行 (59.8GB &gt; 61GB 可用 HBM)</li>
+      <li>4 节点 PP=2: ETP(64) &gt; world_size(32)</li>
+      <li>8 节点 PP=2 无 gradient streaming: DDP bucket 16.5GB 导致 OOM</li>
+      <li>hybrid (Gen_EP=1 推理 + EP=4 训练): 对 MoE 把显存当 Dense 算, 方案级错误</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Generated 2026-07-31 &middot; <a href="https://github.com/versatile-ai/AutoModelWire">GitHub</a> &middot; 数据来源: <a href="https://github.com/versatile-ai/AutoModelWire/blob/experiments/deepseek-v4-flash/experiments/verl-npu-deepseek-with-prefix-sharing/docs/experiment_summary.md">experiment_summary.md</a> &middot; 日志: <code>train_20260731_003106.log</code> (9 steps)
+</footer>
+
+</body>
+</html>

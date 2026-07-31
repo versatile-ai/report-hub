@@ -581,6 +581,13 @@ const EXPERIMENTS=[
    reports:[
    {title:"Kimi-K3 训推算子支持分析 — mxfp4/bf16/w4a8 + 训练三维矩阵",subtitle:"权重扫描 · 架构剖析 · 推理算子矩阵 · KDA 深度分析 · 训练算子矩阵 · 缺口裁定 · 全量行号溯源",file:"kimi-k3-cann-operator-support/2026-07-29-kimi-k3-operator-support.html",date:"2026-07-29",type:"stage"}
    ]
+  },
+  {id:"verl-npu-deepseek-prefix-sharing",name:"DeepSeek V4 Flash 2-Node GRPO RL Smoke Test",subtitle:"Ascend 910B 4-layer surrogate · 14 轮部署 10 个 bug · 9 steps 通过 85s/step · mbridge+vLLM+MindSpeed+HCCL 全链路打通 · 训推分离架构验证",status:"done",startDate:"2026-07-26",lastUpdate:"2026-07-31",
+   tags:["DeepSeek-V4-Flash","GRPO","verl","Ascend 910B3","mbridge","vLLM","MindSpeed-LLM","HCCL","2-node","smoke-test","PrefixSharing"],
+   metrics:[{label:"Steps",value:"9",tone:"good"},{label:"Step Time",value:"~85s",tone:"info"},{label:"Throughput",value:"4.4-5.7 tok/s",tone:"info"},{label:"Bugs Fixed",value:"10",tone:"good"},{label:"Rounds",value:"14",tone:"warn"},{label:"Train HBM",value:"~50GB/NPU",tone:"good"}],
+   reports:[
+   {title:"基线报告 — 2-Node Smoke Test 完整记录",subtitle:"环境版本 · 并行策略 · HBM 估算 · 性能分解 · 10 Bug 清单 · 部署时间线 · 39 文件 overlay · 5 条关键教训 · 后续路径",file:"verl-npu-deepseek-prefix-sharing/2026-07-31-baseline-report.html",date:"2026-07-31",type:"stage"}
+   ]
   }
 ];
 
