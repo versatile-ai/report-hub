@@ -68,6 +68,7 @@ description: 生成并发布自包含 HTML 报告到 report-hub。按 docs/desig
 
 ## 3. 生成报告页(深态)
 
+0. **写入前先脱敏(R7 红线)**:收到素材后,扫描并替换人名→"[已脱敏]"或角色代称、密钥/Token→"<REDACTED>"、完整 IP→尾段或 `<node-N>` 占位。不依赖事后 grep 补救——写入前即完成。
 1. 把 `templates/report-page.html` 复制到目标路径(本 skill 目录下的 `templates/`)。
 2. 填内容,但**深态 `:root` token 块原样保留,不改任何值**(design-guide §2 深态列)。
 3. 必备结构(design-guide §3/§4):
@@ -116,6 +117,7 @@ description: 生成并发布自包含 HTML 报告到 report-hub。按 docs/desig
    - 仓库级 `index.html` 导航出现新报告条目,链接指向正确相对路径,点击可达;
    - 顶层 `index.html`(若改了)`REPOS` 出现新仓库,卡片链接指向 `<repo>/`;
    - grep 新报告页:无 `https?://` 外链资源引用、无 `<link rel="stylesheet">`、无 `<script src=`。
+   - grep 新报告页:无敏感信息(见 R7)——尤其检查是否含中文姓名、密钥格式(`sk-`/`Bearer`/`password=`)、完整 IP(非占位符 `x.x.x.x`)。
 3. 校验通过后停掉 http.server。
 
 ## 7. 提交(自动执行)
@@ -148,3 +150,4 @@ git commit -m "feat(report-hub): <type>(<repo>/<experiment>): <一句话摘要>"
 | R4 | 只动本次报告相关文件,不碰其他仓库子目录、其他实验条目 |
 | R5 | 推送前必须用户确认;不 force push |
 | R6 | 文件名严格 `YYYY-MM-DD-<type>.html`,目录/实验 id 全小写连字符 |
+| R7 | **严禁报告中出现敏感信息**:人名(含英文名/中文名/拼音)、API 密钥/Token/Password、完整 IP 地址(内网 IP 允许仅保留尾段或替换为 `<node-N>` 占位符) |

@@ -411,6 +411,11 @@
 // 顶层仅登记仓库级元数据。实验数/报告数等聚合统计由各仓库子目录
 // index.html 自行维护,顶层不复制,避免双源漂移(见 CLAUDE.md 约定)。
 const REPOS=[
+  {id:"ma-ops",name:"ma-ops",path:"ma-ops/",gh:"https://github.com/versatile-ai/vpersona",
+   desc:"Ascend NPU 集群运维 — 模型部署、推理性能验证与操作记录。",
+   lastUpdate:"2026-07-31",
+   tags:["Ascend 910B3","vllm-ascend","Kimi-K3","W4A8","8节点"]},
+
   {id:"automodelwire",name:"AutoModelWire",path:"automodelwire/",gh:"https://github.com/versatile-ai/AutoModelWire",
    desc:"Ascend NPU 上的模型适配、推测解码、性能调优实验记录。每份报告是自包含 HTML，含性能数据、原理分析、代码改动位置与开发路径。",
    lastUpdate:"2026-07-31",

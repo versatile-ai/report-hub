@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Kimi-K3 W4A8 8节点 Ascend 910B3 部署与推理性能验证报告">
+<title>Kimi-K3 W4A8 部署 & 性能 — ma-ops (2026-07-31)</title>
+<style>
+:root{--bg:#0D1117;--surface:#161B22;--surface-2:#1C2230;--border:#30363D;--text:#E6EDF3;--muted:#8B949E;--tertiary:#6B7385;--accent:#A78BFA;--accent-hover:#C4B5FD;--green:#3FB950;--yellow:#D29922;--red:#F85149;--info:#79C0FF;--green-bg:rgba(63,185,80,0.12);--yellow-bg:rgba(210,153,34,0.12);--red-bg:rgba(248,81,73,0.12);--info-bg:rgba(121,192,255,0.12);--code-bg:#010409}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,.metric .v,.stat .v,.tl-date,.tag,.mono{font-family:'SF Mono','Fira Code',Consolas,monospace}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.breadcrumb{max-width:1100px;margin:0 auto;padding:20px 48px 0;font-size:12px;color:var(--tertiary);letter-spacing:.2px}
+.breadcrumb a{color:var(--muted)}.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{margin:0 8px;color:var(--border)}.breadcrumb .current{color:var(--text)}
+header{max-width:1100px;margin:0 auto;padding:32px 48px 24px;border-bottom:1px solid var(--border)}
+header h1{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.3px;margin-bottom:8px}
+header .sub{font-size:13px;color:var(--muted)}
+header .tags{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+.tag{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;letter-spacing:.3px;background:var(--surface-2);color:var(--tertiary);border:1px solid var(--border)}
+.tag.accent{background:rgba(167,139,250,0.12);color:var(--accent);border-color:rgba(167,139,250,0.25)}
+.tag.green{background:var(--green-bg);color:var(--green);border-color:rgba(63,185,80,0.25)}
+.tag.red{background:var(--red-bg);color:var(--red);border-color:rgba(248,81,73,0.25)}
+main{max-width:1100px;margin:0 auto;padding:32px 48px 80px}
+section{margin-bottom:40px}
+section h2{font-size:17px;font-weight:600;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:20px;letter-spacing:-.2px}
+section h3{font-size:14px;font-weight:600;color:var(--text);margin:24px 0 12px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:24px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px}
+.metric .label{font-size:11px;color:var(--tertiary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.metric .v{font-size:24px;font-weight:600;color:var(--text)}
+.metric .v.green{color:var(--green)}.metric .v.yellow{color:var(--yellow)}.metric .v.red{color:var(--red)}
+.metric .unit{font-size:12px;color:var(--muted);font-weight:400;margin-left:4px}
+.metric .note{font-size:11px;color:var(--tertiary);margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+td{color:var(--text)}tr:hover td{background:var(--surface)}
+td code,th code{background:var(--code-bg);padding:1px 5px;border-radius:3px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:12px;color:var(--info)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px;padding:16px;overflow-x:auto;font-size:12px;line-height:1.55;margin-bottom:16px}
+pre code{font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text)}
+.timeline{position:relative;padding-left:28px}
+.timeline::before{content:'';position:absolute;left:8px;top:4px;bottom:4px;width:1px;background:var(--border)}
+.tl-item{position:relative;margin-bottom:20px}
+.tl-item::before{content:'';position:absolute;left:-20px;top:6px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.tl-date{font-size:11px;color:var(--tertiary);letter-spacing:.3px;margin-bottom:4px}
+.tl-text{font-size:13px;color:var(--text)}
+.tl-text code{background:var(--surface-2);padding:1px 4px;border-radius:2px;font-size:12px}
+p{margin-bottom:12px;color:var(--text)}
+ul{margin:8px 0 16px 20px;color:var(--text)}
+li{margin-bottom:6px}
+.warn{background:var(--yellow-bg);border:1px solid rgba(210,153,34,0.25);border-radius:6px;padding:14px 16px;margin-bottom:20px;font-size:13px}
+.warn strong{color:var(--yellow)}
+.good{background:var(--green-bg);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:14px 16px;margin-bottom:20px;font-size:13px}
+.good strong{color:var(--green)}
+@media(max-width:768px){main,.breadcrumb,header{padding-left:24px;padding-right:24px}.metrics{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">ma-ops</a><span class="sep">/</span>
+  <span class="current">kimi-k3-w4a8-deploy</span>
+</div>
+
+<header>
+  <h1>Kimi-K3 W4A8 部署 &amp; 推理性能</h1>
+  <div class="sub">2026-07-31 · 8 × Ascend 910B3 (64GB HBM2e) · DP8/TP8/EP64</div>
+  <div class="tags">
+    <span class="tag accent">ma-ops</span>
+    <span class="tag accent">vllm-ascend</span>
+    <span class="tag green">成功</span>
+    <span class="tag">Kimi-K3</span>
+    <span class="tag">W4A8</span>
+    <span class="tag">Ascend 910B3</span>
+    <span class="tag">8 节点</span>
+  </div>
+</header>
+
+<main>
+
+<!-- ═══════════════════ 性能 ═══════════════════ -->
+<section>
+<h2>推理性能</h2>
+<div class="metrics">
+  <div class="metric"><div class="label">TTFT 平均</div><div class="v">6.87<span class="unit">s</span></div><div class="note">含 Kimi-K3 reasoning 思考时间</div></div>
+  <div class="metric"><div class="label">TPOT 平均</div><div class="v">151<span class="unit">ms</span></div><div class="note">纯 decode 阶段，= 6.6 tok/s</div></div>
+  <div class="metric"><div class="label">E2E 平均</div><div class="v">24.03<span class="unit">s</span></div><div class="note">含推理思考 + decode</div></div>
+  <div class="metric"><div class="label">Prefill 吞吐</div><div class="v">~13<span class="unit">tok/s</span></div><div class="note">引擎级平均</div></div>
+  <div class="metric"><div class="label">Decode 吞吐</div><div class="v">~7<span class="unit">tok/s</span></div><div class="note">单请求约 113 output tokens</div></div>
+  <div class="metric"><div class="label">KV Cache 使用</div><div class="v">0.6<span class="unit">%</span></div><div class="note">当前负载极低</div></div>
+</div>
+
+<p>数据来源：vLLM <code>/metrics</code> Prometheus 端点。7 个请求统计（engine 0），793 个 decode token。</p>
+
+<h3>TTFT 分布</h3>
+<table>
+  <tr><th>延迟区间</th><th>请求数</th><th>说明</th></tr>
+  <tr><td>≤ 1.0s</td><td>4</td><td>简单 prompt，无长思考</td></tr>
+  <tr><td>1.0 – 2.5s</td><td>1</td><td>中等 prompt</td></tr>
+  <tr><td>5.0 – 7.5s</td><td>1</td><td>略长思考</td></tr>
+  <tr><td>20 – 40s</td><td>1</td><td>长 prompt 触发深度 CoT 推理</td></tr>
+</table>
+<div class="warn"><strong>注意</strong>：Kimi-K3 部署时启用了 <code>--reasoning-parser kimi_k3</code>，模型会在输出答案前进行内部 Chain-of-Thought 推理。这显著增加 TTFT，尤其对开放式 prompt。<strong>简单事实性 prompt（如 "1+1=?"）TTFT < 1s</strong>。</div>
+</section>
+
+<!-- ═══════════════════ 部署流程 ═══════════════════ -->
+<section>
+<h2>部署流程</h2>
+
+<div class="timeline">
+  <div class="tl-item"><div class="tl-date">Step 1</div><div class="tl-text">选出 8 个 NPU 空闲节点（5 Cluster A + 3 Cluster B），确保每个节点 <code>/data_nv0</code> 有 ≥1.4T 空间</div></div>
+  <div class="tl-item"><div class="tl-date">Step 2</div><div class="tl-text">从 NFS (<code>/data/model/Kimi-K3-w4a8/</code>) 用 <code>cp -r</code> 拷贝 1.4T 模型到各节点本地 NVMe (<code>/data_nv0/models/Kimi-K3-w4a8/</code>)</div></div>
+  <div class="tl-item"><div class="tl-date">Step 3</div><div class="tl-text">加载 Docker 镜像 <code>quay.io/ascend/vllm-ascend:kimi-k3</code>（已在共享盘 <code>/data/l00619320/images/kimi_k3_quay.tar</code>）</div></div>
+  <div class="tl-item"><div class="tl-date">Step 4</div><div class="tl-text">先启动 Node 0 (<code>start_node0.sh</code>)，再启动 Workers 1-7 (<code>start_worker.sh</code>)</div></div>
+  <div class="tl-item"><div class="tl-date">Step 5</div><div class="tl-text">等待 ~55 分钟（10min 权重加载 + 45min cudagraph 编译），验证 <code>/v1/models</code></div></div>
+</div>
+
+<div class="good"><strong>结果</strong>：首次部署即成功，模型返回正常。关键修复：容器启动命令中补充 <code>source custom_transformer/set_env.bash</code> 和 <code>PYTHONPATH</code>，解决了 cudagraph 编译 OOM。</div>
+</section>
+
+<!-- ═══════════════════ 参数配置 ═══════════════════ -->
+<section>
+<h2>参数配置</h2>
+
+<h3>节点分配</h3>
+<table>
+  <tr><th>Rank</th><th>IP</th><th>集群</th><th>来源</th></tr>
+  <tr><td>0 (master)</td><td>192.168.0.50</td><td>A</td><td>专用</td></tr>
+  <tr><td>1</td><td>192.168.0.41</td><td>A</td><td>专用</td></tr>
+  <tr><td>2</td><td>192.168.0.88</td><td>A</td><td>共享</td></tr>
+  <tr><td>3</td><td>192.168.0.2</td><td>A</td><td>共享</td></tr>
+  <tr><td>4</td><td>192.168.0.155</td><td>A</td><td>共享</td></tr>
+  <tr><td>5</td><td>192.168.0.252</td><td>B</td><td>共享</td></tr>
+  <tr><td>6</td><td>192.168.0.24</td><td>B</td><td>共享</td></tr>
+  <tr><td>7</td><td>192.168.0.17</td><td>B</td><td>共享</td></tr>
+</table>
+
+<h3>vLLM 启动参数（严格对齐官方 A2 8节点文档）</h3>
+<pre><code>vllm serve /data_nv0/models/Kimi-K3-w4a8 \
+    --host 0.0.0.0 --port 8079 \
+    --served-model-name kimi-k3 --trust-remote-code \
+    --language-model-only \
+    --mm-encoder-tp-mode data --skip-mm-profiling \
+    --limit-mm-per-prompt '{"vision_chunk":0}' \
+    --data-parallel-size 8 --data-parallel-size-local 1 \
+    --data-parallel-start-rank &lt;RANK&gt; \
+    --data-parallel-address &lt;MASTER_IP&gt; --data-parallel-rpc-port 13391 \
+    --tensor-parallel-size 8 --enable-expert-parallel \
+    --dtype bfloat16 --quantization ascend \
+    --max-model-len 262144 --gpu-memory-utilization 0.90 \
+    --enable-prefix-caching \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,2,4,8]}' \
+    --tokenizer-mode kimi_k3 \
+    --enable-auto-tool-choice --reasoning-parser kimi_k3 --tool-call-parser kimi_k3 \
+    --additional-config '{"enable_flashcomm1":false,"ascend_compilation_config":{"enable_npugraph_ex":true,"enable_static_kernel":false},"enable_cpu_binding":true}'</code></pre>
+
+<h3>Docker 环境变量</h3>
+<pre><code>ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+HCCL_IF_IP=&lt;NODE_IP&gt;
+GLOO_SOCKET_IFNAME=enp67s0f5
+TP_SOCKET_IFNAME=enp67s0f5
+HCCL_SOCKET_IFNAME=enp67s0f5
+HCCL_CONNECT_TIMEOUT=1800
+HCCL_EXEC_TIMEOUT=1800
+HCCL_BUFFSIZE=256
+HCCL_INTRA_ROCE_ENABLE=1
+VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000
+VLLM_HOST_IP=&lt;NODE_IP&gt;
+OMP_PROC_BIND=false
+OMP_NUM_THREADS=10
+PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+VLLM_LOGGING_LEVEL=INFO
+TASK_QUEUE_ENABLE=1
+TIKTOKEN_CACHE_DIR=/root/.cache/tiktoken-k3</code></pre>
+
+<h3>镜像内各组件版本</h3>
+<table>
+  <tr><th>组件</th><th>版本</th><th>来源</th></tr>
+  <tr><td>Docker 镜像</td><td><code>quay.io/ascend/vllm-ascend:kimi-k3</code> (SHA: 5eccd894c91d)</td><td>Quay.io 官方</td></tr>
+  <tr><td>vLLM</td><td>0.23.0 (editable install @ /vllm-workspace/vllm)</td><td>pip show vllm</td></tr>
+  <tr><td>CANN (toolkit)</td><td>9.0.1</td><td>容器内 /usr/local/Ascend/cann-9.0.1</td></tr>
+  <tr><td>CANN (driver 驱动)</td><td>25.5.1 (V100R001C23SPC006B220)</td><td>宿主机 /usr/local/Ascend/driver/version.info</td></tr>
+  <tr><td>Python</td><td>3.12.13</td><td>容器内 /usr/local/python3.12.13</td></tr>
+  <tr><td>PyTorch</td><td>2.10.0</td><td>容器内 pip show torch</td></tr>
+  <tr><td>torch_npu</td><td>2.10.0</td><td>容器内</td></tr>
+  <tr><td>safetensors</td><td>Rust 实现 (bundled)</td><td>容器内 pip show safetensors</td></tr>
+  <tr><td>transformers</td><td>latest</td><td>容器内 pip show transformers</td></tr>
+  <tr><td>vllm-ascend (plugin)</td><td>0.23.0 (editable install @ /vllm-workspace/vllm-ascend)</td><td>容器内</td></tr>
+  <tr><td>custom_transformer</td><td>bundled with vllm-ascend</td><td>/vllm-workspace/vllm-ascend/vllm_ascend/_cann_ops_custom/</td></tr>
+</table>
+</section>
+
+<!-- ═══════════════════ 关键修复 ═══════════════════ -->
+<section>
+<h2>关键修复</h2>
+
+<h3>问题：cudagraph 编译时 NPU OOM</h3>
+<p>镜像 <code>quay.io/ascend/vllm-ascend:kimi-k3</code> 的 Docker Entrypoint 只 source 了 CANN toolkit 环境，但 <strong>没有执行官方文档要求的 custom_transformer 环境加载</strong>：</p>
+<pre><code># 官方文档要求但镜像 Entrypoint 未执行的：
+source /vllm-workspace/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/bin/set_env.bash
+export PYTHONPATH=/vllm-workspace/vllm-ascend:${PYTHONPATH:-}</code></pre>
+<p>缺少这两步导致自定义 NPU 算子加载异常 → 内存管理混乱 → cudagraph 捕获时申请 36GB 临时工作空间失败 → <strong>OOM</strong>。</p>
+
+<h3>解决方案</h3>
+<p>Docker 启动命令改为通过 <code>bash -c</code> 在执行 vllm serve 之前 source 环境：</p>
+<pre><code>docker run ... $IMAGE bash -c "
+    source .../set_env.bash &&
+    export PYTHONPATH=... &&
+    exec vllm serve ..."</code></pre>
+
+<div class="good"><strong>效果</strong>：cudagraph FULL_DECODE_ONLY 编译成功，NPU 内存使用正常（34GB 权重 + 空余），无 OOM。</div>
+</section>
+
+<!-- ═══════════════════ 硬件 ═══════════════════ -->
+<section>
+<h2>硬件规格</h2>
+<table>
+  <tr><th>项目</th><th>规格</th></tr>
+  <tr><td>NPU</td><td>8 × 8 = 64 × Ascend 910B3 (60.96 GB HBM2e each)</td></tr>
+  <tr><td>HBM 总容量</td><td>64 × 60.96 GB = 3.9 TB</td></tr>
+  <tr><td>卡间互联</td><td>HCCS 全互联 (224 GT/s × 4)</td></tr>
+  <tr><td>节点间</td><td>RoCE 200 Gbps / 卡</td></tr>
+  <tr><td>每卡模型权重</td><td>34.3 GB (14 experts / 896 global, EP=64)</td></tr>
+  <tr><td>每卡专家</td><td>14 / 896 全局</td></tr>
+  <tr><td>首次启动时间</td><td>~55 min (权重加载 10min + cudagraph 编译 45min)</td></tr>
+</table>
+</section>
+
+</main>
+</body>
+</html>
