@@ -242,6 +242,7 @@
     <li><a href="#diff-ref">10. 与参考实验代码对照</a></li>
     <li><a href="#lessons">11. 关键教训</a></li>
     <li><a href="#next">12. 后续路径</a></li>
+    <li><a href="#methodology">13. 方法论: 新模型快速跑通</a></li>
   </ol>
 </nav>
 
@@ -1627,6 +1628,375 @@ all_config = {**engine_config}  # 只从 engine_config 构建</code></pre>
       <li>4 节点 PP=2: ETP(64) &gt; world_size(32)</li>
       <li>8 节点 PP=2 无 gradient streaming: DDP bucket 16.5GB OOM</li>
     </ul>
+  </div>
+</section>
+
+<!-- ═══════════ 13. 方法论: 新模型快速跑通 ═══════════ -->
+<section id="methodology">
+  <h2>13. 方法论: 下次换模型/镜像如何快速跑通</h2>
+
+  <p class="muted">
+    从 14 轮 7 天的实验时间线中抽取出可迁移到下一个模型 (如 Kimi K3) 的方法论。
+    核心发现: <b>约 56% (~4 天) 的耗时是可避免的</b>, 分布在四个模式上: 未先算数学约束、未做镜像差异检测、一次性全组件组装、自研替代已有路径。
+    提炼为 4 条可操作法则 + 标准 SOP + Kimi K3 预判。
+  </p>
+
+  <h3>13.1 耗时账单: 7 天花在哪里</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>轮次</th><th>耗时</th><th>做什么</th><th>可避免?</th><th>如果知道方法论...</th></tr></thead>
+      <tbody>
+        <tr><td>R1-6</td><td>~2天</td><td>4 节点全参 OOM &times;6</td><td class="bad">可避免</td><td>动手前 5 分钟算完 HBM</td></tr>
+        <tr><td>R7</td><td>~1天</td><td>8 节点 PP=2, gradient bucket OOM</td><td class="warn">半可避免</td><td>DDP bucket 可预估, PP=2 绕过 EP 约束是有价值的发现</td></tr>
+        <tr><td>R8</td><td>~2h</td><td>Bug D/E/F/G/H 同时爆发</td><td class="warn">半可避免</td><td>HBM 和 EP 可预检, mbridge 映射是首次探索</td></tr>
+        <tr><td>R9-11</td><td>~1.5天</td><td>Bug I (max_tokens) + Bug J 开始迭代</td><td class="bad">可避免</td><td>数据集分析 5 分钟; Triton 搜已有路径 10 分钟</td></tr>
+        <tr><td>R12</td><td>~1天</td><td>Bug J v4 最终修复</td><td class="warn">半可避免</td><td>策略正确但部署验证每次 7-10 分钟</td></tr>
+        <tr><td>R13-14</td><td>~1天</td><td>Bug K + debug print 漏改 155</td><td class="bad">可避免</td><td>镜像预检 + overlay 纪律</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note info" style="margin-bottom:24px">
+    <div class="note-title">核心数据</div>
+    约 56% (~4 天) 的耗时是可避免的。可避免部分分布在四个模式: (1) 未先算数学约束 (2) 未做镜像差异检测 (3) 一次性全组件组装 (4) 自研替代已有路径。
+  </div>
+
+  <!-- 法则 1 -->
+  <h3>13.2 法则 1: 动手前必过的 5 道数学关</h3>
+  <p>在第一次部署之前, 用计算器算清以下 5 个硬约束。任何一个不满足, 部署是浪费时间。</p>
+
+  <div class="file-card">
+    <div class="fn">① HBM 容量约束</div>
+    <div class="desc">
+      <code>权重 + 梯度 + 优化器 + KV cache + 运行时 &lt; 61GB</code><br>
+      <span style="font-size:12px;color:var(--muted)">
+        权重 = total_params &times; dtype_size / (TP &times; PP &times; DP)<br>
+        梯度 = 同上 (不 offload 时)<br>
+        KV cache = block_size &times; num_blocks &times; num_layers &times; num_heads &times; head_dim &times; 2 (K+V) &times; dtype_size<br>
+        运行时 ~ 10-15% 权重 (经验值)<br>
+        <b>本次教训</b>: 4 节点 43 层 = 单卡 59.8GB &gt; 61GB 可用, 2 行计算 5 分钟排查, 实测花了 2 天。
+      </span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">② 并行度整除约束</div>
+    <div class="desc">
+      <code>num_experts % EP == 0</code> 且 <code>num_heads % TP == 0</code> 且 <code>num_layers % PP == 0</code><br>
+      <span style="font-size:12px;color:var(--muted)">
+        <b>本次教训</b>: 43 是质数, PP &gt; 1 时层数无法均分, PP=2 因 ETP(64) &gt; world_size(32) 不可行。
+        <b>Kimi K3 特化</b>: 896 experts = 2^7 &times; 7, EP 可取 {1,2,4,7,8,14,16,28,32,56,64,112,128,224,448,896}。93 层是奇数, PP 需特别处理。
+      </span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">③ ETP 约束</div>
+    <div class="desc">
+      <code>expert_tp &times; EP &le; world_size</code><br>
+      <span style="font-size:12px;color:var(--muted)">
+        本次 TP=1, ETP=2, EP=4 &rarr; 2&times;4=8 &le; 8 &check;。但 PP=2 时 ETP 需求翻倍。
+      </span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">④ 数据集适配</div>
+    <div class="desc">
+      <code>MAX_PROMPT_LENGTH &ge; max(prompt_ids_len)</code><br>
+      <span style="font-size:12px;color:var(--muted)">
+        <b>本次教训</b>: 凭假设设 MAX_PROMPT_LENGTH=32, 实际 GSM8K mean=83, max=171。应该先用 tokenizer 跑一次:
+        <pre><code>python3 -c "
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained('$MODEL_PATH')
+import datasets
+ds = datasets.load_from_disk('gsm8k/train')
+lens = [len(tok.apply_chat_template([{'role':'user','content':x['question']}], tokenize=True)) for x in ds]
+print(f'min={min(lens)} mean={sum(lens)/len(lens):.0f} max={max(lens)}')
+"</code></pre>
+        5 分钟排查, 本次花了 3 轮 ~6h。
+      </span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">⑤ 推理并行约束</div>
+    <div class="desc">
+      <code>GEN_EP == GEN_TP &times; GEN_DP</code><br>
+      <span style="font-size:12px;color:var(--muted)">
+        本次 8 == 8&times;1 &check;。每次改 EP 必须同步调整 TP 或 DP。
+      </span>
+    </div>
+  </div>
+
+  <div class="note ok" style="margin-bottom:24px">
+    <div class="note-title">方法: 5 分钟 HBM 计算表</div>
+    任何新模型/新集群组合, 在讨论方案之前先算清这个表。数字填进去, 约束自然暴露。
+  </div>
+
+  <!-- 法则 2 -->
+  <h3>13.3 法则 2: 镜像差异矩阵 — 先做差异分析再动手改代码</h3>
+  <p>
+    本次的核心教训: 参考实验 CANN 9.0.0 的修复方案 (pop HCCL auto port) 在 CANN 9.1.0-beta.3 上是<b>完全相反</b>的。
+    这意味着不能直接复制参考实验的 patch — 需要先做差异分析。
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>维度</th><th>参考 (CANN 9.0.0)</th><th>本次 (CANN 9.1.0-beta.3)</th><th>影响</th></tr></thead>
+      <tbody>
+        <tr><td>HCCL port 行为</td><td>MC2 不兼容 auto &rarr; pop</td><td>MC2 兼容, port=60000 冲突 &rarr; 保留 auto</td><td class="bad">策略完全相反</td></tr>
+        <tr><td>Triton backend</td><td>JIT 可编译</td><td>JIT = identity decorator</td><td class="bad">kernel launch 语法崩溃</td></tr>
+        <tr><td>vLLM 版本</td><td>0.22.1rc1</td><td>0.23.0</td><td class="warn">block_table 架构重构</td></tr>
+        <tr><td>镜像含 DSv4 注册</td><td>&check; 已含</td><td>&cross; 不含</td><td class="bad">需自建注册文件</td></tr>
+        <tr><td>镜像含 cann_ops_transformer</td><td>&cross; 不含 (需自装)</td><td>&cross; 同样不含</td><td class="info">无差异</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note warn" style="margin-bottom:24px">
+    <div class="note-title">操作: 拿到新镜像后立即运行的 5 分钟检测脚本</div>
+    <pre><code>#!/bin/bash
+# 新镜像差异检测 — 在写任何代码之前运行
+CTN="your-container"
+
+# 1. CANN 版本
+echo "=== CANN version ==="
+docker exec $CTN cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg 2>/dev/null || \
+  docker exec $CTN cat /usr/local/Ascend/ascend-toolkit/latest/arm64-linux/version.cfg
+
+# 2. Triton 行为 — 判定是否是 identity decorator
+echo "=== Triton behavior ==="
+docker exec $CTN python3 -c "
+import triton, inspect
+@triton.jit
+def f(): pass
+result = 'identity_decorator' if inspect.isfunction(f) else 'compiled'
+print(f'Triton jit = {result}')
+"
+
+# 3. HCCL 端口行为 — 检测 isAutoPort 枚举值
+echo "=== HCCL port config ==="
+docker exec $CTN python3 -c "
+import ctypes, os
+lib = ctypes.CDLL('libhccl.so')
+# 如果 auto port 可用, HCCL_AUTO_PORT_CONFIG 宏存在
+print('HCCL lib loaded OK')
+"
+
+# 4. 各仓库 commit
+echo "=== Component commits ==="
+for repo in /workspace/verl /workspace/vllm /workspace/vllm-ascend /MindSpeed-LLM /Megatron-LM; do
+  docker exec $CTN bash -c "cd $repo 2>/dev/null && echo \"\$(basename \$repo): \$(git rev-parse HEAD)\""
+done
+
+# 5. 模型注册测试
+echo "=== Model registration ==="
+docker exec $CTN python3 -c "
+from transformers import AutoConfig
+try:
+    cfg = AutoConfig.from_pretrained('\$MODEL_PATH')
+    print(f'OK: model_type={cfg.model_type}')
+except Exception as e:
+    print(f'FAIL: {e}')
+"
+
+# 6. 参考实验 patch 与本镜像的 diff 适用性
+echo "=== Patch applicability ==="
+# 对于参考实验的每个 .patch 文件, 用 git apply --check 测试
+# git apply --check 参考.patch && echo "APPLIES" || echo "CONFLICT"
+echo "Manual: for each reference patch, run 'git apply --check'"
+</code></pre>
+  </div>
+
+  <!-- 法则 3 -->
+  <h3>13.4 法则 3: 分层验证 — 逐层跑通再组装</h3>
+  <p>
+    本次的问题是全部组件一次组装, 出了问题需要从 10 个组件中二分定位。
+    正确做法是自底向上逐层验证, 每一层通过后再上一层。
+  </p>
+
+  <div class="step-diagram">
+    <div class="step-row" style="margin-bottom:12px">
+      <span class="step-num" style="background:var(--green);color:#0D1117">L5</span>
+      <span class="step-desc"><b>完整 RL 训练</b> — 连续 3-5 steps, loss 收敛, 无 OOM</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:6px">
+      &uarr; 本次在此层首次测试, 所有 Bug 同时暴露
+    </div>
+    <div class="step-row" style="margin-bottom:8px">
+      <span class="step-num" style="background:var(--yellow);color:#0D1117">L4</span>
+      <span class="step-desc"><b>权重同步</b> — HCCL broadcast → verify weights 一致性</span>
+    </div>
+    <div class="step-row" style="margin-bottom:8px">
+      <span class="step-num" style="background:var(--yellow);color:#0D1117">L3</span>
+      <span class="step-desc"><b>训练单 step</b> — forward + backward + optimizer.step (不 sync 到 rollout)</span>
+    </div>
+    <div class="step-row" style="margin-bottom:8px">
+      <span class="step-num" style="background:var(--yellow);color:#0D1117">L2</span>
+      <span class="step-desc"><b>推理单次</b> — vLLM generate 一个 token</span>
+    </div>
+    <div class="step-row" style="margin-bottom:8px">
+      <span class="step-num" style="background:var(--yellow);color:#0D1117">L1</span>
+      <span class="step-desc"><b>权重加载</b> — mbridge load_weights + vLLM weight loading</span>
+    </div>
+    <div class="step-row">
+      <span class="step-num" style="background:var(--accent);color:#fff">L0</span>
+      <span class="step-desc"><b>模型注册 + config</b> — AutoConfig.from_pretrained 成功 + 空模型构建</span>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top:16px">
+    <table>
+      <thead><tr><th>Layer</th><th>验证方法</th><th>通过标准</th><th>本次对应 Bug</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge info">L0</span></td><td><code>AutoConfig.from_pretrained</code> + 空模型构建</td><td>不抛异常, config 属性完整</td><td>register_dsv4, patch_dsv4_config</td></tr>
+        <tr><td><span class="badge info">L1</span></td><td>mbridge <code>load_weights</code> + vLLM <code>engine.generate("test")</code></td><td>权重加载完成, 生成 1 token</td><td>F/G, H, K</td></tr>
+        <tr><td><span class="badge info">L2</span></td><td>完整 dataset 一次 rollout</td><td>所有样本正常返回</td><td>I, J</td></tr>
+        <tr><td><span class="badge info">L3</span></td><td><code>compute_log_prob</code> + <code>update_actor</code> 单 step (不 sync)</td><td>loss 正常, optimizer step 完成</td><td>D, E</td></tr>
+        <tr><td><span class="badge info">L4</span></td><td>HCCL weight sync + verify</td><td>推理侧权重 == 训练侧权重</td><td>H (第二方面)</td></tr>
+        <tr><td><span class="badge info">L5</span></td><td>连续 N steps</td><td>loss 收敛, 无 OOM</td><td>&mdash;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>13.5 法则 4: "搜索替代实现"优先于"从零构建"</h3>
+
+  <div class="note bad" style="margin-bottom:16px">
+    <div class="note-title">Bug J 核心教训</div>
+    花了 3 轮自研 PyTorch 替代 Triton kernel (J&rarr;J2&rarr;J3), 最终发现 CP&gt;1 路径已有稳定 PyTorch 实现。
+    在 Ascend NPU 上, <b>任何调用 Triton 或 CUDA 专用 API 的代码路径, 先全局搜索该功能的所有已有实现, 再决定是否自研。</b>
+  </div>
+
+  <div class="table-wrap" style="margin-bottom:24px">
+    <table>
+      <thead><tr><th>遇到信号</th><th>含义</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td><code>TypeError: 'function' object is not subscriptable</code></td><td>100% Triton identity decorator</td><td>在代码库中搜索该函数的所有非-Triton 调用路径</td></tr>
+        <tr><td><code>torch.cuda.xxx</code> / <code>torch.cuda.is_available()</code></td><td>CUDA API 调用</td><td>搜索 <code>torch.npu</code> 对应 API 或纯 torch 替代</td></tr>
+        <tr><td><code>@triton.jit</code> / <code>@triton.autotune</code></td><td>Triton 修饰器</td><td>搜索同一文件中的 fallback / if-not-triton 分支</td></tr>
+        <tr><td><code>ImportError: No module named 'xxx'</code></td><td>依赖缺失</td><td>先问: 这个依赖真的需要吗? 有没有绕过路径? (如 BF16 绕过 DequantFP8)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SOP -->
+  <h3>13.6 标准操作流程 (SOP): 从镜像到跑通第一个 step</h3>
+  <p>整合以上 4 条法则, 产出可执行的标准流程。预期耗时: <b>2-3 天</b> (vs 本次 7 天)。</p>
+
+  <div class="step-diagram">
+    <div class="step-row" style="margin-bottom:12px">
+      <span class="step-num conf">P0</span>
+      <span class="step-desc"><b>硬约束计算</b> — 30 分钟</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:4px">
+      &bull; HBM 容量: 单卡能否装下最小可行配置<br>
+      &bull; 并行度整除: num_layers/num_experts/num_heads 因数分解<br>
+      &bull; 数据集适配: tokenizer 统计 mean/max prompt_length<br>
+      &bull; 如果全参不行 &rarr; 立即算 surrogate 层数
+    </div>
+    <div class="step-row" style="margin-bottom:12px">
+      <span class="step-num conf">P1</span>
+      <span class="step-desc"><b>镜像差异矩阵</b> — 1 小时</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:4px">
+      &bull; CANN/HCCL/Triton 版本 + 行为检测 (5 分钟脚本)<br>
+      &bull; 关键组件 commit hash 核对<br>
+      &bull; 参考实验 patch 逐文件 diff 适用性判定<br>
+      &bull; 产出: 差异分析报告
+    </div>
+    <div class="step-row" style="margin-bottom:12px">
+      <span class="step-num conf">P2</span>
+      <span class="step-desc"><b>分层验证</b> — 1-1.5 天</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:4px">
+      &bull; L0: 模型注册 + config (30 分钟)<br>
+      &bull; L1: 权重加载 (2-3 小时, 最可能出问题的层)<br>
+      &bull; L2: 推理 single request (1 小时)<br>
+      &bull; L3: 训练 single step (2-3 小时)<br>
+      &bull; L4: 权重同步 (1 小时)<br>
+      &bull; L5: 3-5 steps 连续运行 (2 小时)
+    </div>
+    <div class="step-row">
+      <span class="step-num conf">P3</span>
+      <span class="step-desc"><b>代码产物回流</b> — 30 分钟</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px">
+      &bull; 逐文件判定: 复用 vs 新增 vs 改写<br>
+      &bull; 新增/改写文件写入 overlay/ + commit<br>
+      &bull; 对照参考实验写出差异说明
+    </div>
+  </div>
+
+  <!-- Kimi K3 预判 -->
+  <h3>13.7 对 Kimi K3 的预判</h3>
+  <p>基于已知的 Kimi K3 架构信息, 预判可能出问题的步骤和预防措施:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>K3 特性</th><th>对应风险点</th><th>预防措施</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>KDA 线性注意力</td>
+          <td>无 GQA/MLA 的标准 attention 映射 &rarr; mbridge 需 KDA 专属 name mapping</td>
+          <td>Phase 1 grep mbridge 中是否有 KDA/gated_delta_rule 相关代码; 有任何 Triton kernel 则复用 Bug J 经验 &rarr; 搜索已有 PyTorch 实现</td>
+        </tr>
+        <tr>
+          <td>896 experts (vs 256)</td>
+          <td>EP 切分粒度更细 &rarr; expert ID 解析出现 3 位数 &rarr; 正则可能不匹配</td>
+          <td>L1 阶段先验证 expert weight 加载的单 EP 路径; 检查 bridge.py 的 expert ID 解析正则是否支持 3 位数字</td>
+        </tr>
+        <tr>
+          <td>mxfp4 量化</td>
+          <td>权重加载需要 dequant &rarr; 类似 DSv4 的 FP8 问题但 4-bit 更复杂</td>
+          <td>L0 验证 AutoConfig 的 quantization_config 字段; L1 用最小的 safetensor 验证 dequant 路径</td>
+        </tr>
+        <tr>
+          <td>w4a8 量化</td>
+          <td>权重量化 + 激活量化 &rarr; vLLM weight_loader 可能不支持混合精度</td>
+          <td>L1 分别验证权重加载和推理精度; vLLM 可能需要新的 quant_config 支持</td>
+        </tr>
+        <tr>
+          <td>新镜像 CANN 版本未知</td>
+          <td>HCCL/Triton 行为可能与本次实验再次不同</td>
+          <td class="bad"><b>Phase 1 差异矩阵 5 分钟脚本必须第一个跑</b></td>
+        </tr>
+        <tr>
+          <td>93 层 (奇数)</td>
+          <td>PP &gt; 1 时层数无法均分 &rarr; 需要 uneven PP 支持</td>
+          <td>看 PP=1 是否可行 (取决于 HBM); 或需要 Megatron uneven PP 的 get_num_layers_to_build 逻辑</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 可复用资产 -->
+  <h3>13.8 本次验证的可复用资产</h3>
+  <p>下次 Kimi K3 可以直接复用的代码, 以及必须重写的部分:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>复用资产</th><th>复用度</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>HCCL checkpoint engine</td><td class="ok">100%</td><td>CANN 版本无关, 架构通用</td></tr>
+        <tr><td>Ray bundle 节点亲和 (base.py)</td><td class="ok">100%</td><td>训推分离标准方案</td></tr>
+        <tr><td>bucketed_weight_transfer</td><td class="ok">90%</td><td>SHM fallback 通用, 对齐逻辑可能需微调</td></tr>
+        <tr><td>constants_ppo.py (PYTHONPATH 注入)</td><td class="ok">100%</td><td>Ray 通用行为</td></tr>
+        <tr><td>device.py + distributed.py</td><td class="ok">95%</td><td>NPU 检测 + HCCL 后端标准件</td></tr>
+        <tr><td>block_table.py (CP=1 PyTorch 路径)</td><td class="warn">80%</td><td>vLLM 版本更新可能再次改变接口</td></tr>
+        <tr><td>bridge.py (norm bias 过滤 + 1D fallback)</td><td class="ok">100%</td><td>persist_layer_norm + num_instances=1 通用</td></tr>
+        <tr><td>deepseek_v3.py (模型专属映射)</td><td class="bad">0%</td><td>必须用 K3 的对应文件替代</td></tr>
+        <tr><td>g2_attention*</td><td class="bad">0%</td><td>DSv4 专属, K3 用 KDA 替代</td></tr>
+        <tr><td>register_dsv4 / patch_dsv4_config</td><td class="bad">0%</td><td>模型专属注册文件</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note ok" style="margin-top:24px">
+    <div class="note-title">核心思想</div>
+    新模型 + 新镜像 = 已知量的组合变化。方法论的核心是: <b>先穷尽已知量 (算数学约束、做差异矩阵、分层验证), 再投入未知量 (模型专属代码适配)。</b>
+    本次反其道而行 — 每次部署验证中同时面对数学约束、CANN 版本、模型适配三个未知量, 导致 14 轮 7 天。
+    遵循此 SOP, 下次 Kimi K3 的首次跑通预期可从 7 天缩短到 <b>2-3 天</b>。
   </div>
 </section>
 
