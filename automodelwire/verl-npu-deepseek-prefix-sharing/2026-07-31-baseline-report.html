@@ -238,9 +238,10 @@
     <li><a href="#perf">性能分解</a></li>
     <li><a href="#bugs">Bug 清单</a></li>
     <li><a href="#timeline">部署时间线</a></li>
-    <li><a href="#overlay">39 文件 Overlay 逐文件分析</a></li>
-    <li><a href="#lessons">关键教训</a></li>
-    <li><a href="#next">后续路径</a></li>
+    <li><a href="#overlay">9. 39 文件 Overlay 逐文件分析</a></li>
+    <li><a href="#diff-ref">10. 与参考实验代码对照</a></li>
+    <li><a href="#lessons">11. 关键教训</a></li>
+    <li><a href="#next">12. 后续路径</a></li>
   </ol>
 </nav>
 
@@ -959,9 +960,330 @@
   </div>
 </section>
 
-<!-- ═══════════ 10. 关键教训 ═══════════ -->
+<!-- ═══════════ 10. 与参考实验对照 ═══════════ -->
+<section id="diff-ref">
+  <h2>10. 与参考实验代码对照</h2>
+
+  <p class="muted">
+    参考实验: <code>deepseek-v4-flash-verl-rl</code> (8 训练 + 4 推理节点, CANN 9.0.0, vLLM 0.22.1rc1, 43 层全参)
+    vs 本次实验: 2 节点 4 层 surrogate, CANN 9.1.0-beta.3, vLLM 0.23.0。
+    参考实验产物为 <code>patches/</code> 目录下的 4 个 git diff + 2 个替换文件 + 社区 patch 包。
+    下表逐文件列出 <b>哪些修改来自参考实验、哪些是本次新增</b>。
+  </p>
+
+  <div class="note info" style="margin-bottom:24px">
+    <div class="note-title">快速结论</div>
+    <b>39 个 overlay 文件中, 22 个与参考实验基本一致 (复用), 17 个为本次新增或显著改写。</b>
+    新增主要分布在: mbridge 的 norm bias 过滤 + 1D fallback (Bug H)、vllm-ascend block_table Triton 替换 (Bug J)、
+    verl 的 CANN 9.1 HCCL auto port + PYTHONPATH 注入 + router_replay V4 适配 + config_converter V4 专有路径、
+    MindSpeed-LLM g2_attention_kernel 纯 PyTorch 实现、以及 4 个模型注册/补丁文件 (本次独创)。
+  </div>
+
+  <h3>10.1 分类总览</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>状态</th><th>含义</th><th class="num">文件数</th>
+      </tr></thead>
+      <tbody>
+        <tr><td><span class="badge info">复用</span></td><td>代码与参考实验基本一致, 或仅有路径/参数微调</td><td class="num">22</td></tr>
+        <tr><td><span class="badge ok">新增</span></td><td>本次实验首次编写, 参考实验中无对应修改</td><td class="num">17</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>10.2 Megatron-LM (3 文件) — 全部复用</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>状态</th><th>对照说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>distrib_optimizer.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>HBM 约束下调 <code>num_distributed_optimizer_instances=1</code>。参考实验 43 层全参同样遇到此约束, patch 一致。本次 4 层余量充裕但也保留了此设置以降低优化器内存。</td>
+        </tr>
+        <tr>
+          <td><code>p2p_communication.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>PP 通信 NPU 适配 — <code>ring_exchange</code> + 显式 group 参数。参考实验已有。PP=1 下实际不调用, 基础设施保留。</td>
+        </tr>
+        <tr>
+          <td><code>transformer_config.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td><code>num_query_groups=num_attention_heads</code> 强制覆盖。参考实验 patch 第 4.11 节已包含, 本次 overlay 为完整文件替换方式。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>10.3 MindSpeed-LLM (7 文件) — 6 复用, 1 新增</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>状态</th><th>对照说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>hybrid_optimizer.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>HybridDeviceOptimizer 非叶子张量 leaf 转换 — 参考实验路径一致, 代码逻辑相同。</td>
+        </tr>
+        <tr>
+          <td><code>pretrain_deepseek4.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>参考实验 <code>patches/pretrain_deepseek4.py.new</code> 即为本文件, 本次 overlay 直接使用。</td>
+        </tr>
+        <tr>
+          <td><code>g2_attention_kernel.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次重写</b> — 参考实验 <code>MindSpeed-LLM.patch</code> 仅补了一行 <code>import triton.language as tl</code> (修复 import 缺失)。<b>本次 overlay 为完整 1419 行替换</b>: 新增纯 PyTorch <code>sparse_flash_attn</code> fallback 方法 + SparseFlashAttentionTriton autograd Function + 完整 Triton kernel (含 CANN extension 支持)。原因是 CANN 9.1.0-beta.3 的 Ascend Triton 与 9.0.0 不同, 需要 kernel 层适配。</td>
+        </tr>
+        <tr>
+          <td><code>g2_attention.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>MLA self-attention 模块 — 参考实验已包含, 本次 <code>attn_sink</code> TP attribute 设置一致。</td>
+        </tr>
+        <tr>
+          <td><code>mhc_triton.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>MHC Triton stub — 参考实验路径相同 (Triton 在 NPU 不工作, 需要占位文件)。</td>
+        </tr>
+        <tr>
+          <td><code>sinkhorn.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>Sinkhorn routing NPU fallback — 参考实验已有。</td>
+        </tr>
+        <tr>
+          <td><code>rmsnorm_without_weight.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>Weight-free RMSNorm stub — 参考实验已有。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>10.4 verl (18 文件) — 9 复用, 9 新增</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>状态</th><th>对照说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>hccl_checkpoint_engine.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>注册名 <code>"nccl"&rarr;"hccl"</code> — 参考实验已有。其余 368 行为 verl 809f2d8f 上游的 HCCL engine 实现。</td>
+        </tr>
+        <tr>
+          <td><code>agent_loop.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>初始化异常时打印详细错误 — 参考实验已有。新增了 NPU 设备检测和 worker 创建逻辑。</td>
+        </tr>
+        <tr>
+          <td><code>config_converter.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增</b> — 参考实验用的 mcore config 构建路径与本次不同 (参考实验在 <code>apply_patch</code> 中 <code>get_base_mcore_config_from_model_config</code> 被注释掉, 只从 engine_config 构建)。本次需要完整的 HF&lrarr;mcore config 互转 (通过 <code>hf_to_mcore_config_dpskv3</code> 和 <code>mcore_to_hf_config_dpskv3</code>), 因为训练参数注入方式不同。</td>
+        </tr>
+        <tr>
+          <td><code>mcore/util.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>packed sequence 预处理 (2048 对齐 + NPU attn mask) — 参考实验 <code>verl.patch</code> 已有 max_seqlen 对齐逻辑, 本次补充了 <code>_build_npu_attn_mask</code> 等 NPU 特有的 mask 构建。</td>
+        </tr>
+        <tr>
+          <td><code>base.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>Ray bundle 自定义资源 + 节点亲和。参考实验 <code>base.py.patched</code> 即为本逻辑 (global_pool&rarr;train_node, rollout_pool&rarr;rollout_node)。本次 overlay 在此基础上补充了 NPU device name 支持。</td>
+        </tr>
+        <tr>
+          <td><code>mindspeed.yaml</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>清空 llm_kwargs 默认值 (避免覆盖 Hydra 注入) — 参考实验已有。</td>
+        </tr>
+        <tr>
+          <td><code>constants_ppo.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增 — CANN 9.1 port 策略反向</b>。参考实验 CANN 9.0.0 + A2 上 <b>pop</b> 掉 <code>HCCL_HOST/NPU_SOCKET_PORT_RANGE</code> (因 MC2 与 auto 不兼容)。本次 CANN 9.1.0-beta.3 相反: 必须 <b>保留 auto</b> (同 device 上 vLLM + checkpoint engine 两个 HCCL comm 默认同 port 60000 冲突)。同时本次新增 <code>PYTHONPATH</code> 传递 (Ray 不透传, 否则 EngineRegistry 找不到 <code>mindspeed_llm</code>)。</td>
+        </tr>
+        <tr>
+          <td><code>ray_trainer.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td><code>AgentLoopManager.create</code> standalone 路径 + HCCL weight sync 触发 — 参考实验已有。</td>
+        </tr>
+        <tr>
+          <td><code>runtime_env.yaml</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增</b> — 参考实验无此文件 (其 env 全部在 shell 和 constants_ppo.py 中管理)。本次增加独立的 yaml 声明便于配置分离。</td>
+        </tr>
+        <tr>
+          <td><code>device.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>NPU 设备检测 (<code>is_npu_available</code> / <code>get_device_name</code>) — 参考实验已有 (改为 try-import <code>torch_npu</code> 方式)。</td>
+        </tr>
+        <tr>
+          <td><code>distributed.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td><code>stateless_init_process_group</code> — 参考实验已有 (改 <code>pg._listen_socket</code> 赋值方式 + HCCL backend 条件导入)。</td>
+        </tr>
+        <tr>
+          <td><code>megatron_utils.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增</b> — 参考实验无此文件。本次新增 V4 Flash 参数提取 (expert_bias 在 state_dict 但不在 named_parameters) + HybridDeviceOptimizer CPU offload 状态管理。为 HCCL weight sync 的 named_parameters 遍历和混合优化器 checkpoint 提供基础。</td>
+        </tr>
+        <tr>
+          <td><code>router_replay_utils.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次重写</b> — 参考实验仅加了一行 <code>if not RouterReplay.router_instances: return []</code> (NPU 不支持 router replay 时短路)。
+          本次 overlay 为 545 行完整替换, 包含 <code>get_num_layers_to_build</code> (PP/VPP 层数计算)、<code>merge_router_topk_indices</code> (SP 合并)、<code>set_router_replay_data</code> (scatter)、<code>RouterReplayHelper</code> 查询类。覆盖了 NPU + DeepSeek V4 混合架构下的 router replay 全过程。</td>
+        </tr>
+        <tr>
+          <td><code>npu_vllm_patch.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>vLLM NPU 初始化 patch + A2 MC2 fallback — 参考实验已有 (但参考实验注释掉了 <code>FusedMoE.weight_loader</code> wrapper)。本次保留完整 patch 逻辑。</td>
+        </tr>
+        <tr>
+          <td><code>vllm/patch.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>vLLM MoE weight loader patch + <code>DeepseekV4ForCausalLM</code> 注册 — 参考实验已有。</td>
+        </tr>
+        <tr>
+          <td><code>transformer_impl.py</code> (megatron)</td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增</b> — 参考实验用 <code>mindspeed/transformer_impl.py</code> (见下), 但另有一个 Megatron engine 实现用于对照。本次 overlay 包含 PEFT + MTP + routing_replay enable + optimizer zero_grad 完整适配。</td>
+        </tr>
+        <tr>
+          <td><code>transformer_impl.py</code> (mindspeed)</td>
+          <td><span class="badge info">复用</span></td>
+          <td>MindSpeedLLM engine — 参考实验已有 (<code>mindspeed_llm.pretrain_deepseek4.model_provider</code> 替换 + CP repatch + memory_efficient 权重加载)。</td>
+        </tr>
+        <tr>
+          <td><code>mindspeed/utils.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>apply_patch 简化 (注释掉 model_config/optimizer_config 合并, 只从 engine_config 构建) — 参考实验已有。</td>
+        </tr>
+        <tr>
+          <td><code>bucketed_weight_transfer.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>权重分桶 offset 对齐 (int64 8B / bf16 4B) — 参考实验已有。本次增加了 NPU shared memory 传输路径 (替代 CUDA IPC)。</td>
+        </tr>
+        <tr>
+          <td><code>vllm_rollout/utils.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增/改写</b> — 参考实验在此文件中 <b>pop</b> 掉 HCCL port range (CANN 9.0.0 策略)。本次 <b>不 pop</b> 并增加大量注释解释 CANN 9.1 vs 9.0 差异。
+          同时新增 max_tokens debug log (Bug I 诊断)。MoE w13/w2 逆转置逻辑参考实验已包含, 本次保留。</td>
+        </tr>
+        <tr>
+          <td><code>vllm_async_server.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>vLLM async server NPU 适配 — 参考实验已有 (NPU device guard + 版本兼容 import)。本次增加了 max_tokens 计算公式的 debug log。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>10.5 mbridge + site-packages (7 文件) — 4 复用, 3 新增</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>状态</th><th>对照说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>bridge.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次大量扩写</b> — 参考实验 <code>mbridge.patch</code> (463 行) 包含 5 处改动: (a) <code>linear_fc&rarr;local_experts</code> (b) <code>lm_head&rarr;head</code> (c) ETP=1 broadcast (d) EP export 双格式 expert ID 修正 (e) <code>attn_sink</code> TP 标记。
+          <b>本次新增 4 处</b>: load_weights <b>norm bias 预过滤</b> (Megatron <code>persist_layer_norm</code> 创建的零填充 bias, HF 权重不存在);
+          import 阶段也加 norm bias 过滤;
+          <b>1D tensor fallback</b>: <code>num_distributed_optimizer_instances=1</code> 展平 1D buffer 时 dim=1 cat → IndexError, 用 dim=0 兜底 (<b>Bug H 修复</b>);
+          <code>_weight_name_mapping_mcore_local_to_global</code> EP expert ID 路径解析改为 <code>.split('local_experts.')</code> 多段兼容 (原逻辑 <code>.split('.weight')</code> 在 <code>...local_experts.{id}.linear_fc1.weight</code> 格式下失败)。</td>
+        </tr>
+        <tr>
+          <td><code>llm_bridge.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>并行配置扩展 (ETP/CP) + mcore 0.12 vp_stage 兼容 — 参考实验已有。</td>
+        </tr>
+        <tr>
+          <td><code>deepseek_v3.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>deepseek_v4 注册 + MLA/MoE/MHC/compressor/DSA 完整映射 — 参考实验已有 (包括 <code>@register_model(["deepseek_v3", "deepseek_v4"])</code>、<code>_DIRECT_MAPPING</code> 含 hc_head、<code>_MLP_MAPPING</code> 含 MHC FFN、<code>_ATTENTION_MAPPING</code> 含 compressor/indexer)。本次增加了 BF16 权重绕过 DequantFP8SafeTensorIO 的逻辑 (CANN 9.1 的 Triton ascend 后端 API 不兼容)。</td>
+        </tr>
+        <tr>
+          <td><code>dequant_fp8_safetensor_io.py</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>FP8 safetensor reader — 参考实验已有 (<code>device="cuda"&rarr;"npu"</code>)。</td>
+        </tr>
+        <tr>
+          <td><code>register_dsv4.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增</b> — <code>AutoConfig.register</code> + <code>__getattr__</code> 缺失属性 fallback (20 个 config 属性)。参考实验无此文件 (其镜像已包含 <code>register_dsv4.py</code> 在 base 镜像中)。本次 CANN 9.1 镜像的 <code>configuration_deepseek_v4.py</code> 版本不同, 需要独立的注册 + patch 逻辑。</td>
+        </tr>
+        <tr>
+          <td><code>patch_dsv4_config.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增</b> — <code>DeepseekV4Config.__init__</code> patch (20 个缺失属性主动 setattr)。参考实验无此文件。本次作为 register_dsv4.py 的替代/补充路径 (有些代码路径走 __init__ 构造而非 __getattr__)。</td>
+        </tr>
+        <tr>
+          <td><code>deepseek_v4_init.pth</code></td>
+          <td><span class="badge info">复用</span></td>
+          <td>Python startup 自动 import — 参考实验已有 (README 明确提到 "全部节点部署 .pth 注册")。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>10.6 vllm-ascend (1 文件) — 新增</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>状态</th><th>对照说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>block_table.py</code></td>
+          <td><span class="badge ok">新增</span></td>
+          <td>★ <b>本次新增 — Bug J 核心修复</b>。参考实验使用 vLLM 0.22.1rc1 (vllm-ascend 5f6faa0c) + <code>patches/verl_patches.tar.gz</code> 中的社区 patch, 其中 block_table 相关修改通过社区 patch 覆盖。本次 CANN 9.1 的 Triton Ascend backend 与 9.0 不同, <code>triton.jit</code> 在 9.1 退化为 identity 但社区 patch 中的 Triton kernel 假设至少能通过 JIT 编译, 导致 <code>TypeError</code>。
+          本文件是 <b>全新 458 行完整替换</b>, 包含: CP=1 复用 <code>_compute_pcp_dcp_slot_mapping</code> (纯 PyTorch)、Hybrid block support、Mamba group support、DCK/PCP interleave KV cache 管理。<b>参考实验无类似范围的全量替换</b>。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>10.7 修改性质汇总</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>组件</th><th class="num">总文件数</th><th class="num">复用</th><th class="num">新增</th><th>新增原因</th></tr></thead>
+      <tbody>
+        <tr><td>Megatron-LM</td><td class="num">3</td><td class="num">3</td><td class="num">0</td><td>全部复用。HBM 约束同为 61GB, 代码修改无差异。</td></tr>
+        <tr><td>MindSpeed-LLM</td><td class="num">7</td><td class="num">6</td><td class="num">1</td><td>CANN 9.1 Ascend Triton backend 与 9.0 不同, g2_attention_kernel 需 kernel 层适配。</td></tr>
+        <tr><td>mbridge + site-packages</td><td class="num">7</td><td class="num">4</td><td class="num">3</td><td>norm bias 过滤是新增通用修复 (BP16 权重从 FP8 转换丢失 bias)。CANN 9.1 镜像缺少 config 补丁文件, 需自建 register + patch。</td></tr>
+        <tr><td>verl</td><td class="num">18</td><td class="num">9</td><td class="num">9</td><td>CANN 9.1 vs 9.0 HCCL 策略相反 (auto 保留 vs pop)。4 层 surrogate 需要额外的 V4 模型 config 互转 + router_replay V4 适配。Megatron engine 实现新增 PEFT + MTP 支持。</td></tr>
+        <tr><td>vllm-ascend</td><td class="num">1</td><td class="num">0</td><td class="num">1</td><td>CANN 9.1 Triton identity decorator 导致 CP=1 block_table 崩溃, 需完整替换。</td></tr>
+        <tr style="font-weight:600"><td>合计</td><td class="num">39</td><td class="num">22</td><td class="num">17</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>10.8 关键差异维度</h3>
+
+  <div class="two-col">
+    <div>
+      <div class="note warn">
+        <div class="note-title">CANN 版本: 9.0.0 → 9.1.0-beta.3</div>
+        这是最大的差异来源。<b>HCCL port 策略完全相反</b>: 9.0.0 + A2 MC2 与 auto port 不兼容 → pop 变量; 9.1.0-beta.3 修复了 MC2 兼容性但 hardcoded port=60000 冲突 → 必须保留 auto。
+        <b>Triton Ascend backend 行为不同</b>: 9.0 社区有可用 Triton kernel; 9.1 <code>triton.jit</code> 退化为 identity → block_table 崩溃。
+        <b>镜像内 config 补丁缺失</b>: 9.1 镜像不含 <code>register_dsv4.py</code>, 需自建。
+      </div>
+    </div>
+    <div>
+      <div class="note info">
+        <div class="note-title">实验规模: 12 节点 43 层 → 2 节点 4 层</div>
+        4 层模型带来一些"由规模差异导致"的新增: (a) config.json patch + index.json 过滤构建脚本 (setup.sh, 参考实验直接用 43 层镜像);
+        (b) <code>pretrain_deepseek4.py</code> 的 MTP 禁用 (4 层无 layer 43);
+        (c) HBM 约束不同 (参考实验需 CPU offload + gpu_memory_utilization=0.6, 本次 4 层余量 ~30GB 无此约束)。
+      </div>
+      <div class="note warn">
+        <div class="note-title">vLLM 版本: 0.22.1rc1 → 0.23.0</div>
+        vLLM 0.23.0 的 block_table 架构与 0.22 不同 (新增 MultiGroupBlockTable、Mamba group、Hybrid blocks)。Bug J 修复需要在 0.23.0 新架构上实现。
+        版本兼容 import path 也相应调整。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 11. 关键教训 ═══════════ -->
 <section id="lessons">
-  <h2>10. 关键教训</h2>
+  <h2>11. 关键教训</h2>
   <div class="two-col">
     <div>
       <h3>不该犯的错</h3>
@@ -998,7 +1320,7 @@
 
 <!-- ═══════════ 11. 后续路径 ═══════════ -->
 <section id="next">
-  <h2>11. 后续路径</h2>
+  <h2>12. 后续路径</h2>
   <ol>
     <li><b>增加层数</b>: 4 &rarr; 8 &rarr; 16 层, 找到 2 节点 HBM 上限</li>
     <li><b>8 节点全参</b>: 需要 DDP gradient streaming patch (16.5GB bucket OOM 问题)</li>
