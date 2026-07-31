@@ -1279,6 +1279,298 @@
       </div>
     </div>
   </div>
+
+  <h3>10.9 逐文件根因分析: 为什么"不新增就不可行"</h3>
+
+  <p class="muted">
+    以下对 17 个新增修改逐一做根因级审查。每个文件回答: <b>上游代码的假设是什么？该假设在本环境中如何被打破？参考实验的已有方案为什么不能直接复用？</b>
+    根因分四类: A — CANN 版本断崖变化, B — persist_layer_norm 连锁反应, C — 模型/镜像差异, D — NPU 专用功能补全。
+  </p>
+
+  <div class="note warn" style="margin-bottom:24px">
+    <div class="note-title">类别 A — CANN 9.0.0 → 9.1.0-beta.3 的断崖式变化 (3 文件)</div>
+    这是最大的差异来源。CANN 在两个关键维度上行为相反: HCCL 端口分配策略和 Triton Ascend backend 的 JIT 能力。
+  </div>
+
+  <div class="file-card">
+    <div class="fn">block_table.py — Bug J 核心修复</div>
+    <div class="desc">
+      <b>上游假设</b>: <code>_compute_slot_mapping_kernel</code> 是被 <code>@triton.jit</code> 编译的 GPU kernel,
+      <code>kernel[(grid,)]</code> 语法是合法的 Triton kernel launch, 调用 <code>__getitem__</code> 触发 JIT 编译和执行。<br><br>
+      <b>假设如何被打破</b>: CANN 9.1.0-beta.3 的 Ascend Triton 实现为:
+      <pre><code>def jit(fn=None, **kwargs):
+    def decorator(fn):
+        return fn  # 原样返回, 不编译</code></pre>
+      因果链: <code>@triton.jit</code> → 普通 Python 函数 → <code>f[(grid,)]</code> → <code>__getitem__</code> 对 function 对象 → <code>TypeError: 'function' object is not subscriptable</code>。
+      这不是"性能退化", 而是 <b>API 契约破坏</b>——Triton 的编译 promise 被完全跳过, 导致 vLLM 的 kernel launch 语法不合法。<br><br>
+      <b>为什么不能复用参考实验</b>: 参考 CANN 9.0.0 的 Triton Ascend backend <b>能通过 JIT 编译</b> (kernel 虽性能退化但语法不崩),
+      且参考实验使用的社区 <code>verl_patches.tar.gz</code> 已包含 block_table 补丁。
+      但该补丁针对 vLLM 0.22.1 的 block_table 架构——vLLM 0.23.0 重构了 <code>MultiGroupBlockTable</code> +
+      <code>_compute_pcp_dcp_slot_mapping</code> 路径, 0.22 的补丁不兼容。两个维度叠加: Triton 版本 × vLLM 版本 → <b>无现有方案可参考, 必须全新实现</b>。<br><br>
+      <b>修复逻辑</b>: 发现 CP&gt;1 路径的 <code>_compute_pcp_dcp_slot_mapping</code> 已是纯 PyTorch (index + mask + scatter),
+      让 CP=1 退化到 <code>total_cp_world_size=1</code> 走同一条 PyTorch 路径, 与 Triton 完全解耦。
+      <span class="badge bad">P0 — 不新增必崩溃</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">constants_ppo.py + vllm_rollout/utils.py — Bug E 核心修复 (HCCL 端口策略)</div>
+    <div class="desc">
+      <b>上游假设</b>: 参考 CANN 9.0.0 + A2 上, <code>HCCL_HOST_SOCKET_PORT_RANGE=auto</code> 与 MC² 算子不兼容,
+      必须在 vLLM worker 内 <code>os.environ.pop()</code> 掉。<br><br>
+      <b>假设如何被打破</b>:
+      <ol>
+        <li>CANN 9.1.0-beta.3 <b>修复了</b> MC² 与 auto port 的兼容性 (同事已验证)</li>
+        <li>但 9.1.0-beta.3 引入新行为: <code>HCCL_IF_BASE_PORT=60000</code>, <code>isAutoPort[0]=hardcoded</code> (不递增)</li>
+        <li>训推分离架构下, 节点 155 device 0 上同时存在两个 HCCL communicator:
+          <ul>
+            <li>vLLM node-internal comm (ranks[8], root=155)</li>
+            <li>checkpoint engine cross-node comm (ranks[9], root=112)</li>
+          </ul>
+        </li>
+        <li>两个 comm 默认都绑定 port 60000 → <code>HCCL resource unavailable</code></li>
+      </ol>
+      <b>为什么不能复用参考实验</b>: 参考实验的 "pop auto" 在 9.1.0 上产生 <b>完全相反的效果</b>——pop 掉 auto 后回退到 hardcoded port=60000,
+      两个 comm 必然冲突。参考实验的修复对 9.1.0 是 <b>投毒而非解药</b>。<br><br>
+      <b>证据</b>: <code>constants_ppo.py</code> 追加注释中有明确的技术判断链—— "cann-9.1.0-beta.3 恰相反, 需保留 auto"、
+      使用 <code>HCCL_ENTRY_LOG_ENABLE</code> 而非 9.0.0 的 <code>HCCL_DEBUG</code> (libhccl.so 不解析旧名)。
+      这是 <b>基于源码级证据的版本差异判定</b>, 不是猜测。
+      <span class="badge bad">P0 — 不新增必崩溃</span>
+    </div>
+  </div>
+
+  <div class="note warn" style="margin-bottom:24px">
+    <div class="note-title">类别 B — persist_layer_norm=True 的连锁反应 (2 处)</div>
+    Megatron 的一个性能优化开关在权重导入/导出路径上创建了 HF 格式中不存在的"幻影参数"。
+    参考实验未触发此路径 (默认 False)。我们设为 True (NPU 上性能优化), 必须配套过滤。
+  </div>
+
+  <div class="file-card">
+    <div class="fn">bridge.py — norm bias 预过滤</div>
+    <div class="desc">
+      <b>上游假设</b>: <code>_weight_name_mapping_mcore_to_hf</code> 能为 <code>model.named_parameters()</code> 中的每个参数找到 HF safetensor 中的对应 key。<br><br>
+      <b>假设如何被打破</b>:
+      <ol>
+        <li><code>deepseek_v3.py:_build_config</code> 设 <code>persist_layer_norm=True</code></li>
+        <li>Megatron 为每个 RMSNorm 层创建零填充的 <code>.bias</code> (如 <code>decoder.layers.0.self_attention.q_layernorm.bias</code>)</li>
+        <li>这些 bias 出现在 <code>model.named_parameters()</code> 中 → mbridge 尝试加载 → 在 safetensor <code>weight_map</code> 中查找 → <b>不存在</b></li>
+        <li>HF RMSNorm 从不需要 bias (只有 weight, 无 bias)</li>
+      </ol>
+      因果链: <code>persist_layer_norm=True</code> → Megatron 创建幻影 bias → mbridge 查找 HF 映射失败 → <code>KeyError</code>。<br><br>
+      <b>为什么参考实验未触发</b>: 参考实验 <b>没有设 <code>persist_layer_norm=True</code></b> (mbridge.patch 中 <code>_build_config</code> 无此字段, Megatron 默认 False)。
+      无此参数 = 无幻影 bias = 不需要过滤。我们设了此参数 (避免每 step 重分配 norm 内部 buffer), 就必须配套过滤。<br><br>
+      <b>为什么必须设 persist_layer_norm=True</b>: NPU 上每次 H2D/D2H buffer 重分配有 ~100ms/层开销。对 4 层 85s step 影响不大,
+      但对 43 层全参后续实验, 累积开销不可忽略。此参数是 <b>面向全参实验的预埋</b>。
+      <span class="badge bad">P0 — 不新增必崩溃</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">bridge.py — 1D tensor fallback (Bug H)</div>
+    <div class="desc">
+      <b>上游假设</b>: <code>_weight_merge_across_tp</code> 中的 <code>torch.cat(mcore_weights, dim=1)</code> 对所有 MoE 参数有效。<br><br>
+      <b>假设如何被打破</b>:
+      <ol>
+        <li><code>distrib_optimizer.py</code> 设 <code>num_distributed_optimizer_instances=1</code> → 展平到 1D gradient buffer</li>
+        <li><code>export_weights</code> → <code>_weight_merge_across_tp</code> 对 <code>linear_fc2.weight</code> 执行 <code>dim=1 cat</code></li>
+        <li>1D tensor 没有 dim=1 → <code>IndexError</code></li>
+      </ol>
+      <b>修复</b>: 检测 1D tensor → fallback 到 <code>dim=0 cat</code>。<br><br>
+      <b>为什么参考实验未触发</b>: 参考实验也是 <code>num_instances=1</code>, <b>但它未触发此路径</b>。
+      原因: 参考实验 <code>TP=4, ETP=1</code>。ETP=1 时 EP 分支不执行 (ep_size &gt; 1 判否), expert 权重不进入 merge 路径。
+      我们的 <code>TP=2, ETP=2</code> 改变了 expert 权重的 partition 方式, 使其走了参考实验 <b>未覆盖的 dim 组合</b>。
+      <span class="badge bad">P0 — 不新增必崩溃</span>
+    </div>
+  </div>
+
+  <div class="note warn" style="margin-bottom:24px">
+    <div class="note-title">类别 C — 模型/镜像差异 (5 文件)</div>
+    CANN 9.1 镜像缺少 V4 模型注册文件; 4 层模型的构建路径与 43 层不同; BF16 权重触发 Triton import 路径。
+  </div>
+
+  <div class="file-card">
+    <div class="fn">register_dsv4.py</div>
+    <div class="desc">
+      <b>因果链</b>: <code>AutoConfig.from_pretrained(MODEL_PATH)</code> 读 <code>config.json</code> → <code>model_type: "deepseek_v4"</code> →
+      transformers 不识别 → <code>Unknown model type</code>。必须提前 <code>AutoConfig.register()</code>。<br><br>
+      <b>为什么不能复用</b>: 参考 CANN 9.0.0 镜像 <b>已内置</b> 此文件 (参考 README: "镜像内已含...deepseek_v4 模型注册")。
+      CANN 9.1.0-beta.3 镜像不含此文件——不是"镜像多了什么", 而是 <b>"镜像少了什么"</b>。缺失则 mbridge 和 vLLM 都无法创建模型。<br><br>
+      <b>为什么不能直接复制参考实验的文件</b>: CANN 9.1 的 <code>configuration_deepseek_v4.py</code> 版本不同,
+      <code>auto_map.Config</code> 路径和 <code>__getattr__</code> override 方式可能与 9.0 不兼容。直接复制有失配风险。
+      本次通过 <code>$MODEL_PATH</code> 动态 import 适配, 保持版本无关。
+      <span class="badge bad">P0 — 不新增必崩溃</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">patch_dsv4_config.py</div>
+    <div class="desc">
+      <b>因果链</b>: <code>config.json</code> 不包含 20 个关键架构属性 (<code>q_lora_rank</code>, <code>kv_lora_rank</code> 等) →
+      <code>AutoConfig.from_pretrained → to_dict → from_dict</code> 重建时只保留 json 中字段 →
+      mbridge <code>_build_config</code> 访问 <code>hf_config.q_lora_rank</code> → <code>AttributeError</code>。<br><br>
+      <b>为什么不能复用</b>: 同上 C1——参考镜像已内置。
+      <span class="badge bad">P0 — 不新增必崩溃</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">deepseek_v3.py — BF16 SafeTensorIO 绕过</div>
+    <div class="desc">
+      <b>因果链</b>:
+      <ol>
+        <li>上游 <code>_get_safetensor_io</code> 默认走 <code>DequantFP8SafeTensorIO</code></li>
+        <li><code>DequantFP8SafeTensorIO.__init__</code> 里 <code>from .kernel import weight_dequant</code></li>
+        <li><code>kernel</code> 模块依赖 Triton Ascend backend</li>
+        <li>CANN 9.1 的 Triton Ascend backend API 与 CANN 9.0 不兼容 → <b>ImportError</b></li>
+      </ol>
+      <b>关键</b>: 我们的权重是 <b>BF16</b>, 根本不需要 dequant。但默认代码路径在判断 dtype 之前就触发了 import。
+      修复为 dtype==BF16 时直接走 <code>SafeTensorIO</code>, 完全绕过 <code>DequantFP8SafeTensorIO</code> 的 import 链。<br><br>
+      <b>为什么参考实验未触发</b>: CANN 9.0 的 Triton backend 能正常 import (kernel 虽性能退化, import 不崩)。
+      CANN 9.1 的 import 路径不兼容。
+      <span class="badge bad">P0 — 不新增必崩溃</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">config_converter.py</div>
+    <div class="desc">
+      <b>因果链</b>:
+      <ol>
+        <li>参考实验在 <code>mindspeed/utils.py:apply_patch</code> 中 <b>注释掉了</b> model_config 合并:
+          <pre><code># model_config = get_base_mcore_config_from_model_config(model_config)
+all_config = {**engine_config}  # 只从 engine_config 构建</code></pre>
+          参考实验的 mcore config 完全由 Hydra CLI 驱动, 不依赖 HF config</li>
+        <li>我们选择从 HF config 构建 mcore config (<code>hf_to_mcore_config_dpskv3</code>)</li>
+        <li>原因: 4 层模型的 config 由 <code>setup.sh</code> 动态生成, 不适合硬编码到 CLI 参数中</li>
+      </ol>
+      <b>为什么必须新增</b>: 这不是补丁完备性差异, 而是 <b>架构选择差异</b>。两条路径各有利弊, 但一旦选定 HF→mcore 路径,
+      就需要完整的双向转换代码, 包括 V4 特有的 <code>q_lora_rank</code>/MHC/DSA 字段映射。
+      <span class="badge info">P1 — 不新增功能错误</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">megatron_utils.py</div>
+    <div class="desc">
+      <b>因果链</b>:
+      <ol>
+        <li>Megatron GPTModel 有一个已知 bug: <code>decoder.layers[n].mlp.router.expert_bias</code> 在 <code>state_dict()</code> 中但 <b>不在 <code>named_parameters()</code> 中</b></li>
+        <li>HCCL checkpoint engine 通过 <code>named_parameters()</code> 遍历构建 weight bucket</li>
+        <li><code>expert_bias</code> 被遗漏 → 推理节点缺少此参数 → 推理输出偏差</li>
+      </ol>
+      <b>修复</b>: extra_keys 机制补全遗漏参数。<br><br>
+      <b>为什么参考实验未触发</b>: 参考实验通过 <code>bridge.py:export_weights</code> 中的 extra_keys 逻辑处理了此问题 (第 329-338 行)。
+      但这只覆盖了 export 路径。我们的 HCCL engine <code>send_weights</code> 路径也需要相同逻辑——<code>megatron_utils.py</code> 补齐了这个缺口。
+      <span class="badge info">P1 — 不新增功能错误</span>
+    </div>
+  </div>
+
+  <div class="note warn" style="margin-bottom:24px">
+    <div class="note-title">类别 D — NPU 专用功能补全 (4 文件)</div>
+    参考实验未实现的 NPU 能力, 或参考实验在不同硬件配置下不需要的实现。
+  </div>
+
+  <div class="file-card">
+    <div class="fn">router_replay_utils.py — 完整重写</div>
+    <div class="desc">
+      <b>上游假设</b> (参考实验的 1 行短路): <code>RouterReplay.router_instances</code> 为空则 router replay 不可用, 跳过所有 replay 逻辑。<br><br>
+      <b>为什么仅 1 行短路不够</b>: 当 NPU 未来支持 router replay (MindSpeed 升级后 <code>router_instances</code> 将非空),
+      1 行短路会 <b>直接跳过正确的 replay 逻辑</b>。本次覆盖的 <code>get_num_layers_to_build</code> (PP/VPP 层数计算)、
+      <code>merge_router_topk_indices</code> (SP 合并)、<code>set_router_replay_data</code> (replay scatter) 是完整的正向路径,
+      与 MindSpeed 社区正在开发的 router replay 实现方向一致。<br><br>
+      <b>判断</b>: 严格来说 1 行短路对当前 4 层功能验证 <b>已足够</b>。
+      但 (a) 我们的 4 层模型仍有 MoE 层 (每层 256 experts), (b) router replay 缺失会导致 old_log_prob 与 rollout 时的 log_prob
+      微妙不一致 (advantage 计算误差), (c) 社区已知此问题正在修复——<b>保留完整路径的边际成本低, 回退到短路的边际风险高</b>。
+      <span class="badge info">P1 — 不新增功能错误 (有 MoE 训练时)</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">transformer_impl.py (megatron 引擎)</div>
+    <div class="desc">
+      <b>因果链</b>:
+      <ol>
+        <li><code>MLATransformerConfig</code> 是 dataclass 子类, 有自己的 <code>__init__</code></li>
+        <li>上游 <code>TransformerConfig.__init__</code> 的 patch 传给它的 <code>enable_routing_replay</code> kwarg 不被接受</li>
+        <li>如果 <code>enable_routing_replay</code> 不在 <code>tf_config</code> 上, <code>RouterReplayHelper</code> 即使 <code>router_instances</code> 非空也不会激活 replay</li>
+      </ol>
+      <b>修复</b>: post-init <code>setattr</code> 直接写入属性。<br><br>
+      <b>为什么参考实验未触发</b>: 参考实验主用 mindset back-end (不经过 Megatron engine 的 routing_replay 路径),
+      且其 config 构建被注释掉了 model_config 合并 (见 config_converter 的分析)。
+      <span class="badge info">P1 — 不新增功能错误</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">mcore/util.py — NPU attention mask</div>
+    <div class="desc">
+      <b>因果链</b>:
+      <ol>
+        <li>NPU <code>npu_fusion_attention</code> 需要 <b>BNSS</b> 格式 attention mask (<code>[batch, num_heads, seq_len, seq_len]</code>)</li>
+        <li>标准 PyTorch 接受 B1SS 或 [B, S] 格式</li>
+        <li>喂错 mask → NPU fusion attention <b>不报错但产生静默错误</b>——mask 维度被误解, 注意力权重错乱</li>
+      </ol>
+      <b>为什么参考实验未触发</b>: 参考实验 <code>use_sparse_flash_attn=True</code> + CANN ops-transformer,
+      走的是 <code>sparse_flash_mla</code> 路径 (mask 由 CANN 内部处理, 不经过 <code>npu_fusion_attention</code>)。
+      我们的 <code>use_sparse_flash_attn=False</code> (Bug K) 走标准 attention → <b>必须 BNSS mask</b>。
+      <span class="badge warn">P2 — 防御性, 当前不触发但后续必需</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">g2_attention_kernel.py — 纯 PyTorch fallback</div>
+    <div class="desc">
+      <b>因果链</b>:
+      <ol>
+        <li>Triton 在 Ascend 上是 identity decorator (见 Bug J)</li>
+        <li>参考实验的 "只补 1 行 import" 方案依赖 Triton 能通过 JIT 编译 (CANN 9.0 能, CANN 9.1 不能)</li>
+        <li>本次新增 <code>sparse_flash_attn</code> (纯 torch) + <code>SparseFlashAttentionTriton</code> autograd Function (Triton with CANN extension)</li>
+      </ol>
+      <b>判断</b>: 当前 4 层模型 + <code>use_sparse_flash_attn=False</code> 不调用此路径。
+      但对标 43 层全参后续实验 (<code>use_sparse_flash_attn=True</code>), 此 fallback 是 <b>必需的预埋</b>。
+      <span class="badge warn">P2 — 防御性, 当前不触发但后续必需</span>
+    </div>
+  </div>
+
+  <h3>10.10 必需性分级总表</h3>
+  <div class="table-wrap" style="margin-bottom:24px">
+    <table>
+      <thead><tr><th>级别</th><th>含义</th><th class="num">文件数</th><th>文件</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="badge bad">P0</span></td>
+          <td><b>不新增必崩溃</b> — 缺失则训练/推理无法运行</td>
+          <td class="num">7</td>
+          <td style="font-size:11px;line-height:1.6"><code>block_table.py</code>, <code>register_dsv4.py</code>, <code>patch_dsv4_config.py</code>, <code>constants_ppo.py</code>, <code>vllm_rollout/utils.py</code> (HCCL port), <code>bridge.py</code> (norm bias + 1D fallback), <code>deepseek_v3.py</code> (BF16 SafeTensorIO)</td>
+        </tr>
+        <tr>
+          <td><span class="badge info">P1</span></td>
+          <td><b>不新增功能错误</b> — 训练可跑但结果不正确或行为有偏差</td>
+          <td class="num">4</td>
+          <td style="font-size:11px;line-height:1.6"><code>router_replay_utils.py</code>, <code>megatron_utils.py</code>, <code>transformer_impl.py</code> (routing_replay enable), <code>config_converter.py</code></td>
+        </tr>
+        <tr>
+          <td><span class="badge warn">P2</span></td>
+          <td><b>防御性/面向未来</b> — 当前不调用, 后续实验必需</td>
+          <td class="num">2</td>
+          <td style="font-size:11px;line-height:1.6"><code>g2_attention_kernel.py</code>, <code>mcore/util.py</code> (NPU attn mask)</td>
+        </tr>
+        <tr>
+          <td><span class="badge">P3</span></td>
+          <td><b>工程优化</b> — 便利性而非功能性</td>
+          <td class="num">1</td>
+          <td style="font-size:11px;line-height:1.6"><code>runtime_env.yaml</code></td>
+        </tr>
+        <tr style="font-weight:600"><td colspan="2">合计</td><td class="num">14</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="muted">
+    注: 17 个"新增"中, 有 3 个 (<code>deepseek_v4_init.pth</code>, <code>megatron_utils.py</code> 的模型保存/恢复部分,
+    <code>vllm_async_server.py</code> 的版本兼容 import) 在参考实验已有近似等价物, 未纳入上述分级。
+    <b>P0 + P1 = 11 个文件</b> 构成了本次实验相对于参考实验的 <b>不可消除的净新增</b>——由 CANN 版本、并行策略、镜像完备性三个维度的客观差异决定。
+  </p>
 </section>
 
 <!-- ═══════════ 11. 关键教训 ═══════════ -->
