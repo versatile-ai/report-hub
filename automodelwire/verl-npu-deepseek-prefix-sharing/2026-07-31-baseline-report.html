@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="DeepSeek V4 Flash 2-node GRPO RL smoke test — 14 轮部署 10 个 bug, 9 steps 通过, ~85s/step, 功能验证完整链路打通">
+<meta name="description" content="DeepSeek V4 Flash 2-node GRPO RL smoke test — 14 轮部署 10 个 bug, 9 steps 通过, ~85s/step, 功能验证完整链路打通, 39 文件 overlay 逐文件分析">
 <title>DeepSeek V4 Flash 2-Node Smoke Test — 基线报告 (2026-07-31)</title>
 <style>
   :root {
@@ -95,10 +95,7 @@
   .metric .label{
     font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary);
   }
-  .v.good{color:var(--green)}
-  .v.warn{color:var(--yellow)}
-  .v.bad{color:var(--red)}
-  .v.info{color:var(--info)}
+  .v.good{color:var(--green)} .v.warn{color:var(--yellow)} .v.bad{color:var(--red)} .v.info{color:var(--info)}
 
   .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
   table{border-collapse:collapse;width:100%;font-size:13px}
@@ -169,19 +166,31 @@
   .bar-fill.rollout{background:var(--green)}
   .bar-val{width:60px;font-size:12px;color:var(--text);text-align:left;flex-shrink:0;font-family:'SF Mono','Fira Code',Consolas,monospace}
 
-  .phase-grid{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-    gap:12px;margin-bottom:20px;
-  }
-  .phase-card{
-    background:var(--surface);border:1px solid var(--border);border-radius:6px;
-    padding:14px 16px;
-  }
-  .phase-card .ph-title{font-weight:600;font-size:13px;margin-bottom:6px;color:var(--text)}
-  .phase-card .ph-detail{font-size:12px;color:var(--muted);line-height:1.6}
-
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px}
   @media (max-width:768px){.two-col{grid-template-columns:1fr}}
+
+  .file-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 18px;margin-bottom:10px;
+  }
+  .file-card .fn{font-size:13px;font-weight:600;color:var(--accent);margin-bottom:6px;font-family:'SF Mono','Fira Code',Consolas,monospace}
+  .file-card .desc{font-size:13px;color:var(--text);line-height:1.6}
+  .file-card .why{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.55}
+  .file-card .bug-tag{display:inline-block;margin-top:6px}
+
+  .step-diagram{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:20px 24px;margin-bottom:20px;overflow-x:auto;
+  }
+  .step-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px}
+  .step-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+  .step-num.conf{background:var(--accent);color:#fff}
+  .step-num.copy{background:var(--info);color:#0D1117}
+  .step-num.link{background:var(--green);color:#0D1117}
+  .step-num.filter{background:var(--yellow);color:#0D1117}
+  .step-num.patch{background:#A371F7;color:#fff}
+  .step-desc{flex:1}
+  .step-why{color:var(--muted);font-size:12px}
 
   footer{
     max-width:1100px;margin:0 auto;padding:24px 48px 40px;
@@ -194,7 +203,7 @@
     h1{font-size:24px}
     h2{font-size:18px}
     .bar-label{width:120px}
-    .phase-grid{grid-template-columns:1fr}
+    .two-col{grid-template-columns:1fr}
   }
 
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -222,12 +231,13 @@
   <ol>
     <li><a href="#metrics">关键指标</a></li>
     <li><a href="#summary">概述</a></li>
-    <li><a href="#env">环境与版本</a></li>
-    <li><a href="#method">方法与并行策略</a></li>
+    <li><a href="#four-layer">4 层代理模型: 零拷贝构建机制</a></li>
+    <li><a href="#mbridge">mbridge: 4 层模型下的权重桥接</a></li>
+    <li><a href="#env">环境与并行策略</a></li>
     <li><a href="#perf">性能分解</a></li>
     <li><a href="#bugs">Bug 清单</a></li>
     <li><a href="#timeline">部署时间线</a></li>
-    <li><a href="#diffs">代码修改清单</a></li>
+    <li><a href="#overlay">39 文件 Overlay 逐文件分析</a></li>
     <li><a href="#lessons">关键教训</a></li>
     <li><a href="#next">后续路径</a></li>
   </ol>
@@ -235,86 +245,323 @@
 
 <main class="container">
 
-<!-- ═══════════ 关键指标 ═══════════ -->
+<!-- ═══════════ 1. 关键指标 ═══════════ -->
 <section id="metrics">
-  <h2>关键指标</h2>
+  <h2>1. 关键指标</h2>
   <div class="metrics">
     <div class="metric"><div class="v good">9</div><div class="label">Steps 完成</div></div>
     <div class="metric"><div class="v info">~85s</div><div class="label">稳态 Step Time</div></div>
     <div class="metric"><div class="v info">4.4-5.7</div><div class="label">Throughput (tok/s)</div></div>
     <div class="metric"><div class="v warn">14</div><div class="label">部署轮次</div></div>
     <div class="metric"><div class="v good">10</div><div class="label">Bug 修复</div></div>
-    <div class="metric"><div class="v info">~50GB</div><div class="label">训练侧 HBM (per NPU)</div></div>
-    <div class="metric"><div class="v info">2 &times; 8</div><div class="label">集群规模 (NPU)</div></div>
+    <div class="metric"><div class="v info">39</div><div class="label">Overlay 文件</div></div>
+    <div class="metric"><div class="v info">5</div><div class="label">修改组件</div></div>
     <div class="metric"><div class="v good">4-layer</div><div class="label">Surrogate 模型</div></div>
   </div>
 </section>
 
-<!-- ═══════════ 概述 ═══════════ -->
+<!-- ═══════════ 2. 概述 ═══════════ -->
 <section id="summary">
-  <h2>概述</h2>
+  <h2>2. 概述</h2>
   <p class="muted">
-    在 2 节点 Ascend 910B (16 NPU) 上用 <b>4 层 DeepSeek V4 Flash 代理模型 + 真实 BF16 权重 (symlink)</b>，
-    跑通了完整的 verl GRPO RL 训练管线: vLLM rollout &rarr; reward &rarr; log_prob &rarr; advantage &rarr; actor update &rarr; HCCL 权重同步。
-    14 轮部署, 解决 10 个 bug, 最终 9 steps 稳态完成。
+    在 2 节点 Ascend 910B (16 NPU) 上用 <b>4 层 DeepSeek V4 Flash 代理模型 + 真实 BF16 权重 (symlink 零拷贝)</b>，
+    跑通完整的 verl GRPO RL 训练管线。14 轮部署, 解决 10 个 bug, 最终 9 steps 稳态完成。
   </p>
-
   <div class="note ok">
     <div class="note-title">核心结论</div>
-    mbridge + vLLM + MindSpeed-LLM + HCCL 全链路在 Ascend NPU 上可打通。训推分离 (112 训练 + 155 推理) 架构可行, 权重跨节点广播 15-16s/step 正常。
+    mbridge + vLLM + MindSpeed-LLM + HCCL 全链路在 Ascend NPU 上可打通。训推分离 (112 训练 + 155 推理) 架构可行, 权重跨节点广播 15-16s/step。
+  </div>
+  <p>
+    本报告重点回答三个问题:
+  </p>
+  <ol>
+    <li><b>如何让 43 层模型只加载 4 层进行训练和推理?</b> — 通过 config.json patch + index.json 过滤 + safetensor symlink (零拷贝) 实现, 详见 <a href="#four-layer">§3</a></li>
+    <li><b>mbridge 在 4 层模型下有什么变化?</b> — 新增 deepseek_v4 模型类型注册、完整 MLA/MHC/DSA 权重映射、EP 双格式 expert ID 解析, 详见 <a href="#mbridge">§4</a></li>
+    <li><b>39 个 overlay 文件各自的修改内容和作用?</b> — 每个文件的具体代码变更、为什么需要、修复哪个 Bug, 详见 <a href="#overlay">§9</a></li>
+  </ol>
+</section>
+
+<!-- ═══════════ 3. 4 层代理模型的零拷贝构建 ═══════════ -->
+<section id="four-layer">
+  <h2>3. 4 层代理模型: 零拷贝构建机制</h2>
+
+  <h3>3.1 核心原理</h3>
+  <p>
+    DeepSeek V4 Flash 完整模型有 43 层, ~567GB BF16 权重。直接 2 节点 16 NPU 跑全参数学不可行 (单卡 59.8GB &gt; 61GB HBM)。
+    但 <b>mbridge 和 vLLM 都是按需加载 — 只遍历模型结构中的参数名而非 safetensor 里的全部 key</b> — 所以可以把 43 层的权重文件放在那里, 只让模型"看到"前 4 层。
+  </p>
+  <div class="note info">
+    <div class="note-title">关键认知</div>
+    不需要裁剪权重文件。safetensor 里 43 层权重全在, 但模型只请求 <code>model.layers.{0..3}.*</code>, safetensor IO 只读对应切片。这也是为什么可以用 symlink — 零拷贝, 不修改原始权重目录。
   </div>
 
-  <div class="phase-grid">
-    <div class="phase-card">
-      <div class="ph-title"><span class="badge ok">通过</span> mbridge 权重桥接</div>
-      <div class="ph-detail">mcore &harr; HF 双向转换正确 (含 MoE expert + MLA attention), EP all_gather + 双格式 expert ID 解析</div>
+  <h3>3.2 构建步骤 (5 步)</h3>
+  <div class="step-diagram">
+    <div class="step-row">
+      <span class="step-num copy">1</span>
+      <span class="step-desc"><b>rsync 非权重文件</b> (config.json, tokenizer, modeling *.py)</span>
     </div>
-    <div class="phase-card">
-      <div class="ph-title"><span class="badge ok">通过</span> vLLM 推理</div>
-      <div class="ph-detail">generate, log_prob 计算, KV cache 正常; CP=1 block table Triton&rarr;PyTorch 替换</div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:8px">
+      从 <code>/data/model/DeepSeek-V4-Flash-bf16-deploy/</code> 复制到 mini_model 目录, 排除所有 <code>*.safetensors</code>。
+      config.json 会拷贝但随后被 patch。
     </div>
-    <div class="phase-card">
-      <div class="ph-title"><span class="badge ok">通过</span> MindSpeed 训练</div>
-      <div class="ph-detail">forward, backward, optimizer.step 完整链路; G2 attention + MHC + Sinkhorn routing NPU 适配</div>
+    <div class="step-row">
+      <span class="step-num link">2</span>
+      <span class="step-desc"><b>ln -sf 权重文件</b> (零拷贝 symlink)</span>
     </div>
-    <div class="phase-card">
-      <div class="ph-title"><span class="badge ok">通过</span> HCCL 通信</div>
-      <div class="ph-detail">跨节点广播权重 15-16s/step, 无 timeout; HCCL checkpoint engine 训推分离</div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:8px">
+      每个 <code>*.safetensors</code> 从真实模型目录 symlink 到 mini_model 目录。
+      不复制, 不修改, 不裁剪。后续任何按需加载只读对应参数切片。
     </div>
-    <div class="phase-card">
-      <div class="ph-title"><span class="badge ok">通过</span> Router Replay</div>
-      <div class="ph-detail">训练侧 expert routing 在推理侧正确复现, 确保 MoE 推理路径与训练一致</div>
+    <div class="step-row">
+      <span class="step-num copy">3</span>
+      <span class="step-desc"><b>cp index.json</b> (必须复制, 不能用 symlink)</span>
     </div>
-    <div class="phase-card">
-      <div class="ph-title"><span class="badge warn">待解决</span> 全参 43 层训练</div>
-      <div class="ph-detail">4 层余量 ~30GB, 但 43 层全参 8 节点 + gradient streaming (DDP bucket 16.5GB) 仍需解决</div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:8px">
+      <code>model.safetensors.index.json</code> 包含 weight_map (参数名 &rarr; 文件名映射)。
+      必须 cp (不可 symlink), 因为下一步要过滤 weight_map 移除 layers &ge; 4 的条目,
+      symlink 会穿透修改原始权重目录, 不可逆破坏 43 层真模型。
+    </div>
+    <div class="step-row">
+      <span class="step-num patch">4</span>
+      <span class="step-desc"><b>Patch config.json</b></span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px;margin-bottom:8px">
+      设置 <code>num_hidden_layers: 43 &rarr; 4</code>, <code>num_nextn_predict_layers: 1 &rarr; 0</code> (MTP 引用 layer 43, 4 层下不存在),
+      截断 <code>compress_ratios</code> 列表到前 4 层对应条目。
+    </div>
+    <div class="step-row">
+      <span class="step-num filter">5</span>
+      <span class="step-desc"><b>过滤 index.json weight_map</b></span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-left:36px">
+      用正则 <code>r'^layers\.(\d+)'</code> 匹配所有参数名, 移除 layer &ge; 4 的条目。
+      <b>这一步至关重要</b>: vLLM 加载时遍历 weight_map 的全部 key, 若保留 layer 4-42 的映射,
+      会导致 KeyError (4 层模型没有 model.layers.4 模块)。
+      mbridge 则不受此影响 — 它通过 mcore model.named_parameters() 遍历, 只有 4 层的参数名。
+    </div>
+  </div>
+
+  <h3>3.3 为什么 mbridge 只加载 4 层</h3>
+  <p>
+    mbridge 的权重加载流程:
+  </p>
+  <pre><code># bridge.py:load_weights (第 147-269 行)
+# 1. 遍历 model.named_parameters() → 只有 4 层的 local param names
+# 2. local_to_global_map: decoder.layers.{0..3}.xxx
+# 3. _weight_name_mapping_mcore_to_hf: 映射到 HF 名称 layers.{0..3}.xxx
+# 4. safetensor_io.load_some_hf_weight: 只从磁盘加载这些 key 对应的 tensor
+# 5. _weight_to_mcore_format + TP/EP scatter: 加载到 mcore model</code></pre>
+  <p>
+    <b>结论</b>: mbridge 不需要任何特殊处理就能只加载 4 层 — 它跟着模型结构走, 模型有几层就加载几层。
+  </p>
+
+  <h3>3.4 为什么 vLLM 只加载 4 层</h3>
+  <p>
+    vLLM 的加载路径不同:
+  </p>
+  <pre><code># vLLM 加载: 遍历 model.safetensors.index.json 的 weight_map
+# 如果 weight_map 包含 layers.4.* → 尝试加载到 model.layers.4 → KeyError
+# 所以必须过滤 index.json 的 weight_map (步骤 5)</code></pre>
+  <p>
+    <b>差异</b>: mbridge 由 mcore model 驱动加载, 自然只请求 4 层参数; vLLM 由 index.json 驱动加载, 必须过滤 weight_map。
+    两者的模型结构本身都只有 4 层 (config.json num_hidden_layers=4), 所以都不会请求 layer &ge; 4 的权重。
+  </p>
+</section>
+
+<!-- ═══════════ 4. mbridge 权重桥接 ═══════════ -->
+<section id="mbridge">
+  <h2>4. mbridge: 4 层模型下的权重桥接</h2>
+
+  <h3>4.1 mbridge 在基线中的角色</h3>
+  <p>
+    mbridge 是 mcore (MindSpeed-LLM/Megatron-LM 训练侧) 和 HF (vLLM 推理侧) 之间的权重转换桥梁。
+    训练侧用 Megatron 格式的参数名和 TP/EP 切分, 推理侧用 HuggingFace 格式的完整参数。
+    mbridge 在两端之间做:
+  </p>
+  <ul>
+    <li><b>load_weights</b> (HF &rarr; mcore): 训练初始化时, 从 HF safetensor 加载权重到 mcore 模型, 同时做 TP 切分和 EP 散布</li>
+    <li><b>export_weights</b> (mcore &rarr; HF): 每个训练 step 结束时, 把 mcore 模型权重导出为 HF 格式, 经 HCCL 广播给推理节点</li>
+    <li><b>name mapping</b>: 维护 mcore 参数名 (如 <code>self_attention.linear_q_up_proj.weight</code>) 到 HF 参数名 (如 <code>layers.0.attn.wq_b.weight</code>) 的映射表</li>
+  </ul>
+
+  <h3>4.2 4 层模型带来的变化</h3>
+  <p>
+    <b>4 层模型对 mbridge 本身没有特殊要求</b>。mbridge 通过 <code>model.named_parameters()</code> 遍历参数,
+    模型有几层就处理几层的权重。配置文件 <code>config.json</code> 的 <code>num_hidden_layers=4</code> 驱动 Megatron 构建 4 层模型,
+    mbridge 自然只看到 4 层的参数。
+  </p>
+  <p>
+    但 <b>DeepSeek V4 Flash 的独特架构</b> 要求 mbridge 新增大量映射。这是模型架构带来的, 与层数无关 — 即使跑 43 层全参, 这些映射同样是必需的:
+  </p>
+
+  <h3>4.3 deepseek_v4 模型类型注册</h3>
+
+  <div class="file-card">
+    <div class="fn">register_dsv4.py</div>
+    <div class="desc">
+      <b>作用</b>: 把 DeepSeek V4 的自定义 <code>DeepseekV4Config</code> 类注册到 HuggingFace transformers 的 <code>AutoConfig</code> 注册表。
+      从 <code>$MODEL_PATH/config.json</code> 读 <code>auto_map.Config</code> 字段, 动态 import <code>configuration_deepseek_v4.py</code> 模块,
+      调用 <code>AutoConfig.register("deepseek_v4", cls)</code>。
+    </div>
+    <div class="why">
+      <b>为什么需要</b>: DeepSeek V4 Flash 的 config.json 中 <code>model_type: "deepseek_v4"</code> 不是 transformers 原生支持的模型类型。
+      不注册会导致 <code>AutoConfig.from_pretrained()</code> 抛出 Unknown model type 错误, 整个 mbridge 初始化链断裂。
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">patch_dsv4_config.py</div>
+    <div class="desc">
+      <b>作用</b>: Monkey-patch <code>DeepseekV4Config.__init__</code>, 在初始化完成后补充 20 个镜像内配置文件缺失的属性。
+      包括 MLA 参数 (kv_lora_rank, q_lora_rank, qk_head_dim, v_head_dim...)、
+      attention 参数 (multi_latent_attention, qk_layernorm, use_g2_attention...)、
+      MoE 参数 (intermediate_size, enable_dsa_indexer, enable_mhc...)。
+    </div>
+    <div class="why">
+      <b>为什么需要</b>: DeepSeek V4 Flash 的 config.json 不包含这些字段 (上游 modeling code 用默认值)。
+      但 mbridge <code>_build_config</code> 显式引用 <code>hf_config.q_lora_rank</code>、<code>hf_config.kv_lora_rank</code> 等,
+      <code>getattr</code> 默认值不可靠。patch 确保所有被引用的属性都有确定的值。
+      <span class="badge warn">Bug F/G 间接相关</span> — 如果 MLA 参数缺失, mbridge 构建的 mcore config 不正确, 后续权重映射错位。
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">deepseek_v4_init.pth</div>
+    <div class="desc">
+      <b>作用</b>: Python sitecustomize <code>.pth</code> 文件。在 Python 启动时自动 <code>import register_dsv4</code>, 确保 <code>AutoConfig.register</code> 在任何模型加载代码执行前完成。
+    </div>
+    <div class="why">
+      <b>为什么需要</b>: Ray worker 进程启动时无法控制 import 顺序。通过 .pth 文件在 site-packages 初始化阶段注入, 保证 vLLM/mbridge 的 <code>from_pretrained</code> 调用时 deepseek_v4 已注册。
+    </div>
+  </div>
+
+  <h3>4.4 DeepSeek V4 完整权重映射 (deepseek_v3.py)</h3>
+
+  <div class="file-card">
+    <div class="fn">mbridge/models/deepseek_v3.py</div>
+    <div class="desc">
+      <b>作用</b>: 这是 mbridge 对 DeepSeek V4 最核心的修改。定义一个 <code>DeepseekV3Bridge</code> 类 (用 <code>@register_model(["deepseek_v3", "deepseek_v4"])</code> 注册),
+      实现完整的 mcore &lrarr; HF 权重名映射。包含:
+      <ul style="margin-top:6px">
+        <li><b>_DIRECT_MAPPING</b>: 6 个直映射 (embedding, final_layernorm, output_layer, hc_head)</li>
+        <li><b>_MLP_MAPPING</b>: 13 个 MLP 参数映射, 含 MoE expert (正则匹配 <code>mlp.experts.local_experts.{N}.linear_fc1.weight</code>) 和 MHC (hc_base/hc_scale/hc_fn)</li>
+        <li><b>_ATTENTION_MAPPING</b>: 20 个 attention 参数映射, 覆盖 MLA q/kv/o projections、q/kv layernorms、compressor、DSA indexer</li>
+        <li><b>_build_config</b>: 从 HF config 构建 <code>MLATransformerConfig</code> (mcore 0.12 MoE + MLA + MTP 配置)</li>
+        <li><b>_get_safetensor_io</b>: BF16 权重直接走 <code>SafeTensorIO</code> (非 FP8), 绕过 <code>DequantFP8SafeTensorIO</code> 以避免 triton ascend 后端 import</li>
+        <li><b>_weight_name_mapping_mlp</b>: 正则匹配 + 模板替换 (支持 expert_id 捕获组), 替代父类简单的关键字匹配</li>
+        <li><b>_convert_mtp_param</b>: MTP layer 参数映射 (仅支持 61 层 + 1 MTP layer, smoke test 中 MTP 已禁用)</li>
+      </ul>
+    </div>
+    <div class="why">
+      <b>为什么需要</b>: 父类 <code>LLMBridge</code> 只有 Dense 模型的 attention/MLP/direct 三组默认映射, 完全不适用 DeepSeek V4 的 MLA + MoE + MHC + DSA indexer + compressor 架构。
+      没有这些映射, 权重加载时所有参数名都无法匹配 &rarr; 每个参数抛 <code>NotImplementedError</code>。
+    </div>
+  </div>
+
+  <h3>4.5 bridge.py 核心修改</h3>
+
+  <div class="file-card">
+    <div class="fn">mbridge/core/bridge.py</div>
+    <div class="desc">
+      <b>4 处关键修改</b>:
+      <ol style="margin-top:6px">
+        <li><b>load_weights norm bias 预过滤</b> (第 166-176 行): 加载时跳过以 <code>.bias</code> 结尾的参数。
+          Megatron <code>persist_layer_norm=True</code> 会创建零填充的 RMSNorm bias,
+          但 HF 权重中从不存储这些 bias (FP8&rarr;BF16 转换时丢失)。不跳过会导致 safetensor key not found。
+        </li>
+        <li><b>load_weights ETP=1 broadcast 替代 scatter</b> (第 222-230 行): 原逻辑只在 ETP &gt; 1 时 scatter,
+          ETP=1 时直接 copy。现在 ETP=1 时也 broadcast (从 etp_rank 0 到全 etp_group), 确保所有 etp rank 都有完整 expert 权重。
+        </li>
+        <li><b>export_weights EP all_gather + 双格式 expert ID 解析</b> (第 387-443 行):
+          训练侧 EP=4 切分 expert, 推理侧需要完整 expert 权重。
+          对每个 local expert, <code>all_gather</code> 从 4 个 EP rank 收集权重片,
+          然后解析 expert ID — 支持两种格式: Form A (TP=2/ETP=2, expert ID 嵌在路径 <code>local_experts.{N}.</code>) 和
+          Form B (TP=8, expert ID 作为 suffix <code>.weight{N}</code>)。
+          <span class="badge bad">Bug F/G 修复</span>
+        </li>
+        <li><b>_weight_merge_across_tp 1D tensor fallback</b> (第 932-946 行): <code>num_distributed_optimizer_instances=1</code>
+          展平所有参数到 1D buffer 时, <code>dim=1</code> cat 会 IndexError。改为 <code>dim=0</code> cat 兜底。
+          <span class="badge bad">Bug H 修复</span>
+        </li>
+      </ol>
+    </div>
+    <div class="why">
+      <b>为什么需要</b>: 修改 1 (norm bias) 是通用问题, 所有 Megatron 模型都有。修改 2-4 是 DeepSeek V4 + NPU 特有问题:
+      EP 切分 + 双格式 expert ID 是 DSv4 MoE 架构的产物; 1D buffer fallback 是 MindSpeed 分布式优化器 <code>num_instances=1</code> 的副作用。
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">mbridge/core/llm_bridge.py</div>
+    <div class="desc">
+      <b>作用</b>: LLMBridge 基类, 大部分是上游模板代码。关键修改在 <code>_build_base_config</code> —
+      添加 <code>expert_tensor_parallel_size</code>、<code>context_parallel_size</code> 等并行参数,
+      以及支持字符串格式的 <code>attention_backend</code> (自动转 AttnBackend enum)。
+      <code>_get_transformer_layer_spec</code> 增加 <code>vp_stage</code> 参数兼容 mcore 0.12。
+    </div>
+    <div class="why">
+      <b>为什么需要</b>: 上游 mbridge 只考虑 TP/PP/EP, 不包含 ETP、CP 等 NPU MindSpeed 特有的并行维度。
+      缺少 ETP 会导致 expert tensor parallel 配置为 0 &rarr; 后续权重切分逻辑错误。
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">mbridge/models/ext/deepseek_v3/dequant_fp8_safetensor_io.py</div>
+    <div class="desc">
+      <b>作用</b>: FP8 safetensor reader — 支持从 safetensor 加载 FP8 权重并用 scale_inv 做 dequant。
+      关键修改: 将 <code>safe_open</code> 的 device 从 CPU 改为 <code>"npu"</code> (NPU 直接读, 避免 CPU&rarr;NPU 拷贝),
+      设置 <code>torch.set_default_dtype(torch.bfloat16)</code>。
+    </div>
+    <div class="why">
+      <b>为什么需要</b>: 虽然本次测试用的是 BF16 权重 (走 SafeTensorIO, 不经过此类), 但代码路径判断 <code>self.dtype == torch.bfloat16</code>
+      决定是否使用此类 (deepseek_v3.py 第 367-372 行)。预备 FP8 权重加载能力。
     </div>
   </div>
 </section>
 
-<!-- ═══════════ 环境与版本 ═══════════ -->
+<!-- ═══════════ 5. 环境与并行策略 ═══════════ -->
 <section id="env">
-  <h2>环境与版本</h2>
+  <h2>5. 环境与并行策略</h2>
 
-  <h3>集群拓扑</h3>
+  <h3>5.1 集群拓扑</h3>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>节点</th><th>角色</th><th>NPU 数</th><th>IP</th><th>容器</th>
+        <th>节点</th><th>角色</th><th class="num">NPU</th><th>IP</th><th>容器</th><th>Ray 资源标签</th>
       </tr></thead>
       <tbody>
-        <tr><td>112</td><td>训练 (train_node)</td><td class="num">8</td><td>192.168.0.112</td><td>dsv4-smoke</td></tr>
-        <tr><td>155</td><td>推理 (rollout_node)</td><td class="num">8</td><td>192.168.0.155</td><td>dsv4-smoke</td></tr>
+        <tr><td>112</td><td>训练 (train_node)</td><td class="num">8</td><td>192.168.0.112</td><td>dsv4-smoke</td><td>NPU:8, train_node:1</td></tr>
+        <tr><td>155</td><td>推理 (rollout_node)</td><td class="num">8</td><td>192.168.0.155</td><td>dsv4-smoke</td><td>NPU:8, rollout_node:1</td></tr>
       </tbody>
     </table>
   </div>
 
-  <h3>镜像内组件版本</h3>
+  <h3>5.2 并行配置</h3>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>组件</th><th>版本</th><th>Commit</th>
+        <th>角色</th><th class="num">TP</th><th class="num">PP</th><th class="num">EP</th><th class="num">ETP</th><th class="num">DP</th><th>NPU</th>
       </tr></thead>
+      <tbody>
+        <tr><td>训练 (112)</td><td class="num">2</td><td class="num">1</td><td class="num">4</td><td class="num">2</td><td class="num">1</td><td>2&times;4&times;1 = 8 &check;</td></tr>
+        <tr><td>推理 (155)</td><td class="num">8</td><td class="num">1</td><td class="num">8</td><td class="num">&mdash;</td><td class="num">1</td><td>8&times;1 = 8 &check;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>5.3 关键约束</h3>
+  <ul>
+    <li><b>GEN_EP == GEN_TP &times; GEN_DP</b>: 8 = 8&times;1 &check;</li>
+    <li><b>ETP=2</b>: MLA attention EP 切分要求 TP=2, 权重合并时的 cat dim 依赖 TP 维度的 partition_dim</li>
+    <li><b>Triton &rarr; identity decorator</b>: <code>triton.jit</code> 在 Ascend 上退化为空装饰器, kernel subscript 调用全失败</li>
+    <li><b>sparse_flash_attn=False</b>: <code>cann_ops_transformer</code> C 扩展镜像未安装</li>
+  </ul>
+
+  <h3>5.4 组件版本</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>组件</th><th>版本</th><th>Commit</th></tr></thead>
       <tbody>
         <tr><td>CANN</td><td>9.1.0-beta.3</td><td>&mdash;</td></tr>
         <tr><td>verl</td><td>0.8.0.dev0</td><td><code>809f2d8f</code></td></tr>
@@ -327,70 +574,12 @@
       </tbody>
     </table>
   </div>
-
-  <h3>模型与数据集</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>配置项</th><th>值</th></tr></thead>
-      <tbody>
-        <tr><td>模型</td><td>4 层 DeepSeek V4 Flash surrogate + symlink 真实 BF16 权重</td></tr>
-        <tr><td>模型构建</td><td>rsync 非权重文件 + ln -sf 权重 (零拷贝) + patch config.json</td></tr>
-        <tr><td>数据集</td><td>GSM8K train/test parquet</td></tr>
-        <tr><td>算法</td><td>GRPO (batch=16, n_resp=2)</td></tr>
-        <tr><td>Seq len</td><td>prompt=200, response=32, pos_emb=512</td></tr>
-      </tbody>
-    </table>
-  </div>
 </section>
 
-<!-- ═══════════ 方法与并行策略 ═══════════ -->
-<section id="method">
-  <h2>方法与并行策略</h2>
-
-  <h3>并行配置</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th>角色</th><th>TP</th><th>PP</th><th>EP</th><th>ETP</th><th>DP</th><th>NPU 使用</th>
-      </tr></thead>
-      <tbody>
-        <tr><td>训练 (112)</td><td class="num">2</td><td class="num">1</td><td class="num">4</td><td class="num">2</td><td class="num">1</td><td>2 &times; 4 &times; 1 = 8 &check;</td></tr>
-        <tr><td>推理 (155)</td><td class="num">8</td><td class="num">1</td><td class="num">8</td><td class="num">&mdash;</td><td class="num">1</td><td>8 &times; 1 = 8 &check;</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>HBM 占用估算</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th>组件</th><th class="num">大小 (GB)</th><th>说明</th>
-      </tr></thead>
-      <tbody>
-        <tr><td>BF16 权重</td><td class="num">~8</td><td>4 层 &times; ~1B params &times; 2B</td></tr>
-        <tr><td>梯度</td><td class="num">~8</td><td>与权重同大小</td></tr>
-        <tr><td>Optimizer</td><td class="num">~0</td><td>CPU offload (hybrid optimizer)</td></tr>
-        <tr><td>运行时 (activation + buffer)</td><td class="num">~34</td><td>forward + backward 中间结果</td></tr>
-        <tr style="font-weight:600"><td>训练合计</td><td class="num">~50</td><td class="ok">&lt;&lt; 61GB 可用</td></tr>
-        <tr><td>推理 (4 层)</td><td class="num">~15-20</td><td>vLLM engine + KV cache</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>关键约束</h3>
-  <ul>
-    <li><b>GEN_EP == GEN_TP &times; GEN_DP</b>: 推理侧 EP=8 &rarr; 8 = 8 &times; 1 &check;</li>
-    <li><b>ETP=2</b>: MLA attention EP 切分要求 TP=2 (Bug H 根因)</li>
-    <li><b>Triton &rarr; identity decorator</b>: 所有 <code>triton.jit</code> subscript 调用在 Ascend 上失败, CP=1 block_table 用已有 PyTorch <code>_compute_pcp_dcp_slot_mapping</code> 替代</li>
-    <li><b>sparse_flash_attn=False</b>: 镜像未包含 <code>cann_ops_transformer</code> C 扩展</li>
-  </ul>
-</section>
-
-<!-- ═══════════ 性能分解 ═══════════ -->
+<!-- ═══════════ 6. 性能分解 ═══════════ -->
 <section id="perf">
-  <h2>性能分解</h2>
-
-  <h3>稳态 Step 时间拆解</h3>
+  <h2>6. 性能分解</h2>
+  <h3>6.1 稳态 Step 时间拆解</h3>
   <div class="bar-row">
     <span class="bar-label">vLLM generate</span>
     <span class="bar-track"><span class="bar-fill rollout" style="width:7%"></span></span>
@@ -416,15 +605,11 @@
     <span class="bar-track"><span class="bar-fill hccl" style="width:17%"></span></span>
     <span class="bar-val">15-16s</span>
   </div>
-
-  <h3>阶段占比表</h3>
-  <div class="table-wrap">
+  <div class="table-wrap" style="margin-top:16px">
     <table>
-      <thead><tr>
-        <th>阶段</th><th class="num">耗时 (s)</th><th class="num">占比</th>
-      </tr></thead>
+      <thead><tr><th>阶段</th><th class="num">耗时 (s)</th><th class="num">占比</th></tr></thead>
       <tbody>
-        <tr><td>vLLM generate (rollout)</td><td class="num">1.6-6.8 / 样本</td><td class="num">~8%</td></tr>
+        <tr><td>vLLM generate</td><td class="num">1.6-6.8 / 样本</td><td class="num">~8%</td></tr>
         <tr><td>Old log prob</td><td class="num">21-33</td><td class="num">~30%</td></tr>
         <tr><td>Ref log prob</td><td class="num">~30</td><td class="num">~30%</td></tr>
         <tr><td>Update actor</td><td class="num">34-40</td><td class="num">~40%</td></tr>
@@ -433,309 +618,399 @@
       </tbody>
     </table>
   </div>
-
   <p class="muted">
     主要瓶颈在训练侧 (old_log_prob + update_actor 占 ~70%)。HCCL 权重同步 15-16s 有优化空间 (bucketed weight transfer overlay 已准备但未启用)。
-    4 层模型吞吐 4.4-5.7 tok/s, 全参 43 层扩展到 8 节点后的性能待测。
+    4 层模型吞吐 4.4-5.7 tok/s。
   </p>
 </section>
 
-<!-- ═══════════ Bug 清单 ═══════════ -->
+<!-- ═══════════ 7. Bug 清单 ═══════════ -->
 <section id="bugs">
-  <h2>Bug 清单</h2>
-
-  <div class="note warn">
-    <div class="note-title">10 个 Bug &mdash; 最昂贵: Bug J (Triton kernel 替换, 占 14 轮中的 7 轮)</div>
-    14 轮部署解决 10 个独立 bug, 分布在 config / mbridge / vllm-ascend / MindSpeed 各层。
-    最长的调试周期是 Bug J: Ascend NPU 上 Triton = identity decorator, CP=1 block_table 需 PyTorch 实现。
-  </div>
-
+  <h2>7. Bug 清单 (10 个)</h2>
   <div class="table-wrap">
     <table>
       <thead><tr>
         <th>Bug</th><th class="num">轮次</th><th>层</th><th>症状</th><th>根因</th><th>修复</th><th>耗时</th>
       </tr></thead>
       <tbody>
-        <tr>
-          <td><span class="badge bad">D</span></td>
-          <td class="num">1</td><td>Config</td>
-          <td>vLLM EP=1 OOM 54.6GB</td>
-          <td>256 experts 全装在一个 NPU</td>
-          <td>训推分离 + rollout EP=8</td>
-          <td>~30min</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">E</span></td>
-          <td class="num">1</td><td>Config</td>
-          <td>HCCL resource unavailable</td>
-          <td>多 communicator 同 port</td>
-          <td>PORT_RANGE=auto + node affinity bundle</td>
-          <td>~30min</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">F/G</span></td>
-          <td class="num">1</td><td>mbridge</td>
-          <td><code>ValueError: invalid literal for int()</code></td>
-          <td>EP 切分后 expert ID 解析失败</td>
-          <td>bridge.py EP all_gather + 双格式 ID</td>
-          <td>~1h</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">H</span></td>
-          <td class="num">1-2</td><td>mbridge</td>
-          <td><code>AssertionError: shape mismatch</code> (1D vs 2D)</td>
-          <td>MLA weights EP-sharded, never un-sharded</td>
-          <td>TP=1 &rarr; TP=2, ETP=2</td>
-          <td>~2h</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">I</span></td>
-          <td class="num">2-4</td><td>Config</td>
-          <td><code>max_tokens=0</code> &rarr; VLLMValidationError</td>
-          <td>GSM8K prompt 67-134 tokens &gt; MAX=32</td>
-          <td>MAX_PROMPT_LENGTH &rarr; 200</td>
-          <td>~2h</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">J</span></td>
-          <td class="num">5-12</td><td>vllm-ascend</td>
-          <td><code>TypeError: function not subscriptable</code></td>
-          <td>Triton jit &rarr; identity decorator on Ascend</td>
-          <td>CP=1 复用已有 PyTorch 路径</td>
-          <td class="bad">~5h</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">J2</span></td>
-          <td class="num">8-10</td><td>vllm-ascend</td>
-          <td><code>RuntimeError: Tensor with 4 elements</code></td>
-          <td>2D block_table 索引未 flatten</td>
-          <td>被 J v4 替代</td>
-          <td>(J 的一部分)</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">J3</span></td>
-          <td class="num">12</td><td>vllm-ascend</td>
-          <td><code>IndexError: index 8 out of size 8</code></td>
-          <td>stride &rarr; gpu 布局不匹配</td>
-          <td>被 J v4 替代</td>
-          <td>(J 的一部分)</td>
-        </tr>
-        <tr>
-          <td><span class="badge bad">K</span></td>
-          <td class="num">13</td><td>MindSpeed</td>
-          <td><code>Exception: custom_ops unavailable</code></td>
-          <td><code>cann_ops_transformer</code> 未装</td>
-          <td>use_sparse_flash_attn=False</td>
-          <td>~30min</td>
-        </tr>
+        <tr><td><span class="badge bad">D</span></td><td class="num">1</td><td>Config</td><td>vLLM EP=1 OOM 54.6GB</td><td>256 experts 全装在一个 NPU</td><td>训推分离 + rollout EP=8</td><td>~30min</td></tr>
+        <tr><td><span class="badge bad">E</span></td><td class="num">1</td><td>Config</td><td>HCCL resource unavailable</td><td>多 HCCL communicator 同 port=60000 冲突</td><td>PORT_RANGE=auto + node affinity bundle</td><td>~30min</td></tr>
+        <tr><td><span class="badge bad">F/G</span></td><td class="num">1</td><td>mbridge</td><td><code>ValueError: invalid literal for int()</code></td><td>EP 切分后 expert ID 解析失败, 原逻辑假设 <code>.weight{N}</code> suffix 但实际有 <code>local_experts.{N}.linear_fc1.weight</code> 格式</td><td>bridge.py EP all_gather + 双格式 ID 解析 (Form A/B)</td><td>~1h</td></tr>
+        <tr><td><span class="badge bad">H</span></td><td class="num">1-2</td><td>mbridge</td><td><code>AssertionError: shape mismatch</code> (1D vs 2D)</td><td>MLA weights EP-sharded 从未 un-shard; num_instances=1 的 1D buffer 导致 cat dim=1 失败</td><td>TP=1&rarr;TP=2 + ETP=2 + 1D fallback</td><td>~2h</td></tr>
+        <tr><td><span class="badge bad">I</span></td><td class="num">2-4</td><td>Config</td><td>max_tokens=0 &rarr; VLLMValidationError</td><td>GSM8K prompt 67-134 tokens &gt; MAX_PROMPT_LENGTH=32</td><td>MAX_PROMPT_LENGTH &rarr; 200</td><td>~2h</td></tr>
+        <tr><td><span class="badge bad">J</span></td><td class="num">5-12</td><td>vllm-ascend</td><td><code>TypeError: function not subscriptable</code></td><td>Triton jit &rarr; identity decorator on Ascend, kernel subscript 失败</td><td>CP=1 复用已有 PyTorch <code>_compute_pcp_dcp_slot_mapping</code></td><td class="bad">~5h</td></tr>
+        <tr><td><span class="badge bad">J2</span></td><td class="num">8-10</td><td>vllm-ascend</td><td>RuntimeError: Tensor with 4 elements</td><td>2D block_table 索引取标量失败 (纯 PyTorch 翻译错误)</td><td>被 J v4 替代</td><td>(J 的一部分)</td></tr>
+        <tr><td><span class="badge bad">J3</span></td><td class="num">12</td><td>vllm-ascend</td><td>IndexError: index 8 out of size 8</td><td>stride &rarr; gpu 布局不匹配 (纯 PyTorch 翻译错误)</td><td>被 J v4 替代</td><td>(J 的一部分)</td></tr>
+        <tr><td><span class="badge bad">K</span></td><td class="num">13</td><td>MindSpeed</td><td>Exception: custom_ops unavailable</td><td><code>cann_ops_transformer</code> C 扩展未安装</td><td>use_sparse_flash_attn=False</td><td>~30min</td></tr>
       </tbody>
     </table>
   </div>
-
-  <h3>Bug J 深度分析 (最昂贵)</h3>
-  <p>占 14 轮中的 7 轮, 根因是 Ascend NPU 已知的设计选择 (Triton = identity decorator)。</p>
   <div class="note bad">
-    <div class="note-title">错误路径: J v1 (PyTorch) &rarr; RuntimeError &rarr; J v2 (reshape) &rarr; RuntimeError &rarr; J v3 (max_num_blocks) &rarr; IndexError &rarr; J v4 (复用 CP&gt;1 path) &rarr; &check;</div>
-    选了"从零实现"而非"复用已有"的策略。每次修复只解决暴露的一个边界问题, 没有意识到 vllm-ascend 已有 CP&gt;1 的 <code>_compute_pcp_dcp_slot_mapping</code> 纯 PyTorch 实现完全可复用。
+    <div class="note-title">Bug J 深度分析 — 占 14 轮中的 7 轮</div>
+    根因: Ascend NPU 上 <code>triton.jit</code> 是空装饰器 <code>lambda f: f</code>。vLLM upstream CP=1 路径调用
+    <code>_compute_slot_mapping_kernel[(grid,)]</code> 对普通 Python 函数 subscript &rarr; TypeError。<br>
+    错误路径: 从零写 PyTorch 替代 &rarr; J v1 (RuntimeError) &rarr; J v2 (reshape, RuntimeError) &rarr; J v3 (stride, IndexError) &rarr;
+    <b>J v4: 发现 CP&gt;1 路径的 <code>_compute_pcp_dcp_slot_mapping</code> 已是纯 PyTorch, 让 CP=1 也走此路径</b> &rarr; 一把过。
   </div>
-
-  <p><b>下次如何避免</b>: 修复前先搜索项目中是否有类似功能的已有实现; 自研迭代 2 次无果 &rarr; 停线, 切换策略 (元规则 C); 优先问"这段逻辑在其他配置下是否已有工作实现?"</p>
 </section>
 
-<!-- ═══════════ 部署时间线 ═══════════ -->
+<!-- ═══════════ 8. 部署时间线 ═══════════ -->
 <section id="timeline">
-  <h2>部署时间线</h2>
-
-  <p class="muted">14 轮部署, 从 4-node &rarr; 8-node &rarr; 2-node 的探索路径, 最终 9 steps 稳态完成。</p>
-
-  <h3>宏观路径</h3>
+  <h2>8. 部署时间线</h2>
+  <h3>8.1 宏观探索路径</h3>
   <div class="timeline">
     <div class="tl-item bad">
-      <div class="tl-date">Round 1-6 &middot; 2026-07-26</div>
-      <div class="tl-body"><b>4 节点基线 (skip rollout)</b>: 6 次 OOM &rarr; 证实数学不可行 (59.8GB &gt; 61GB HBM)。PP=2 也不可行: ETP(64) &gt; world_size(32)</div>
+      <div class="tl-date">R1-6 · 2026-07-26</div>
+      <div class="tl-body"><b>4 节点 32 NPU 基线 (skip rollout)</b>: 6 次 OOM &rarr; 数学不可行 (单卡 59.8GB &gt; 61GB HBM)。PP=2 也不可行: ETP(64) &gt; world_size(32)</div>
     </div>
     <div class="tl-item bad">
-      <div class="tl-date">Round 7 &middot; 2026-07-27</div>
-      <div class="tl-body"><b>8 节点 PP=2</b>: 模型构建成功 (5.69B/rank), 但 DDP gradient bucket 16.5GB &rarr; 总计 63.6GB &gt; 61GB OOM。需要 gradient streaming</div>
+      <div class="tl-date">R7 · 2026-07-27</div>
+      <div class="tl-body"><b>8 节点 PP=2</b>: 模型构建成功 (5.69B/rank), 但 DDP gradient bucket 16.5GB &rarr; 63.6GB &gt; 61GB OOM。需要 gradient streaming</div>
     </div>
     <div class="tl-item ok">
-      <div class="tl-date">Round 8-14 &middot; 2026-07-28 &rarr; 31</div>
-      <div class="tl-body"><b>2 节点 4 层 surrogate (功能验证)</b>: 10 个 bug 逐一修复, 最终 9 steps 成功 &check;</div>
+      <div class="tl-date">R8-14 · 2026-07-28 &rarr; 31</div>
+      <div class="tl-body"><b>2 节点 4 层 surrogate</b>: 10 个 bug 逐一修复, 9 steps 成功 &check;</div>
     </div>
   </div>
-
-  <h3>2 节点详细时间线</h3>
+  <h3>8.2 2 节点详细时间线</h3>
   <div class="timeline">
-    <div class="tl-item bad">
-      <div class="tl-date">Round 8 &middot; 07-28</div>
-      <div class="tl-body">Bug D/E/F/G/H: Config (EP OOM + HCCL port) + mbridge (expert ID + MLA shape)</div>
-    </div>
-    <div class="tl-item bad">
-      <div class="tl-date">Round 9-11 &middot; 07-29</div>
-      <div class="tl-body">Bug I + J: max_tokens=0 (prompt length misconfig) + Triton kernel 开始迭代</div>
-    </div>
-    <div class="tl-item bad">
-      <div class="tl-date">Round 12 &middot; 07-30</div>
-      <div class="tl-body">Bug J v4: 复用 CP&gt;1 <code>_compute_pcp_dcp_slot_mapping</code>, block_table 问题最终解决</div>
-    </div>
-    <div class="tl-item warn">
-      <div class="tl-date">Round 13 &middot; 07-30</div>
-      <div class="tl-body">Bug K: sparse_flash_attn=False, 训练跑通但 debug print 漏改 155 节点</div>
-    </div>
-    <div class="tl-item ok">
-      <div class="tl-date">Round 14 &middot; 07-31 00:31</div>
-      <div class="tl-body"><b>9 steps 成功</b>: 完整 GRPO 管线打通, ~85s/step 稳态 &check;</div>
-    </div>
+    <div class="tl-item bad"><div class="tl-date">R8</div><div class="tl-body">Bug D/E/F/G/H: Config (EP OOM + HCCL port) + mbridge (expert ID + MLA shape)</div></div>
+    <div class="tl-item bad"><div class="tl-date">R9-11</div><div class="tl-body">Bug I + J: max_tokens=0 + Triton kernel 迭代</div></div>
+    <div class="tl-item bad"><div class="tl-date">R12</div><div class="tl-body">Bug J v4: 复用 CP&gt;1 <code>_compute_pcp_dcp_slot_mapping</code> &rarr; block_table 解决</div></div>
+    <div class="tl-item warn"><div class="tl-date">R13</div><div class="tl-body">Bug K: sparse_flash_attn=False; debug print 漏改 155</div></div>
+    <div class="tl-item ok"><div class="tl-date">R14 · 07-31 00:31</div><div class="tl-body"><b>9 steps 成功</b>: ~85s/step 稳态 &check;</div></div>
   </div>
 </section>
 
-<!-- ═══════════ 代码修改清单 ═══════════ -->
-<section id="diffs">
-  <h2>代码修改清单</h2>
-
+<!-- ═══════════ 9. 39 文件 Overlay 逐文件分析 ═══════════ -->
+<section id="overlay">
+  <h2>9. 39 文件 Overlay 逐文件分析</h2>
   <p class="muted">
-    共计 <b>39 个 overlay 文件</b> 覆盖 5 个组件 (Megatron-LM / MindSpeed-LLM / verl / vllm-ascend / mbridge), 分为"镜像能力补全"和"Bug 修复"两类。
+    39 个文件覆盖 5 个组件。下面按组件分组, 每个文件说明: <b>修改了什么</b> (具体代码变更) / <b>为什么需要</b> (不修改会怎样) / <b>关联 Bug</b>。
   </p>
 
-  <h3>镜像本身支持 &amp; 需补充的能力</h3>
+  <!-- ======== Megatron-LM ======== -->
+  <h3>9.1 Megatron-LM (3 文件) — 分布式训练框架适配</h3>
+
+  <div class="file-card">
+    <div class="fn">Megatron-LM/megatron/core/optimizer/distrib_optimizer.py</div>
+    <div class="desc"><b>修改</b>: 设置 <code>num_distributed_optimizer_instances=1</code>, 展平所有参数到 1D buffer (而非默认 2D buffer)。</div>
+    <div class="why"><b>为什么</b>: 降低优化器内存开销。副作用是参数变为 1D tensor, 后续 weight merge/split 逻辑需要 1D 兼容 (bridge.py 的 1D fallback 即为此)。
+      <span class="badge bad">Bug H 间接因素</span></div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">Megatron-LM/megatron/core/pipeline_parallel/p2p_communication.py</div>
+    <div class="desc"><b>修改</b>: NPU 设备适配 — 将 <code>torch.cuda</code> 调用替换为 <code>torch.npu</code> (current_device, Stream, etc.)。PP=1 时此文件不被调用, 但作为基础设施保留。</div>
+    <div class="why"><b>为什么</b>: 上游 Megatron-LM 只支持 CUDA。Ascend NPU 上必须替换所有 cuda API。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">Megatron-LM/megatron/core/transformer/transformer_config.py</div>
+    <div class="desc"><b>修改</b>: 增加 DeepSeek V4 特有的 Transformer 配置字段支持: <code>multi_latent_attention</code>, <code>enable_dsa_indexer</code>, <code>enable_mhc</code>, <code>use_g2_attention</code> 等。</div>
+    <div class="why"><b>为什么</b>: Megatron-LM core_r0.12.0 的 TransformerConfig 不包含这些 V4 Flash 专属字段, 没有它们模型构建时会使用默认值 &rarr; 模型结构与权重不匹配。</div>
+  </div>
+
+  <!-- ======== MindSpeed-LLM ======== -->
+  <h3>9.2 MindSpeed-LLM (7 文件) — 训练算子 NPU 适配</h3>
+
+  <div class="file-card">
+    <div class="fn">MindSpeed-LLM/megatron/core/optimizer/cpu_offloading/hybrid_optimizer.py</div>
+    <div class="desc"><b>修改</b>: Hybrid optimizer (CPU offload) 的 NPU 适配 — 优化器状态从 NPU 拷贝到 CPU 时使用 <code>torch.npu</code> 同步原语。</div>
+    <div class="why"><b>为什么</b>: 训练 HBM ~50GB, 优化器状态 ~8GB, 必须 CPU offload 才能满足 61GB 约束。不修此文件会导致优化器 step 时 NPU-CPU 同步失败。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">MindSpeed-LLM/mindspeed_llm/pretrain_deepseek4.py</div>
+    <div class="desc"><b>修改</b>: DeepSeek V4 的 <code>model_provider</code> 函数 — 构建 Megatron GPTModel 所需的 <code>transformer_layer_spec</code> (含 MLA attention + MoE + MHC)。</div>
+    <div class="why"><b>为什么</b>: MindSpeed-LLM 虽然有 deepseek4_spec.py (模型规格定义), 但 pretrain 入口需要显式注册相应 model_provider。没有它训练无法初始化模型。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">MindSpeed-LLM/mindspeed_llm/.../g2_attention_kernel.py</div>
+    <div class="desc"><b>修改</b>: G2 attention 的 kernel 实现 NPU 适配 — 将 CUDA kernel launch 替换为 <code>torch_npu.npu_attention</code> 调用。</div>
+    <div class="why"><b>为什么</b>: G2 attention 是 DeepSeek V4 Flash 的核心注意力变体 (windowed + global attention 混合)。不能跳过, 全部 4 层的 attention 都走此路径。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">MindSpeed-LLM/mindspeed_llm/.../g2_attention.py</div>
+    <div class="desc"><b>修改</b>: G2 attention 的 Python 层 — 处理 window mask、chunk split、NPU 特有的 tensor layout 转换。</div>
+    <div class="why"><b>为什么</b>: 与 g2_attention_kernel.py 配对。Python 层负责预处理 (split chunks, compute masks), kernel 层负责 NPU 上的实际计算。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">MindSpeed-LLM/mindspeed_llm/.../mhc/mhc_triton.py</div>
+    <div class="desc"><b>修改</b>: Multi-Head Clustering (MHC) 的 Triton kernel NPU fallback — 原 CUDA Triton kernel 替换为 PyTorch 实现。</div>
+    <div class="why"><b>为什么</b>: MHC 是 DeepSeek V4 的路由辅助模块 (attention + FFN 头聚类)。Triton 在 Ascend 上不工作, 必须 PyTorch 替代。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">MindSpeed-LLM/mindspeed_llm/.../mhc/sinkhorn.py</div>
+    <div class="desc"><b>修改</b>: Sinkhorn 路由算法的 NPU 适配 — <code>torch.cuda.synchronize</code> &rarr; <code>torch.npu.synchronize</code>, device 检测改为 <code>torch.npu</code>。</div>
+    <div class="why"><b>为什么</b>: Sinkhorn 算法用于 MHC 的 token-to-head 分配。不替换 cuda API 会在 NPU 上抛 <code>torch.cuda.is_available() == False</code> 错误。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">MindSpeed-LLM/mindspeed_llm/.../rmsnorm_without_weight.py</div>
+    <div class="desc"><b>修改</b>: Weight-free RMSNorm 的 NPU 实现 — 使用 <code>torch_npu.npu_rms_norm</code> 替代手动 CUDA kernel。</div>
+    <div class="why"><b>为什么</b>: DeepSeek V4 的 RMSNorm 不带可学习 weight (与标准 Llama 不同)。NPU 上有专用融合算子, 直接调 npu_rms_norm 性能更好。</div>
+  </div>
+
+  <!-- ======== verl ======== -->
+  <h3>9.3 verl (18 文件) — GRPO 训练框架完整适配</h3>
+
+  <div class="file-card">
+    <div class="fn">verl/checkpoint_engine/hccl_checkpoint_engine.py</div>
+    <div class="desc"><b>修改</b>: ★ 全新文件。HCCL checkpoint engine — 通过 ZMQ PUB/SUB 广播 bucket 元数据 + HCCL p2p broadcast 传输权重 tensor, 实现训练侧 &rarr; 推理侧的跨节点权重同步。
+      支持双缓冲 (<code>send_buf</code> / <code>recv_buf</code>) 异步 pipeline, bucket 粒度传输。
+    </div>
+    <div class="why"><b>为什么</b>: 训推分离架构的<b>核心组件</b>。没有它, 训练后的权重无法传给推理节点。替代了 verl 原生的 NCCL checkpoint engine (NPU 无 NCCL)。
+      <span class="badge bad">Bug E</span></div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/experimental/agent_loop/agent_loop.py</div>
+    <div class="desc"><b>修改</b>: Agent loop (RL 数据收集循环) 的 NPU 适配 — 设备检测、tensor 放置位置、rollout worker 初始化。</div>
+    <div class="why"><b>为什么</b>: Agent loop 是 verl 的 rollout 调度核心, 驱动 vLLM generate 请求的分发和结果收集。NPU 环境需要修改 worker 创建和设备放置。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/models/mcore/config_converter.py</div>
+    <div class="desc"><b>修改</b>: DeepSeek V4 Flash 的 mcore config &lrarr; HF config 互转。将 DeepSeek V4 特有的 MLA/MoE/MHC/DSA 配置字段在两个配置空间之间映射。</div>
+    <div class="why"><b>为什么</b>: verl 需要从 HF config 构建 mcore config (训练) 和 vLLM config (推理)。缺少这些映射字段, 两端配置不一致会导致模型结构/并行策略失配。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/models/mcore/util.py</div>
+    <div class="desc"><b>修改</b>: mcore 工具函数的 V4 适配 — 参数提取、模型保存/恢复、权重遍历等通用函数 NPU 化。</div>
+    <div class="why"><b>为什么</b>: 上游 util 假设 CUDA 环境, 部分函数用 <code>.cuda()</code> / <code>.cpu()</code> 而非 device-agnostic 写法。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/single_controller/ray/base.py</div>
+    <div class="desc"><b>修改</b>: Ray resource bundle 自定义 — 在创建 Ray PlacementGroup 时, 从环境变量 <code>VERL_TRAIN_BUNDLE_CUSTOM_RESOURCES</code> / <code>VERL_ROLLOUT_BUNDLE_CUSTOM_RESOURCES</code> 读取自定义资源标签 (如 <code>{"train_node": 1e-4}</code>), 注入到 Ray bundle spec 中, 实现训练/推理 worker 的节点亲和调度。</div>
+    <div class="why"><b>为什么</b>: 训推分离必须确保训练 worker 只落在 112 节点、推理 worker 只落在 155 节点。不设节点亲和, Ray 可能把两类 worker 混排到同一个节点 &rarr; 双占 NPU &rarr; HCCL resource unavailable。
+      <span class="badge bad">Bug E</span></div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/trainer/config/engine/mindspeed.yaml</div>
+    <div class="desc"><b>修改</b>: MindSpeed engine 的 YAML 配置文件 — 定义 MindSpeed 后端的默认参数 (sequence_parallel, use_sparse_flash_attn 等)。</div>
+    <div class="why"><b>为什么</b>: verl 通过 Hydra config 管理多引擎后端。MindSpeed 是 NPU 训练的后端引擎, 需要独立的 config yaml 声明默认值。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/trainer/constants_ppo.py</div>
+    <div class="desc"><b>修改</b>: PPO Ray runtime env 配置 — 注入 NPU 特有的环境变量到 Ray TaskRunner actor 的 <code>runtime_env.env_vars</code>:
+      <ul style="margin-top:4px">
+        <li><code>HCCL_HOST_SOCKET_PORT_RANGE=auto</code>, <code>HCCL_NPU_SOCKET_PORT_RANGE=auto</code> — 自动端口分配 (Bug E 关键修复)</li>
+        <li><code>VERL_TRAIN_BUNDLE_CUSTOM_RESOURCES</code>, <code>VERL_ROLLOUT_BUNDLE_CUSTOM_RESOURCES</code> — 节点亲和标签</li>
+        <li><code>HCCL_ENTRY_LOG_ENABLE=1</code> — HCCL 日志诊断</li>
+        <li><code>PYTHONPATH</code> 传递 — Ray 不转发 shell PYTHONPATH, 必须显式注入, 否则 EngineRegistry 找不到 mindspeed_llm</li>
+      </ul>
+    </div>
+    <div class="why"><b>为什么</b>: <b>这是 Bug E 的核心修复文件</b>。CANN 9.1.0-beta.3 上默认 <code>HCCL_IF_BASE_PORT=60000</code> 且不递增, 同 device 上 vLLM comm (ranks[8]) 和 checkpoint engine comm (ranks[9]) 同端口冲突。
+      设为 <code>auto</code> 启用 HCCL 自动端口分配。注意: cann-9.0.0 + A2 需要 pop auto (MC2 不兼容), 9.1.0 已修复此问题。
+      <span class="badge bad">Bug E</span>
+    </div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/trainer/ppo/ray_trainer.py</div>
+    <div class="desc"><b>修改</b>: Ray PPO trainer 的 NPU 适配 — HCCL weight sync 触发 (训练 step 后调用 checkpoint engine 广播权重到 rollout worker)、skip rollout 逻辑 (debug 模式)。</div>
+    <div class="why"><b>为什么</b>: PPO trainer 是训练主循环。需要在每个 training step 后插入 <code>update_weights_to_rollout</code> 步骤, 训练/推理权重保持一致。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/trainer/runtime_env.yaml</div>
+    <div class="desc"><b>修改</b>: Ray runtime env YAML 声明 — 定义基础的 env_vars 和 working_dir (可选)。</div>
+    <div class="why"><b>为什么</b>: verl 把 runtime env 抽到独立 yaml 是为了配置分离, 实际大部分 env 在 <code>constants_ppo.py</code> 中动态注入。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/utils/device.py</div>
+    <div class="desc"><b>修改</b>: NPU 设备检测 — 增加 <code>is_npu_available</code> / <code>is_torch_npu_available</code> 函数, 返回 NPU 设备数量和当前 device。</div>
+    <div class="why"><b>为什么</b>: verl 的分布式模块需要知道运行时设备类型 (npu/cuda)。不增加此检测, 全部 <code>torch.cuda</code> 调用会在 NPU 上崩溃。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/utils/distributed.py</div>
+    <div class="desc"><b>修改</b>: 分布式通信的 HCCL 适配 — <code>stateless_init_process_group</code> 使用 HCCL backend 而非 NCCL, 支持 IPV6 地址。</div>
+    <div class="why"><b>为什么</b>: hccl_checkpoint_engine 需要 stateless process group (不依赖 torch.distributed.init_process_group) 来在训练和推理进程间建立临时通信组。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/utils/megatron_utils.py</div>
+    <div class="desc"><b>修改</b>: Megatron 参数提取的 V4 适配 — 从 Megatron 模型中提取命名的参数 (用于 HCCL weight sync 时构建参数列表)。</div>
+    <div class="why"><b>为什么</b>: HCCL checkpoint engine 需要模型的 named_parameters() 来构建 weight bucket。DeepSeek V4 的模型结构有特殊的命名模式 (expert_bias 不在 named_parameters 中但在 state_dict 中)。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/utils/megatron/router_replay_utils.py</div>
+    <div class="desc"><b>修改</b>: Router replay — ★ 推理侧重现训练侧 MoE 路由决策。在训练侧记录每个 token 的 expert assignment, 推理侧重放相同路由, 确保 inference-time expert choice 与 training-time 一致。</div>
+    <div class="why"><b>为什么</b>: GRPO RL 中 advantage 计算依赖 <code>log_prob(old_policy) - log_prob(ref_policy)</code>。如果推理侧 MoE routing 与训练侧不同, 即使权重相同 <code>old_log_prob</code> 也会偏差 &rarr; advantage 计算错误。
+      这是确保 <b>训练-推理等价性</b> 的关键模块。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/utils/vllm/npu_vllm_patch.py</div>
+    <div class="desc"><b>修改</b>: vLLM NPU 初始化 patch — 在 vLLM worker 启动时设置 NPU 特有的环境变量 (<code>VLLM_ALL2ALL_BACKEND=flashinfer_all2allv</code>, <code>VLLM_ASCEND_ENABLE_NZ=0</code>) 和设备检测。</div>
+    <div class="why"><b>为什么</b>: vllm-ascend 需要特定的 env 来正确初始化 alltoall 后端和 zero-copy 内存分配。不设这些 env 会导致 vLLM MoE 通信失败。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/utils/vllm/patch.py</div>
+    <div class="desc"><b>修改</b>: vLLM MoE weight loader patch — <code>patch_vllm_moe_model_weight_loader</code> 为 vLLM 的 MoE 模型注入正确的 weight_loader 函数 (处理 fused w13 weight split)。</div>
+    <div class="why"><b>为什么</b>: vLLM 的默认 weight_loader 对 MindSpeed fused w13 (gate+up 合并) 格式不知情。不 patch 会导致 vLLM 加载权重时 shape mismatch。
+      <span class="badge bad">Bug H 间接相关</span></div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/workers/engine/megatron/transformer_impl.py</div>
+    <div class="desc"><b>修改</b>: Megatron 引擎实现 — forward_step, log_prob 计算 (训练侧: old_log_prob, ref_log_prob), 适配 DeepSeek V4 的模型接口。</div>
+    <div class="why"><b>为什么</b>: verl 通过 transformer_impl 抽象不同后端 (Megatron/MindSpeed) 的 forward 接口。DSv4 的 forward 签名和输出格式与 GPT 不同, 需要适配。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/workers/engine/mindspeed/transformer_impl.py</div>
+    <div class="desc"><b>修改</b>: MindSpeed 引擎实现 — NPU 训练的核心引擎, 调用 MindSpeed-LLM 的 DeepSeek V4 model provider 进行 forward/backward。</div>
+    <div class="why"><b>为什么</b>: MindSpeed 是 Ascend NPU 的训练后端, 与 Megatron engine 并行存在。训练实际走 MindSpeed 路径。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/workers/engine/mindspeed/utils.py</div>
+    <div class="desc"><b>修改</b>: MindSpeed 引擎工具函数 — 模型参数收集、gradient 处理、weight sync 前的参数准备。</div>
+    <div class="why"><b>为什么</b>: 辅助 transformer_impl, 提供训练循环中的参数管理功能。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/workers/rollout/vllm_rollout/bucketed_weight_transfer.py</div>
+    <div class="desc"><b>修改</b>: 分桶权重传输 — 将训练侧导出的权重按 bucket 分批通过 ZMQ IPC 传输给 vLLM worker。降低单次传输的 HBM 峰值。</div>
+    <div class="why"><b>为什么</b>: 一次传输全部权重 (&gt;8GB per NPU) 会导致 HBM spike, 可能 OOM。分桶传输 (pipeline: send bucket N+1 同时 recv bucket N) 降低峰值。</div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/workers/rollout/vllm_rollout/utils.py</div>
+    <div class="desc"><b>修改</b>: vLLM rollout worker 扩展类 — 3 个关键块:
+      <ul style="margin-top:4px">
+        <li><b>update_weights_from_ipc</b>: 从 checkpoint engine 接收权重 → 调用 vLLM <code>load_weights</code> 更新推理模型。
+          包含 Bug H 修复: load 前对 MoE w13/w2 做 <code>transpose(1,2)</code> 逆转置 (vllm-ascend 的 <code>process_weights_after_loading</code> 在初始加载后做了转置, 每次 update 前需逆转置恢复加载布局)。</li>
+        <li><b>HCCL port range 不 pop</b>: CANN 9.1.0-beta.3 要求保留 auto 端口分配，不像 9.0.0 需要 pop 来规避 MC2 不兼容。</li>
+        <li><b>vLLM 环境变量注入</b>: <code>VLLM_ALL2ALL_BACKEND=flashinfer_all2allv</code>, <code>VLLM_ASCEND_ENABLE_NZ=0</code></li>
+      </ul>
+    </div>
+    <div class="why"><b>为什么</b>: 权重同步的 NPU 侧完整流程。没有 MoE w13/w2 逆转置, 权重布局不一致导致推理结果偏差。
+      <span class="badge bad">Bug H 修复</span></div>
+  </div>
+
+  <div class="file-card">
+    <div class="fn">verl/workers/rollout/vllm_rollout/vllm_async_server.py</div>
+    <div class="desc"><b>修改</b>: vLLM async server 的 NPU 适配 — 设备检测、tensor 放置、max_tokens 计算 debug log (<code>DEBUG max_tokens = min(response_length={rl}, prompt_length+response_length-len(prompt_ids)={pl}+{rl}-{pid}={v}) = {min_val}</code>)。</div>
+    <div class="why"><b>为什么</b>: Bug I 排查的关键 — debug log 揭示了 <code>len(prompt_ids) &gt; prompt_length</code> 导致 <code>max_tokens=0</code> 的真实原因。
+      <span class="badge bad">Bug I</span></div>
+  </div>
+
+  <!-- ======== vllm-ascend ======== -->
+  <h3>9.4 vllm-ascend (1 文件) — Block Table Triton 替换</h3>
+
+  <div class="file-card">
+    <div class="fn">vllm-ascend/vllm_ascend/worker/block_table.py</div>
+    <div class="desc"><b>修改</b>: ★ Bug J 核心修复。CP=1 路径的 <code>compute_slot_mapping</code> 和 <code>compute_slot_mapping_draft</code> 方法:
+      原 upstream 代码调用 <code>_compute_slot_mapping_kernel[(grid,)]</code> (Triton kernel subscript), Ascend 上 Triton=jit 是 identity decorator, 导致 <code>TypeError: 'function' object is not subscriptable</code>。
+      修改为: CP=1 时也构造 <code>req_indices</code> tensor, 调用 <code>_compute_pcp_dcp_slot_mapping</code> — vllm-ascend CP&gt;1 路径已验证的纯 PyTorch 实现 (通过 total_cp_world_size=1 退化到单 rank)。
+    </div>
+    <div class="why"><b>为什么</b>: Ascend NPU 不支持 Triton JIT 编译。任何 <code>@triton.jit</code> 修饰的函数都是纯 Python 函数, 不能 subscript launch。
+      <code>_compute_pcp_dcp_slot_mapping</code> 是 100% PyTorch (index calculation + mask + scatter), 与 Triton 无关, 在 CP=1 退化下完全可用。
+      <span class="badge bad">Bug J</span> (最高成本 Bug, 占 7/14 轮)</div>
+  </div>
+
+  <!-- ======== mbridge + site-packages ======== -->
+  <h3>9.5 mbridge + site-packages (7 文件) — 模型注册与权重桥接</h3>
+  <p class="muted">详见 <a href="#mbridge">§4 mbridge 详细分析</a>, 此处汇总:</p>
   <div class="table-wrap">
     <table>
-      <thead><tr>
-        <th>能力</th><th>镜像支持</th><th>说明</th>
-      </tr></thead>
+      <thead><tr><th>文件</th><th>作用</th><th>Bug</th></tr></thead>
       <tbody>
-        <tr><td>verl GRPO 训练框架</td><td><span class="ok">&check;</span></td><td>verl 0.8.0.dev0, 含 MindSpeed 引擎后端</td></tr>
-        <tr><td>vLLM 推理引擎</td><td><span class="ok">&check;</span></td><td>v0.23.0, 含 vllm-ascend NPU 后端</td></tr>
-        <tr><td>DS V4 Flash 模型 spec</td><td><span class="ok">&check;</span></td><td>MindSpeed-LLM deepseek4_spec.py, G2/MHC/DSA indexer</td></tr>
-        <tr><td>Megatron-LM 训练框架</td><td><span class="ok">&check;</span></td><td>core_r0.12.0, TP/PP/EP/DP</td></tr>
-        <tr><td>mbridge 权重桥接</td><td><span class="ok">&check;</span></td><td>v0.15.1, mcore &harr; HF</td></tr>
-        <tr><td>HCCL 通信后端</td><td><span class="ok">&check;</span></td><td>NPU RDMA, 需 overlay checkpoint_engine</td></tr>
-        <tr><td>MoE EP 并行</td><td><span class="ok">&check;</span></td><td>256 experts, alltoall dispatcher</td></tr>
-        <tr><td>FP8 safetensor</td><td><span class="ok">&check;</span></td><td>FP8&rarr;BF16 dequant on the fly (BF16 权重不走此路径)</td></tr>
-        <tr><td>DS V4 MLA 注意力</td><td><span class="warn">部分</span></td><td>G2 + MHC 可用, 但 MLA 权重 EP 切分有 Bug (Bug H)</td></tr>
-        <tr><td>Triton kernel</td><td><span class="bad">&cross;</span></td><td><code>triton.jit</code> 退化 identity, subscript 调用全失败</td></tr>
-        <tr><td>sparse_flash_attn</td><td><span class="bad">&cross;</span></td><td>依赖 <code>cann_ops_transformer</code>, 镜像未包含</td></tr>
+        <tr><td><code>mbridge/core/bridge.py</code></td><td>4 处修改: norm bias 过滤, ETP=1 broadcast, EP all_gather + 双格式 expert ID, 1D tensor fallback</td><td>F/G, H</td></tr>
+        <tr><td><code>mbridge/core/llm_bridge.py</code></td><td>并行配置扩展 (ETP/CP), mcore 0.12 vp_stage 兼容</td><td>&mdash;</td></tr>
+        <tr><td><code>mbridge/models/deepseek_v3.py</code></td><td>deepseek_v4 模型注册 + 完整 MLA/MoE/MHC/compressor/DSA 映射 + BF16 safetensor IO</td><td>F/G 间接</td></tr>
+        <tr><td><code>mbridge/models/ext/.../dequant_fp8_safetensor_io.py</code></td><td>FP8 safetensor reader (NPU device), 本次 BF16 不走此路径</td><td>&mdash;</td></tr>
+        <tr><td><code>register_dsv4.py</code></td><td>AutoConfig.register + __getattr__ fallback (20 个缺失属性)</td><td>F/G 间接</td></tr>
+        <tr><td><code>patch_dsv4_config.py</code></td><td>__init__ patch 设置 20 个缺失 config 属性默认值</td><td>F/G 间接</td></tr>
+        <tr><td><code>deepseek_v4_init.pth</code></td><td>Python startup 自动 import register_dsv4</td><td>&mdash;</td></tr>
       </tbody>
     </table>
   </div>
 
-  <h3>Overlay 文件分布</h3>
+  <h3>9.6 文件分布总览</h3>
   <div class="table-wrap">
     <table>
-      <thead><tr>
-        <th>组件</th><th class="num">文件数</th><th>关键文件</th><th>关联 Bug</th>
-      </tr></thead>
+      <thead><tr><th>组件</th><th class="num">文件数</th><th>性质</th><th>关联 Bug</th></tr></thead>
       <tbody>
-        <tr><td>mbridge</td><td class="num">5</td><td>bridge.py, llm_bridge.py, deepseek_v3.py, dequant_fp8_safetensor_io.py, register_dsv4.py</td><td>F/G, H</td></tr>
-        <tr><td>verl</td><td class="num">16</td><td>ray_trainer.py, hccl_checkpoint_engine.py, base.py, constants_ppo.py, transformer_impl.py, vllm_async_server.py, config_converter.py, ...</td><td>E, H, I</td></tr>
-        <tr><td>vllm-ascend</td><td class="num">1</td><td>block_table.py</td><td>J</td></tr>
-        <tr><td>MindSpeed-LLM</td><td class="num">14</td><td>pretrain_deepseek4.py, g2_attention.py, g2_attention_kernel.py, rmsnorm_without_weight.py, mhc_triton.py, sinkhorn.py, hybrid_optimizer.py, ...</td><td>K, prereq</td></tr>
-        <tr><td>Megatron-LM</td><td class="num">3</td><td>distrib_optimizer.py, p2p_communication.py, transformer_config.py</td><td>prereq</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>2 节点部署的 7 项关键改动</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th>#</th><th>改动</th><th>目的</th><th>Bug</th>
-      </tr></thead>
-      <tbody>
-        <tr><td>1</td><td>4 层 surrogate (43&rarr;4)</td><td>绕过 HBM 约束, 功能验证</td><td>D</td></tr>
-        <tr><td>2</td><td>训推分离 (112 train + 155 rollout)</td><td>推理 EP=1 OOM, 必须 EP 切分</td><td>D, E</td></tr>
-        <tr><td>3</td><td>TP=2 + ETP=2 (训练)</td><td>MLA attention EP 切分需要 TP</td><td>H</td></tr>
-        <tr><td>4</td><td>HCCL checkpoint engine</td><td>训推分离必须: 权重跨节点广播</td><td>E</td></tr>
-        <tr><td>5</td><td>MAX_PROMPT_LENGTH=200 (原 32)</td><td>GSM8K 实际 prompt 67-171 tokens</td><td>I</td></tr>
-        <tr><td>6</td><td>CP=1 block table PyTorch 替换</td><td>Ascend Triton identity decorator</td><td>J</td></tr>
-        <tr><td>7</td><td>use_sparse_flash_attn=False</td><td><code>cann_ops_transformer</code> 未安装</td><td>K</td></tr>
+        <tr><td>Megatron-LM</td><td class="num">3</td><td>训练框架 NPU 适配 (optimizer buffer + PP 通信 + config)</td><td>H (间接)</td></tr>
+        <tr><td>MindSpeed-LLM</td><td class="num">7</td><td>训练算子 NPU 适配 (model provider + G2 attention + MHC + Sinkhorn + RMSNorm + hybrid optimizer)</td><td>K</td></tr>
+        <tr><td>verl</td><td class="num">18</td><td>GRPO 框架完整适配 (HCCL checkpoint engine + Ray placement + config + forward engine + weight sync + router replay)</td><td>E, H, I</td></tr>
+        <tr><td>vllm-ascend</td><td class="num">1</td><td>Block table Triton &rarr; PyTorch 替换</td><td>J</td></tr>
+        <tr><td>mbridge + site-packages</td><td class="num">7</td><td>模型注册 + 完整权重映射 + EP/TP 权重合并拆分修复</td><td>F/G, H</td></tr>
+        <tr style="font-weight:600"><td>合计</td><td class="num">39</td><td colspan="2"></td></tr>
       </tbody>
     </table>
   </div>
 </section>
 
-<!-- ═══════════ 关键教训 ═══════════ -->
+<!-- ═══════════ 10. 关键教训 ═══════════ -->
 <section id="lessons">
-  <h2>关键教训</h2>
-
+  <h2>10. 关键教训</h2>
   <div class="two-col">
     <div>
       <h3>不该犯的错</h3>
       <div class="note bad">
         <div class="note-title">MAX_PROMPT_LENGTH=32 凭假设设</div>
-        成本 2h (3 轮)。没先打日志看数据分布, 应 <b>先测实际数据再设参数</b>。
+        成本 2h (3 轮)。没先打日志看数据分布。GSM8K tokenize 后 60-171 tokens vs 初始假设 32。
       </div>
       <div class="note bad">
         <div class="note-title">debug print 直接写容器漏改 155</div>
         成本 10min。违反 R0: 禁止直接改远程文件。应 overlay &rarr; rsync &rarr; setup。
       </div>
       <div class="note bad">
-        <div class="note-title">J&rarr;J2&rarr;J3 三轮自造</div>
-        成本 4.5h (7 轮)。没搜索已有 CP&gt;1 路径, 应 <b>复用已有优于自造</b>。
+        <div class="note-title">J&rarr;J2&rarr;J3 三轮自造 Triton 替代</div>
+        成本 4.5h (7 轮)。没搜索已有 CP&gt;1 路径。复用已有优于自造。
       </div>
     </div>
     <div>
       <h3>模式级教训</h3>
       <div class="note warn">
-        <div class="note-title">串行试错的低效</div>
-        核心问题: 看到错误 &rarr; 立刻改代码 &rarr; 部署验证 (7 分钟起跳) &rarr; 看下一个错误。<br>
-        应该是: 每个错误 <b>三问</b> (说啥/合理吗/根因在我改的东西里吗) 后才动手。
+        <div class="note-title">串行试错低效</div>
+        每个错误 三问 (说啥/合理吗/根因在哪) 后才动手, 而非看到错误 &rarr; 改代码 &rarr; 部署验证 (7 分钟起跳)。
       </div>
       <div class="note warn">
         <div class="note-title">多 bug 同源找共同假设</div>
-        D/E/F/G/H 同属"训推分离架构假设不完整", 应一次性解决而非逐个修。
+        D/E/F/G/H 同属"训推分离架构假设不完整", 应一次性解决。
       </div>
       <div class="note info">
-        <div class="note-title">可行性硬约束先算清</div>
-        模型大小 vs HBM: 4-node 数学不可行在首轮就应通过算术排除, 而非实测 OOM 6 次。
+        <div class="note-title">可行性硬约束先算清再动手</div>
+        4-node 数学不可行在首轮就应通过算术排除, 而非实测 OOM 6 次。
       </div>
     </div>
   </div>
-
-  <h3>低效模式总结</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th>错误</th><th>成本</th><th>根因</th><th>下次</th>
-      </tr></thead>
-      <tbody>
-        <tr><td>MAX_PROMPT_LENGTH=32 凭假设设</td><td>2h (3 轮)</td><td>没先打日志看数据分布</td><td>先测实际数据再设参数</td></tr>
-        <tr><td>debug print 直接写容器漏改 155</td><td>10min</td><td>违反 R0: 禁止直接改远程文件</td><td>overlay &rarr; rsync &rarr; setup</td></tr>
-        <tr><td>hybrid Gen_EP=1 估错显存</td><td>1h (方案废弃)</td><td>把 MoE 当 Dense 算了</td><td>先算再动手</td></tr>
-        <tr><td>J&rarr;J2&rarr;J3 三轮自造</td><td class="bad">4.5h</td><td>没搜索已有 CP&gt;1 路径</td><td>复用已有优于自造</td></tr>
-        <tr><td>声称新版本多了某行实际同 commit</td><td>30min</td><td>未先 git log/diff 验证</td><td>所有结论有证据</td></tr>
-      </tbody>
-    </table>
-  </div>
 </section>
 
-<!-- ═══════════ 后续路径 ═══════════ -->
+<!-- ═══════════ 11. 后续路径 ═══════════ -->
 <section id="next">
-  <h2>后续路径</h2>
-
-  <div class="metrics">
-    <div class="metric"><div class="v info">4&rarr;8&rarr;16</div><div class="label">增加层数找 2-node HBM 上限</div></div>
-    <div class="metric"><div class="v warn">8-node</div><div class="label">全参训练需 DDP gradient streaming</div></div>
-    <div class="metric"><div class="v info">extract</div><div class="label">提取 Bug J + F/G patch 提交上游</div></div>
-    <div class="metric"><div class="v info">PS</div><div class="label">PrefixSharing 集成验证</div></div>
-  </div>
-
+  <h2>11. 后续路径</h2>
   <ol>
-    <li><b>增加层数</b>: 4 &rarr; 8 &rarr; 16 层, 找到 2 节点 HBM 上限, 为目标规模提供参考</li>
+    <li><b>增加层数</b>: 4 &rarr; 8 &rarr; 16 层, 找到 2 节点 HBM 上限</li>
     <li><b>8 节点全参</b>: 需要 DDP gradient streaming patch (16.5GB bucket OOM 问题)</li>
-    <li><b>提取 patch</b>: Bug J (block_table.py) + Bug F/G (bridge.py) 提取为独立 patch, 可提交上游社区</li>
-    <li><b>清理 overlay</b>: 删除 debug print (<code>vllm_async_server.py</code> max_tokens 行)</li>
-    <li><b>PrefixSharing 集成</b>: 在 2-node 或 8-node 上验证 PrefixSharing on/off 基线对照</li>
+    <li><b>提取 patch</b>: Bug J (block_table.py) + Bug F/G (bridge.py) 提取为独立 patch, 可提交上游</li>
+    <li><b>清理 overlay</b>: 删除 debug print (<code>vllm_async_server.py</code>)</li>
+    <li><b>PrefixSharing 集成</b>: 在 2-node 或 8-node 验证 PrefixSharing on/off 基线对照</li>
   </ol>
-
-  <h3>已证明不可行的路径</h3>
   <div class="note warn">
-    <div class="note-title">以下方案已证伪, 不必重试</div>
+    <div class="note-title">已证明不可行的路径</div>
     <ul>
-      <li>4 节点 32 NPU 全参: 数学不可行 (59.8GB &gt; 61GB 可用 HBM)</li>
+      <li>4 节点 32 NPU 全参: 数学不可行 (59.8GB &gt; 61GB HBM)</li>
       <li>4 节点 PP=2: ETP(64) &gt; world_size(32)</li>
-      <li>8 节点 PP=2 无 gradient streaming: DDP bucket 16.5GB 导致 OOM</li>
-      <li>hybrid (Gen_EP=1 推理 + EP=4 训练): 对 MoE 把显存当 Dense 算, 方案级错误</li>
+      <li>8 节点 PP=2 无 gradient streaming: DDP bucket 16.5GB OOM</li>
     </ul>
   </div>
 </section>
@@ -743,7 +1018,7 @@
 </main>
 
 <footer>
-  Generated 2026-07-31 &middot; <a href="https://github.com/versatile-ai/AutoModelWire">GitHub</a> &middot; 数据来源: <a href="https://github.com/versatile-ai/AutoModelWire/blob/experiments/deepseek-v4-flash/experiments/verl-npu-deepseek-with-prefix-sharing/docs/experiment_summary.md">experiment_summary.md</a> &middot; 日志: <code>train_20260731_003106.log</code> (9 steps)
+  Generated 2026-07-31 &middot; <a href="https://github.com/versatile-ai/AutoModelWire">GitHub</a> &middot; 数据来源: experiment_summary.md, deploy_timeline.md, lessons_learned.md, baseline/overlay/ (39 files), baseline/scripts/setup.sh
 </footer>
 
 </body>
