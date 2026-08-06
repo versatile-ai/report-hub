@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="GLM-5.2 L1 算子层 — 三算子 fwd+bwd 可用, 梯度对齐 min corr 0.9980, 5.5.4 两 bug 修正">
+<title>L1 算子层 — L1S1 → L1S2 (2026-08-06)</title>
+<style>
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{font-family:'SF Mono','Fira Code',Consolas,monospace;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .breadcrumb{max-width:1100px;margin:0 auto;padding:20px 48px 0;font-size:12px;color:var(--tertiary);letter-spacing:0.2px}
+  .breadcrumb a{color:var(--muted)} .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)} .breadcrumb .current{color:var(--text)}
+  header{max-width:1100px;margin:0 auto;padding:28px 48px 32px;border-bottom:1px solid var(--border)}
+  h1{font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;margin-bottom:10px;color:var(--text)}
+  .meta{font-size:13px;color:var(--muted);line-height:1.6} .meta b{color:var(--text);font-weight:500}
+  .toc{max-width:1100px;margin:0 auto;padding:24px 48px;border-bottom:1px solid var(--border)}
+  .toc-label{font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);text-transform:uppercase;margin-bottom:10px}
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)} .toc a:hover{color:var(--accent)}
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+  section{margin-bottom:48px} section:last-child{margin-bottom:0}
+  h2{font-size:20px;font-weight:600;letter-spacing:-0.3px;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);color:var(--text)}
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)} p.muted,.muted{color:var(--muted)}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+  .metric,.stat{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px 18px}
+  .metric .v,.stat .v{font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;font-variant-numeric:tabular-nums}
+  .metric .label,.stat .label{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary)}
+  .v.good,.mv-good{color:var(--green)} .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)} .v.info,.mv-info{color:var(--info)}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{background:var(--surface-2);color:var(--accent);text-align:left;font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--border)}
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+  .flow{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:20px}
+  .flow-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .flow-node{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:12px;color:var(--text);font-family:'SF Mono','Fira Code',Consolas,monospace}
+  .flow-node.hl{border-color:var(--accent);color:var(--accent)}
+  .flow-arrow{color:var(--tertiary);font-size:14px}
+  .chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:18px;margin-bottom:20px;overflow-x:auto}
+  .note{border-left:3px solid var(--accent);background:var(--info-bg);padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px}
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+  code{font-family:'SF Mono','Fira Code',Consolas,monospace;background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text)}
+  footer{max-width:1100px;margin:0 auto;padding:24px 48px 40px;border-top:1px solid var(--border);font-size:12px;color:var(--tertiary)}
+  footer a{color:var(--accent)}
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px} h2{font-size:18px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-npu-grpo-glm52">GLM-5.2 GRPO RL on Ascend NPU</a><span class="sep">/</span>
+  <span class="current">阶段报告</span>
+</nav>
+
+<header>
+  <h1>L1 算子层 — L1S1 → L1S2</h1>
+  <div class="meta">Stage Report · 2026-08-04 → 2026-08-05 · 910B 64GB · 训练/推理双容器 · 报告日期 2026-08-06</div>
+</header>
+
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">关键指标</a></li>
+    <li><a href="#env">环境与镜像</a></li>
+    <li><a href="#s1">L1S1 三算子</a></li>
+    <li><a href="#s2">L1S2 精度对齐</a></li>
+    <li><a href="#summary">层总结</a></li>
+  </ol>
+</nav>
+
+<main class="container">
+
+  <section id="metrics">
+    <h2>关键指标</h2>
+    <div class="metrics">
+      <div class="metric"><div class="v good">4/6</div><div class="label">完成格</div></div>
+      <div class="metric"><div class="v info">0.9980</div><div class="label">梯度 min corr</div></div>
+      <div class="metric"><div class="v info">1.0</div><div class="label">修正后 fwd corr</div></div>
+      <div class="metric"><div class="v info">10 iter</div><div class="label">三算子 fwd+bwd</div></div>
+      <div class="metric"><div class="v info">2</div><div class="label">5.5.4 bug 修复</div></div>
+      <div class="metric"><div class="v warn">2</div><div class="label">L1S3 未启动</div></div>
+    </div>
+  </section>
+
+  <section id="env">
+    <h2>实验环境与镜像</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项</th><th>训练容器 (verl-pkg)</th><th>推理容器</th></tr></thead>
+        <tbody>
+          <tr><td>镜像</td><td><code>verl:9.1.0-beta.3-910b-v0.24.0rc</code></td><td><code>quay.io/ascend/vllm-ascend:glm5.2</code></td></tr>
+          <tr><td>ID (sha256)</td><td><code>6d5c539bebe4…</code></td><td><code>48ea8ac6fdc5…</code></td></tr>
+          <tr><td>transformers</td><td class="ok"><b>5.11.0</b></td><td class="ok"><b>5.5.4</b></td></tr>
+          <tr><td>vllm core</td><td>0.24.0</td><td>0.23.0</td></tr>
+          <tr><td>vllm-ascend</td><td>0.1.dev1</td><td>glm5.2 适配版</td></tr>
+          <tr><td>CANN / python</td><td>9.1.0-beta.3 / 3.11.15</td><td>9.1.0-beta.3 / 3.11</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note ok">
+      <div class="note-title">版本纠偏</div>
+      训练容器实测为 verl-pkg (transformers 5.11.0, glm_moe_dsa 原生), 而非 <code>mindspeed-llm</code> 镜像 (transformers 4.57.4 无法加载 GLM-5.2)。
+    </div>
+  </section>
+
+  <section id="s1">
+    <h2>L1S1 三算子可用 (✅ 08-04)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>验收项</th><th>阈值</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td>① 三算子 fwd+bwd 各 10 iter</td><td>各 10 iter</td><td class="ok">✅ 零报错</td></tr>
+          <tr><td>② 梯度无 NaN</td><td>无 NaN/Inf</td><td class="ok">✅ check_finite 断言</td></tr>
+          <tr><td>③ loss 下降</td><td>SGD 后下降</td><td class="ok">✅ 每 iter after_sgd &lt; before</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>三算子链路</h3>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node hl">MLA</div><span class="flow-arrow">→</span>
+        <div class="flow-node">q_a+kv_a → q_b/kv_b</div><span class="flow-arrow">→</span>
+        <div class="flow-node">attention (qk_layernorm)</div>
+      </div>
+      <div class="flow-row" style="margin-top:8px">
+        <div class="flow-node hl">MoE</div><span class="flow-arrow">→</span>
+        <div class="flow-node">router → topk</div><span class="flow-arrow">→</span>
+        <div class="flow-node">experts (fc1/fc2) → shared</div>
+      </div>
+      <div class="flow-row" style="margin-top:8px">
+        <div class="flow-node hl">DSA</div><span class="flow-arrow">→</span>
+        <div class="flow-node">indexer (wq_b/wk/k_norm/weights_proj)</div><span class="flow-arrow">→</span>
+        <div class="flow-node">topk 稀疏选择</div>
+      </div>
+      <div class="muted" style="margin-top:8px;font-size:12px">L1S1 打通 DSA indexer 训练 bwd: 原生 @no_grad → 算子链 grad 复刻</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件</th><th>修改</th></tr></thead>
+        <tbody>
+          <tr><td>mindspeed dsa_indexer</td><td>算子链 fwd+bwd, @no_grad → 可训练</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="s2">
+    <h2>L1S2 精度对齐 (✅ 08-05)</h2>
+    <h3>训练梯度对齐 (35 参数组全 PASS)</h3>
+    <div class="chart-wrap">
+      <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三算子梯度相关系数: MLA 0.9998, MoE 0.9998, DSA 0.9984, T=3072 原生 topk 0.9980">
+        <rect x="0" y="0" width="720" height="200" fill="#161B22" rx="6"/>
+        <line x1="60" y1="170" x2="680" y2="170" stroke="#30363D" stroke-width="1"/>
+        <line x1="60" y1="25" x2="60" y2="170" stroke="#30363D" stroke-width="1"/>
+        <!-- threshold line 0.99 -->
+        <line x1="60" y1="77" x2="680" y2="77" stroke="#D29922" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="660" y="70" fill="#D29922" font-size="10" font-family="'SF Mono',monospace">0.99 阈值</text>
+        <!-- bars: value → y = 170 - (v - 0.99) / (1.0 - 0.99) * 145 -->
+        <rect x="105" y="25" width="60" height="145" fill="#3FB950" opacity="0.85" rx="3"/><text x="135" y="18" text-anchor="middle" fill="#3FB950" font-size="12" font-family="'SF Mono',monospace">0.9998</text><text x="135" y="188" text-anchor="middle" fill="#8B949E" font-size="11">MLA</text>
+        <rect x="245" y="25" width="60" height="145" fill="#3FB950" opacity="0.85" rx="3"/><text x="275" y="18" text-anchor="middle" fill="#3FB950" font-size="12" font-family="'SF Mono',monospace">0.9998</text><text x="275" y="188" text-anchor="middle" fill="#8B949E" font-size="11">MoE</text>
+        <rect x="385" y="40" width="60" height="130" fill="#79C0FF" opacity="0.85" rx="3"/><text x="415" y="33" text-anchor="middle" fill="#79C0FF" font-size="12" font-family="'SF Mono',monospace">0.9984</text><text x="415" y="188" text-anchor="middle" fill="#8B949E" font-size="11">DSA</text>
+        <rect x="525" y="48" width="60" height="122" fill="#D29922" opacity="0.85" rx="3"/><text x="555" y="41" text-anchor="middle" fill="#D29922" font-size="12" font-family="'SF Mono',monospace">0.9980</text><text x="555" y="188" text-anchor="middle" fill="#8B949E" font-size="11">T=3072 topk</text>
+      </svg>
+    </div>
+    <div class="note warn">
+      <div class="note-title">min corr 出处</div>
+      0.9980 来自 "indexer T=3072 原生 topk" 行 (topk 索引相等率 0.1164, 近 tie 边界); dummy 模型 gate 近 tie, 梯度对齐用同索引注入。
+    </div>
+    <h3>推理跨实现一致 (5.5.4 两 bug)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>状态</th><th>T</th><th>corr</th><th>判定</th></tr></thead>
+        <tbody>
+          <tr><td>as-is (双容器)</td><td class="num">128 / 3072</td><td class="num bad">0.24-0.43</td><td class="bad">❌</td></tr>
+          <tr><td>修正后 D1 (rope+causal)</td><td class="num">128</td><td class="num ok">1.0000</td><td class="ok">✅</td></tr>
+          <tr><td>修正后 D1</td><td class="num">3072</td><td class="num ok">1.0010*</td><td class="ok">✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">* corr&gt;1.0 为测量伪影 (476M 元素 fp32 累加 ~1e-4 噪声), 逐层 hidden corr 1.0000-1.0001。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Bug</th><th>影响</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><b>5.5.4 half-split RoPE</b> (忽略 rope_interleave)</td><td>每层 q/k 旋转不同 → 全层失配</td></tr>
+          <tr><td>2</td><td><b>5.5.4 无因果掩码</b></td><td>双向 vs 因果 → 全层失配 (主要)</td></tr>
+          <tr><td>3</td><td>layer3 indexer 权重缺口 (5 MISSING)</td><td>T=3072 下影响 &lt; 精度</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node">权重抽样逐位相等</div><span class="flow-arrow">→</span>
+        <div class="flow-node">排除权重差异</div>
+      </div>
+      <div class="flow-row" style="margin-top:8px">
+        <div class="flow-node">layer0 逐点 bisect</div><span class="flow-arrow">→</span>
+        <div class="flow-node hl">o_proj 输入首分歧 (corr 0.42)</div><span class="flow-arrow">→</span>
+        <div class="flow-node">差异在 attention core</div>
+      </div>
+      <div class="flow-row" style="margin-top:8px">
+        <div class="flow-node">复刻: interleaved=1.0000 / halfsplit 失配</div>
+      </div>
+      <div class="flow-row" style="margin-top:8px">
+        <div class="flow-node">sdpa 实参捕获: mask 全 False + q_pe halfsplit</div><span class="flow-arrow">→</span>
+        <div class="flow-node ok">两 bug 同时确认</div>
+      </div>
+      <div class="flow-row" style="margin-top:8px">
+        <div class="flow-node hl">内存级修正后重跑 → 1.0000 ✓</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="summary">
+    <h2>层总结</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>格</th><th>成果</th><th>关键数据</th></tr></thead>
+        <tbody>
+          <tr><td>L1S1-train</td><td>三算子可训练 (含 DSA bwd)</td><td>10 iter 零报错</td></tr>
+          <tr><td>L1S1-infer</td><td>双容器加载</td><td>4.52B / 4.53B</td></tr>
+          <tr><td>L1S2-train</td><td>训练数值正确性</td><td>min corr 0.9980</td></tr>
+          <tr><td>L1S2-infer</td><td>训推实现一致性</td><td>修正后 corr 1.0</td></tr>
+          <tr><td>遗留</td><td>L1S3 性能未启动</td><td class="warn">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Generated 2026-08-06 · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a>
+</footer>
+
+</body>
+</html>

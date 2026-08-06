@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="GLM-5.2 L2 引擎层 — vllm-ascend serve + megatron-lora 30 steps, lm loss 13.11→5.92">
+<title>L2 引擎层 — serve + megatron-lora (2026-08-06)</title>
+<style>
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{font-family:'SF Mono','Fira Code',Consolas,monospace;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .breadcrumb{max-width:1100px;margin:0 auto;padding:20px 48px 0;font-size:12px;color:var(--tertiary);letter-spacing:0.2px}
+  .breadcrumb a{color:var(--muted)} .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)} .breadcrumb .current{color:var(--text)}
+  header{max-width:1100px;margin:0 auto;padding:28px 48px 32px;border-bottom:1px solid var(--border)}
+  h1{font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;margin-bottom:10px;color:var(--text)}
+  .meta{font-size:13px;color:var(--muted);line-height:1.6} .meta b{color:var(--text);font-weight:500}
+  .toc{max-width:1100px;margin:0 auto;padding:24px 48px;border-bottom:1px solid var(--border)}
+  .toc-label{font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);text-transform:uppercase;margin-bottom:10px}
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)} .toc a:hover{color:var(--accent)}
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+  section{margin-bottom:48px} section:last-child{margin-bottom:0}
+  h2{font-size:20px;font-weight:600;letter-spacing:-0.3px;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);color:var(--text)}
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)} p.muted,.muted{color:var(--muted)}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+  .metric,.stat{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px 18px}
+  .metric .v,.stat .v{font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;font-variant-numeric:tabular-nums}
+  .metric .label,.stat .label{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary)}
+  .v.good,.mv-good{color:var(--green)} .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)} .v.info,.mv-info{color:var(--info)}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{background:var(--surface-2);color:var(--accent);text-align:left;font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--border)}
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+  .chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:18px;margin-bottom:20px;overflow-x:auto}
+  .flow{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:20px}
+  .flow-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .flow-node{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:12px;color:var(--text);font-family:'SF Mono','Fira Code',Consolas,monospace}
+  .flow-node.hl{border-color:var(--accent);color:var(--accent)}
+  .flow-arrow{color:var(--tertiary);font-size:14px}
+  .note{border-left:3px solid var(--accent);background:var(--info-bg);padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px}
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+  code{font-family:'SF Mono','Fira Code',Consolas,monospace;background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text)}
+  footer{max-width:1100px;margin:0 auto;padding:24px 48px 40px;border-top:1px solid var(--border);font-size:12px;color:var(--tertiary)}
+  footer a{color:var(--accent)}
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px} h2{font-size:18px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-npu-grpo-glm52">GLM-5.2 GRPO RL on Ascend NPU</a><span class="sep">/</span>
+  <span class="current">阶段报告</span>
+</nav>
+
+<header>
+  <h1>L2 引擎层 — serve + megatron-lora</h1>
+  <div class="meta">Stage Report · 2026-08-04 → 2026-08-05 · 910B 64GB · 训练/推理双容器 · 报告日期 2026-08-06</div>
+</header>
+
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">关键指标</a></li>
+    <li><a href="#env">环境与镜像</a></li>
+    <li><a href="#infer">L2S1-infer</a></li>
+    <li><a href="#train">L2S1-train-megatron-lora</a></li>
+    <li><a href="#summary">层总结</a></li>
+  </ol>
+</nav>
+
+<main class="container">
+
+  <section id="metrics">
+    <h2>关键指标</h2>
+    <div class="metrics">
+      <div class="metric"><div class="v good">2/15</div><div class="label">完成格</div></div>
+      <div class="metric"><div class="v info">30/30</div><div class="label">训练 steps</div></div>
+      <div class="metric"><div class="v info">13.11→5.92</div><div class="label">lm loss</div></div>
+      <div class="metric"><div class="v info">HTTP 200</div><div class="label">serve</div></div>
+      <div class="metric"><div class="v info">32 tokens</div><div class="label">生成</div></div>
+      <div class="metric"><div class="v info">16</div><div class="label">版本分叉修复点</div></div>
+    </div>
+  </section>
+
+  <section id="env">
+    <h2>实验环境与镜像</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项</th><th>训练容器 (verl-pkg)</th><th>推理容器</th></tr></thead>
+        <tbody>
+          <tr><td>镜像</td><td><code>verl:9.1.0-beta.3-910b-v0.24.0rc</code></td><td><code>quay.io/ascend/vllm-ascend:glm5.2</code></td></tr>
+          <tr><td>ID (sha256)</td><td><code>6d5c539bebe4…</code></td><td><code>48ea8ac6fdc5…</code></td></tr>
+          <tr><td>transformers</td><td>5.11.0</td><td>5.5.4 (两 bug 修正)</td></tr>
+          <tr><td>vllm core</td><td>0.24.0</td><td class="warn"><b>0.23.0</b> (VLLM_VERSION=0.21.0)</td></tr>
+          <tr><td>vllm-ascend</td><td>0.1.dev1</td><td>glm5.2 适配版</td></tr>
+          <tr><td>mindspeed-llm</td><td>archive + glm5_spec (L2S1 自建)</td><td>—</td></tr>
+          <tr><td>Megatron-LM</td><td>mcore 0.12.1</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="infer">
+    <h2>L2S1-infer (✅ 08-04)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>验收项</th><th>阈值</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td>① serve 启动</td><td>API 可用</td><td class="ok">✅ Application startup complete, HTTP 200</td></tr>
+          <tr><td>② 生成</td><td>非空, 无 NaN</td><td class="ok">✅ 32 tokens, 164 字符</td></tr>
+          <tr><td>③ 服务日志</td><td>无 ERROR</td><td class="ok">✅ 0 (grep ERROR/Traceback)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>版本分叉修复 (serve 首启崩溃)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项</th><th>详情</th></tr></thead>
+        <tbody>
+          <tr><td>症状</td><td class="bad">ModuleNotFoundError: expert_map_manager</td></tr>
+          <tr><td>根因</td><td>vllm-ascend 版本分叉以 <code>vllm_version_is("0.21.0")</code> 严格相等为基准; 镜像 vllm <code>__version__=0.1.dev1+g418bd6273</code> 使全部分叉走 else (新版 API), 但 vllm 0.23.0 无新版 API</td></tr>
+          <tr><td>修复</td><td class="ok"><code>VLLM_VERSION=0.21.0</code> env → 分叉走 0.21.0 分支</td></tr>
+          <tr><td>影响面</td><td><b>6 文件 16 处</b>: eplb_utils 1 / gdn 4 / fused_moe 3 / deepseek_v4 1 / worker 1 / model_runner_v1 6</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node hl">glm5.2-infer (vllm 0.23.0, VLLM_VERSION=0.21.0)</div><span class="flow-arrow">→</span>
+        <div class="flow-node">vllm engine (transformers 5.5.4, glm_moe_dsa)</div><span class="flow-arrow">→</span>
+        <div class="flow-node">OpenAI API HTTP 200</div><span class="flow-arrow">→</span>
+        <div class="flow-node ok">32 tokens 生成</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="train">
+    <h2>L2S1-train-megatron-lora (✅ 08-04)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>验收项</th><th>阈值</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td>① 训练 step</td><td>≥5</td><td class="ok">✅ <b>30/30</b></td></tr>
+          <tr><td>② loss 下降</td><td>有下降</td><td class="ok">✅ lm 13.11 → 5.92</td></tr>
+          <tr><td>③ checkpoint</td><td>训练产物</td><td class="ok">✅ iteration 30 保存</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>lm loss 曲线</h3>
+    <div class="chart-wrap">
+      <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="L2S1 lm loss 从 13.11 收敛到 5.92">
+        <rect x="0" y="0" width="720" height="240" fill="#161B22" rx="6"/>
+        <line x1="60" y1="20" x2="60" y2="200" stroke="#30363D" stroke-width="1"/>
+        <line x1="60" y1="200" x2="680" y2="200" stroke="#30363D" stroke-width="1"/>
+        <text x="70" y="35" fill="#3FB950" font-size="11" font-family="'SF Mono',monospace">13.11</text>
+        <text x="70" y="200" fill="#8B949E" font-size="10" font-family="'SF Mono',monospace">iter1</text>
+        <text x="250" y="200" fill="#8B949E" font-size="10" font-family="'SF Mono',monospace">iter12</text>
+        <text x="410" y="200" fill="#8B949E" font-size="10" font-family="'SF Mono',monospace">iter20</text>
+        <text x="590" y="200" fill="#8B949E" font-size="10" font-family="'SF Mono',monospace">iter29</text>
+        <text x="670" y="200" fill="#8B949E" font-size="10" font-family="'SF Mono',monospace">iter30</text>
+        <!-- points: x: 60+iter/30*600, y: 20 + (13.11-v)/13.11*175 -->
+        <polyline fill="none" stroke="#A78BFA" stroke-width="2.5"
+          points="60,40 260,108 440,150 620,183 670,172"/>
+        <circle cx="60" cy="40" r="4" fill="#A78BFA"/>
+        <circle cx="260" cy="108" r="4" fill="#A78BFA"/>
+        <circle cx="440" cy="150" r="4" fill="#A78BFA"/>
+        <circle cx="620" cy="183" r="4" fill="#A78BFA"/>
+        <circle cx="670" cy="172" r="4" fill="#A78BFA"/>
+        <text x="65" y="30" fill="#A78BFA" font-size="11" font-family="'SF Mono',monospace">13.11</text>
+        <text x="250" y="100" fill="#A78BFA" font-size="11" font-family="'SF Mono',monospace">8.44</text>
+        <text x="430" y="142" fill="#A78BFA" font-size="11" font-family="'SF Mono',monospace">7.06</text>
+        <text x="600" y="176" fill="#A78BFA" font-size="11" font-family="'SF Mono',monospace">5.92</text>
+        <text x="665" y="164" fill="#A78BFA" font-size="11" font-family="'SF Mono',monospace">6.26</text>
+      </svg>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>iteration</th><th class="num">lm loss</th><th class="num">dsa_indexer_loss</th><th class="num">grad norm</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="num">~13.11</td><td class="num">0.504</td><td class="num">2.21</td></tr>
+          <tr><td>12</td><td class="num">8.44</td><td class="num">0.435</td><td class="num">6.99</td></tr>
+          <tr><td>20</td><td class="num">7.06</td><td class="num">0.417</td><td class="num">4.60</td></tr>
+          <tr><td>29</td><td class="num">5.92</td><td class="num">0.412</td><td class="num">4.03</td></tr>
+          <tr><td>30</td><td class="num">6.26</td><td class="num">0.429</td><td class="num">3.89</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">全程 loss scale 1.0 / num zeros 0 / nan 0; 首 iter 5043ms (checkpoint 转换), 稳态 ~1.7-2.2s/iter。</p>
+    <h3>模型组装结构</h3>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node hl">glm5_spec (mcore layer_spec)</div>
+      </div>
+      <div class="flow-row" style="margin-top:8px">
+        <div class="flow-node">CustomMLASelfAttention</div><span class="flow-arrow">→</span>
+        <div class="flow-node">DSAIndexer</div><span class="flow-arrow">→</span>
+        <div class="flow-node">MoE (32E + shared)</div>
+      </div>
+      <div class="flow-sub muted" style="margin-top:8px;font-size:12px">LoRA: lora-r16/alpha32, 目标 6 类线性层 (linear_qkv/linear_proj/linear_q_up_proj/linear_kv_up_proj/fc1/fc2) — 成为 L3S1 直接复用的引擎基座</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件</th><th>修改</th></tr></thead>
+        <tbody>
+          <tr><td>MindSpeed glm5_spec</td><td>layer_spec 全组装 (MLA+DSA+MoE), L3S1 复用</td></tr>
+          <tr><td>MindSpeed LoraFeature</td><td>lora 目标层注入 (6 类线性层)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="summary">
+    <h2>层总结</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>格</th><th>成果</th><th>关键数据</th></tr></thead>
+        <tbody>
+          <tr><td>L2S1-infer</td><td>serve 可用 (含版本分叉修复)</td><td>HTTP 200 / 32 tokens</td></tr>
+          <tr><td>L2S1-train-megatron-lora</td><td>训练引擎组装 + LoRA</td><td>30/30 steps, loss 13.11→5.92</td></tr>
+          <tr><td>可复用资产</td><td>glm5_spec → L3S1 继承</td><td>mbridge 20/20 映射属 L3S1 产物</td></tr>
+          <tr><td>遗留</td><td>fsdp-full 主路径未启动</td><td class="warn">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Generated 2026-08-06 · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a>
+</footer>
+
+</body>
+</html>

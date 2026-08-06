@@ -544,6 +544,13 @@
 
 <script>
 const EXPERIMENTS=[
+  {id:"verl-speco-npu-rl-drafter",name:"verl-SpeCo NPU RL Drafter",subtitle:"EAGLE-3 在线 drafter 训练 (投机权重更新机制) · Qwen3-8B · 235x argmax gap 根因 = 权重来源非采样位置 · 训练产物从不回写磁盘 · 方案 A (n-2 对齐) 待验证",status:"active",startDate:"2026-07-22",lastUpdate:"2026-08-03",
+   tags:["verl","SpeCo","EAGLE-3","Qwen3-8B","Ascend 910B3","投机解码","在线drafter训练","RL","SHM热更新","权重来源"],
+   metrics:[{label:"R25 top1_acc",value:"0.52→0.91",tone:"good"},{label:"R25 ploss",value:"1756→245",tone:"good"},{label:"acceptance",value:"1.00003 (R25)",tone:"bad"},{label:"argmax_match",value:"0 (R27-A)",tone:"bad"},{label:"训练间隔",value:"5 steps",tone:"info"}],
+   reports:[
+   {title:"投机权重更新机制 — 完整图解",subtitle:"架构总览 (8卡分配) · 触发条件 (双闸) · 3处 MethodType 插入 · SHM 内存热更新链路 · 训练数据来源 · 235x gap 根因诊断 · 下一步验证方案",file:"verl-speco-npu-rl-drafter/2026-08-03-speco-drafter-mechanism.html",date:"2026-08-03",type:"diagnosis"}
+   ]
+  },
   {id:"deepseek-v4-npu-dspark",name:"DSpark on Ascend NPU",subtitle:"DeepSeek-V4-Flash-DSpark 推测解码适配 (eager + 图模式 + 性能优化)",status:"active",startDate:"2026-07-14",lastUpdate:"2026-07-22",
    tags:["DSpark","Ascend 910B3","vllm-ascend 0.23.0","推测解码","4节点 32卡","TP=8 DP=4"],
    metrics:[{label:"TPOT",value:"36ms",tone:"good"},{label:"Graph TPOT",value:"33ms DP=2",tone:"good"},{label:"Accept",value:"2.25",tone:"good"},{label:"加速比",value:"19%",tone:"warn"},{label:"Bug修复",value:"21/21",tone:"info"}],
@@ -588,6 +595,16 @@ const EXPERIMENTS=[
    reports:[
    {title:"基线报告 — 2-Node Smoke Test 完整记录",subtitle:"环境版本 · 并行策略 · HBM 估算 · 性能分解 · 10 Bug 清单 · 部署时间线 · 39 文件 overlay · 5 条关键教训 · 后续路径",file:"verl-npu-deepseek-prefix-sharing/2026-07-31-baseline-report.html",date:"2026-07-31",type:"stage"},
    {title:"PS vs Baseline 对照实验 — 性能与显存对比 (v2)",subtitle:"唯一变量 ENABLE_PREFIX_SHARING 0/1 · step 时间中位数 ↓25% (75.7s→56.6s) · 推理 HBM 峰值 ↓154MB · PS ratio 0.26-0.28 · restore 25/25 · 严格受控归因",file:"verl-npu-deepseek-prefix-sharing/2026-08-03-ps-baseline-comparison.html",date:"2026-08-03",type:"final"}
+   ]
+  },
+  {id:"verl-npu-grpo-glm52",name:"GLM-5.2 GRPO RL on Ascend NPU",subtitle:"双容器训推分离 (NPU 0-3 + 4-7) · 4+4 卡 TP=4 冒烟 2/2 steps · 23 集成 Bug 修复 · 4 路径证伪 · 梯度对齐 min corr 0.9980 · megatron-lora 30 steps",status:"active",startDate:"2026-07-30",lastUpdate:"2026-08-06",
+   tags:["GLM-5.2","GRPO","verl","Ascend 910B","训推分离","fully-async","mbridge","MindSpeed","4+4卡","TP=4","DSA indexer","MoE","MLA"],
+   metrics:[{label:"完成格",value:"7/33",tone:"good"},{label:"L3S1 冒烟",value:"2/2 steps",tone:"good"},{label:"s/iter",value:"116.78s",tone:"info"},{label:"梯度 corr",value:"0.9980",tone:"good"},{label:"lm loss",value:"13.11→5.92",tone:"good"},{label:"Bug 修复",value:"23",tone:"info"},{label:"路径证伪",value:"4",tone:"warn"},{label:"Train HBM",value:"20.7GB/卡",tone:"info"}],
+   reports:[
+   {title:"L1 算子层 — L1S1 → L1S2",subtitle:"三算子 fwd+bwd 10 iter 零报错 · 梯度对齐 min corr 0.9980 · 5.5.4 两 bug (half-split RoPE + 无因果掩码) 修正后 corr 1.0 · 双镜像 (名称+ID) 溯源",file:"verl-npu-grpo-glm52/2026-08-06-l1-ops.html",date:"2026-08-06",type:"stage"},
+   {title:"L2 引擎层 — serve + megatron-lora",subtitle:"vllm-ascend serve HTTP 200 + 32 tokens · VLLM_VERSION=0.21.0 版本分叉修复 (6 文件 16 处) · megatron-lora 30/30 steps · lm loss 13.11→5.92 (SVG 曲线) · glm5_spec 成为 L3S1 基座",file:"verl-npu-grpo-glm52/2026-08-06-l2-engine.html",date:"2026-08-06",type:"stage"},
+   {title:"L3S1 集成层 — GRPO 训推分离冒烟",subtitle:"4+4 卡 TP=4 双容器 · 分离架构 (NFS+MQ+coordinator) · mbridge 权重链路 + NPU 分域隔离 · 2/2 steps exit 0 · 23 Bug · 4 路径证伪 · 双镜像版本矩阵",file:"verl-npu-grpo-glm52/2026-08-06-l3s1-integration.html",date:"2026-08-06",type:"stage"},
+   {title:"GLM-5.2 GRPO RL — 实验主报告",subtitle:"7/33 格完成度 3×3 矩阵 · L×S 细化表 · 依赖 DAG · 双镜像三列版本矩阵 (名称+ID) · 6 关键适配 · 23 失败记录 · 下一步 P0-P2",file:"verl-npu-grpo-glm52/2026-08-06-overall.html",date:"2026-08-06",type:"stage"}
    ]
   }
 ];

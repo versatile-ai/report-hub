@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="GLM-5.2 GRPO 训推分离 L3S1 集成层冒烟 — 4+4 卡 TP=4, 2/2 steps, 23 个问题修复">
+<title>L3S1 集成层 — GRPO 训推分离冒烟 (2026-08-06)</title>
+<style>
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{font-family:'SF Mono','Fira Code',Consolas,monospace;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .breadcrumb{max-width:1100px;margin:0 auto;padding:20px 48px 0;font-size:12px;color:var(--tertiary);letter-spacing:0.2px}
+  .breadcrumb a{color:var(--muted)} .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)} .breadcrumb .current{color:var(--text)}
+  header{max-width:1100px;margin:0 auto;padding:28px 48px 32px;border-bottom:1px solid var(--border)}
+  h1{font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;margin-bottom:10px;color:var(--text)}
+  .meta{font-size:13px;color:var(--muted);line-height:1.6} .meta b{color:var(--text);font-weight:500}
+  .toc{max-width:1100px;margin:0 auto;padding:24px 48px;border-bottom:1px solid var(--border)}
+  .toc-label{font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);text-transform:uppercase;margin-bottom:10px}
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)} .toc a:hover{color:var(--accent)}
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+  section{margin-bottom:48px} section:last-child{margin-bottom:0}
+  h2{font-size:20px;font-weight:600;letter-spacing:-0.3px;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);color:var(--text)}
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)} p.muted,.muted{color:var(--muted)}
+  ul,ol{margin:0 0 14px 22px} li{margin-bottom:6px}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+  .metric,.stat{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px 18px}
+  .metric .v,.stat .v{font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;font-variant-numeric:tabular-nums}
+  .metric .label,.stat .label{font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary)}
+  .v.good,.mv-good{color:var(--green)} .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)} .v.info,.mv-info{color:var(--info)}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{background:var(--surface-2);color:var(--accent);text-align:left;font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--border)}
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+  .timeline{position:relative;padding-left:22px;margin-bottom:20px}
+  .timeline::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin-bottom:18px}
+  .tl-item::before{content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--bg)}
+  .tl-item.ok::before{background:var(--green)} .tl-item.warn::before{background:var(--yellow)} .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary);margin-bottom:2px}
+  .tl-body{color:var(--text)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;letter-spacing:0.4px}
+  .badge.ok{background:var(--green-bg);color:var(--green)} .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)} .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{display:inline-block;padding:3px 9px;border-radius:3px;font-size:11px;color:var(--tertiary);background:var(--surface-2);letter-spacing:0.2px;margin:0 6px 6px 0}
+  .note{border-left:3px solid var(--accent);background:var(--info-bg);padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px}
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px;padding:14px 16px;overflow-x:auto;margin-bottom:16px;font-size:13px;font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text)}
+  code{font-family:'SF Mono','Fira Code',Consolas,monospace;background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text)}
+  pre code{background:none;padding:0}
+  .arch{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+  .arch-box{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px}
+  .arch-box h4{font-size:12px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+  .arch-box ul{list-style:none;margin:0;padding:0}
+  .arch-box li{font-size:13px;padding:5px 0;border-bottom:1px dashed var(--border);color:var(--muted)}
+  .arch-box li:last-child{border-bottom:none}
+  .arch-box li b{color:var(--text);font-weight:500}
+  .arch-box li .port{color:var(--info);font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:12px}
+  .flow{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px;margin-bottom:20px}
+  .flow-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .flow-node{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:12px;color:var(--text);font-family:'SF Mono','Fira Code',Consolas,monospace}
+  .flow-node.hl{border-color:var(--accent);color:var(--accent)}
+  .flow-arrow{color:var(--tertiary);font-size:16px}
+  .flow-sub{margin-top:6px}
+  footer{max-width:1100px;margin:0 auto;padding:24px 48px 40px;border-top:1px solid var(--border);font-size:12px;color:var(--tertiary)}
+  footer a{color:var(--accent)}
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px} h2{font-size:18px}
+    .arch{grid-template-columns:1fr}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-npu-grpo-glm52">GLM-5.2 GRPO RL on Ascend NPU</a><span class="sep">/</span>
+  <span class="current">阶段报告</span>
+</nav>
+
+<header>
+  <h1>L3S1 集成层 — GRPO 训推分离冒烟</h1>
+  <div class="meta">Stage Report · 2026-08-05 → 2026-08-06 · 910B 64GB 8-NPU 单节点 · 双容器分离 · 报告日期 2026-08-06</div>
+</header>
+
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">关键指标</a></li>
+    <li><a href="#arch">分离部署架构</a></li>
+    <li><a href="#images">双镜像依赖</a></li>
+    <li><a href="#changes">关键修改</a></li>
+    <li><a href="#config">冒烟配置</a></li>
+    <li><a href="#data">数据集与效果</a></li>
+    <li><a href="#paths">探索证伪</a></li>
+    <li><a href="#failures">失败记录</a></li>
+    <li><a href="#next">下一步</a></li>
+  </ol>
+</nav>
+
+<main class="container">
+
+  <section id="metrics">
+    <h2>关键指标</h2>
+    <div class="metrics">
+      <div class="metric"><div class="v good">2/2</div><div class="label">GRPO Steps</div></div>
+      <div class="metric"><div class="v good">exit 0</div><div class="label">exit_code</div></div>
+      <div class="metric"><div class="v info">116.78s</div><div class="label">s/iter</div></div>
+      <div class="metric"><div class="v info">20.7GB</div><div class="label">Train HBM/卡</div></div>
+      <div class="metric"><div class="v info">3.3GB</div><div class="label">Rollout HBM/卡</div></div>
+      <div class="metric"><div class="v good">23</div><div class="label">Bug 修复</div></div>
+      <div class="metric"><div class="v warn">4</div><div class="label">路径证伪</div></div>
+      <div class="metric"><div class="v warn">3</div><div class="label">P0 未闭环</div></div>
+    </div>
+    <div class="note warn">
+      <div class="note-title">验收降级</div>
+      score_mean 数值未落盘 (trainer 仅进度条) — "训练信号"验收项部分通过, 待 L3S2 或后续冒烟补证。
+    </div>
+  </section>
+
+  <section id="arch">
+    <h2>分离部署架构</h2>
+    <p class="muted">双容器同宿主 (8×910B), 训练 NPU 0-3 + 推理 NPU 4-7 分域隔离; 跨容器经 3 类通道协作。</p>
+    <div class="arch">
+      <div class="arch-box">
+        <h4>glm52-l3s1 · 训练容器</h4>
+        <ul>
+          <li>镜像 <b>verl:...-vllm0.25.1-custom-ops</b></li>
+          <li>NPU <b>0-3</b> (Ray head 排列 env 首位)</li>
+          <li>coordinator HTTP <span class="port">:22001</span></li>
+          <li>trainer_driver <span class="port">:22002</span></li>
+          <li>Ray head <span class="port">:6866</span></li>
+          <li>actor / ref — mindspeed megatron TP=4</li>
+          <li>训练 20.7GB/卡 (余量充足)</li>
+        </ul>
+      </div>
+      <div class="arch-box">
+        <h4>glm5.2-infer · 推理容器</h4>
+        <ul>
+          <li>镜像 <b>vllm-ascend:glm5.2</b></li>
+          <li>NPU <b>4-7</b> (Ray head 排列 env 首位)</li>
+          <li>MQ server <span class="port">:21010</span> (独立线程)</li>
+          <li>rollout_driver <span class="port">:23001</span></li>
+          <li>Ray head <span class="port">:6766</span></li>
+          <li>vLLM engine TP=4, util 0.3</li>
+          <li>推理 3.3GB/卡</li>
+        </ul>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>通道</th><th>协议</th><th>端口</th><th>方向</th><th>承载</th></tr></thead>
+        <tbody>
+          <tr><td>① 权重同步</td><td>NFS 共享盘</td><td class="num">—</td><td>训练 → 推理</td><td>全量权重导出 (lora merge), 每 sync 步一次</td></tr>
+          <tr><td>② 样本流</td><td>TCP MQ 帧协议</td><td class="num">21010</td><td>推理 → 训练</td><td>8 samples/step, FRAME_SAMPLE 附 queue_len 背压</td></tr>
+          <tr><td>③ 控制面</td><td>HTTP aiohttp</td><td class="num">22001</td><td>双向</td><td>register / update_weights / param_version 一致性</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>GRPO 单步数据流</h3>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node hl">vLLM TP=4 (NPU 4-7)</div><span class="flow-arrow">→</span>
+        <div class="flow-node">TCP MQ :21010</div><span class="flow-arrow">→</span>
+        <div class="flow-node">trainer (FullyAsync)</div><span class="flow-arrow">→</span>
+        <div class="flow-node">actor/ref megatron TP=4</div><span class="flow-arrow">→</span>
+        <div class="flow-node">NFS 权重</div><span class="flow-arrow">→</span>
+        <div class="flow-node hl">rollout 下一轮 n=4</div>
+      </div>
+      <div class="flow-sub muted">采样 n=4 (prompt≤512, response≤256) · 8 samples/step · GRPO ppo_epochs=1 · 全量权重导出</div>
+    </div>
+    <h3>编排时序</h3>
+    <div class="timeline">
+      <div class="tl-item ok"><div class="tl-date">1 · 训练容器</div><div class="tl-body">m3_serve3.py → coordinator :22001 + trainer_driver :22002</div></div>
+      <div class="tl-item ok"><div class="tl-date">2 · 推理容器</div><div class="tl-body">rollouter (MQ :21010 独立线程 + driver :23001) → 注册 coordinator</div></div>
+      <div class="tl-item ok"><div class="tl-date">3 · 训练容器</div><div class="tl-body">立即启动 verl train — <code>_wait_for_rollout_registered</code> 轮询 900s 等注册</div></div>
+    </div>
+  </section>
+
+  <section id="images">
+    <h2>双镜像内部依赖</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>组件</th><th>训练镜像</th><th>推理镜像</th><th>备注</th></tr></thead>
+        <tbody>
+          <tr><td>transformers</td><td class="ok"><b>5.11.0</b></td><td class="ok"><b>5.5.4</b></td><td>均 glm_moe_dsa 原生; 5.5.4 两 bug (L1S2)</td></tr>
+          <tr><td>verl</td><td>0.9.0.dev</td><td>0.9.0.dev (verl09 注入)</td><td>推理容器原生无 verl, PYTHONPATH 注入</td></tr>
+          <tr><td>vllm core</td><td>0.24.0 → 0.25.1</td><td class="warn"><b>0.23.0</b></td><td>VLLM_VERSION=0.21.0 分叉基准</td></tr>
+          <tr><td>vllm-ascend</td><td>0.1.dev1</td><td>glm5.2 适配版</td><td>推理含 MTP/SFA/quant 适配</td></tr>
+          <tr><td>mindspeed-llm</td><td>archive 20260721 + glm5_spec</td><td>—</td><td>glm5_spec L2S1 自建复用</td></tr>
+          <tr><td>mbridge</td><td>0.15.1 + Glm52Bridge</td><td>—</td><td>NVIDIA 新桥 5 项硬阻断证伪</td></tr>
+          <tr><td>Megatron-LM</td><td>mcore 0.12.1</td><td>—</td><td>—</td></tr>
+          <tr><td>CANN</td><td>9.1.0-beta.3</td><td>9.1.0-beta.3</td><td>全局共享</td></tr>
+          <tr><td>Ray</td><td>2.x</td><td>2.48 → 2.56.1</td><td>双集群独立 6866/6766</td></tr>
+          <tr><td>python</td><td>3.11.15</td><td>3.11</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note info">
+      <div class="note-title">镜像溯源 (48 节点实测)</div>
+      训练: <code>verl:9.1.0-beta.3-910b-vllm0.25.1-mindspeed-llm-custom-ops</code> <code>sha256:7f952983ddd4…</code><br>
+      推理: <code>quay.io/ascend/vllm-ascend:glm5.2</code> <code>sha256:48ea8ac6fdc5…</code>
+    </div>
+    <div class="note warn">
+      <div class="note-title">版本缺口</div>
+      训练域 vllm 0.24→0.25.1 变更未记入 version_matrix 决策日志 (待补)。
+    </div>
+  </section>
+
+  <section id="changes">
+    <h2>关键修改</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>修改</th><th>问题</th><th>效果</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="ok"><b>★ mbridge Glm52Bridge 权重链路</b></td><td>linear_qkv 按 TP chunk (HCCL scatter 2624 vs 656)</td><td>LinearNoTP 广播 → 加载通过</td></tr>
+          <tr><td>2</td><td class="ok"><b>★ fully_async_policy 移植 verl 0.9</b></td><td>verl 0.9 原生不支持远端 vLLM</td><td>编排等待 / MQ 独立线程 / async 化</td></tr>
+          <tr><td>3</td><td class="ok"><b>★ NPU 分域隔离</b></td><td>VLLMWorker 落 0-3 撞训练 OOM</td><td>Ray 排列 env + vLLM env → 无撞卡</td></tr>
+          <tr><td>4</td><td>MoE+TP 检查降级</td><td>硬 raise 阻断 SP=False</td><td>5 处 warning 降级 (临时)</td></tr>
+          <tr><td>5</td><td>dsa_indexer dtype</td><td>LayerNorm 161002 (BF16/FP32)</td><td>weight.to(x.dtype) — 真实修复</td></tr>
+          <tr><td>6</td><td>NFS checkpoint 后端</td><td>—</td><td>double-cluster 移植</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note ok">
+      <div class="note-title">核心突破</div>
+      ① mbridge 基类 linear_qkv TP 特判是 DeepSeek 式 MLA 假设 — GLM-5.2 为 LinearNoTP (完整 latent 2624 维), 重写 <code>_weight_split_across_tp</code> 广播; 单卡 TP=1 短路不触发, 4 卡才暴露。
+    </div>
+  </section>
+
+  <section id="config">
+    <h2>冒烟配置参数</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>参数</th><th>值</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>model_engine</td><td>mindspeed</td><td>MindSpeedMegatronEngineWithLMHead</td></tr>
+          <tr><td>TP/PP/CP/EP/ETP</td><td>4/1/1/1/1</td><td>单节点 4 卡</td></tr>
+          <tr><td>sequence_parallel</td><td class="warn">False</td><td>变长序列冲突 (MoE 检查降级)</td></tr>
+          <tr><td>shape_order / mla_fa_divide_qk</td><td>SBH / False</td><td>BNSD 变长崩溃</td></tr>
+          <tr><td>enable_dsa_indexer</td><td>True</td><td>topk=2048, freq=4, skip=3</td></tr>
+          <tr><td>num_experts / topk</td><td>32 / 8</td><td>alltoall dispatcher</td></tr>
+          <tr><td>seq / micro / global batch</td><td>512 / 1 / 8</td><td>—</td></tr>
+          <tr><td>use_distributed_optimizer</td><td>True</td><td>TP=4 每卡 6.75GB Adam</td></tr>
+          <tr><td>algorithm</td><td>grpo, kl=0</td><td>ppo_epochs=1, lr=1e-6</td></tr>
+          <tr><td>rollout</td><td>vllm TP=4, util 0.3</td><td>n=4, max_model_len=1024, enforce_eager</td></tr>
+          <tr><td>trainer.save_freq</td><td class="warn">-1</td><td>冒烟禁用 checkpoint</td></tr>
+          <tr><td>ASCEND_RT_VISIBLE_DEVICES</td><td>训 0-3 / 推 4-7</td><td>Ray head 排列 env</td></tr>
+          <tr><td>VLLM_VERSION</td><td>0.21.0 (推理)</td><td>vllm-ascend 分叉基准</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="data">
+    <h2>数据集与效果</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>数据集</td><td>GSM8K (verl 格式)</td></tr>
+          <tr><td>train / test</td><td class="num">7473 / 1319</td></tr>
+          <tr><td>处理</td><td>prompt≤512, response≤256, filter_overlong</td></tr>
+          <tr><td>采样 n</td><td class="num">4</td></tr>
+          <tr><td>模型</td><td>GLM-5.2 4L-32E dummy, 4.52B params</td></tr>
+          <tr><td>Training Progress</td><td class="ok">100% 2/2 [03:21, 116.78s/it]</td></tr>
+          <tr><td>完成状态</td><td class="ok">Trainer completed successfully + exit_code=0</td></tr>
+          <tr><td>global_steps</td><td class="num">2 → 3 → 6 → 10 (多步真实训练)</td></tr>
+          <tr><td>score_mean</td><td class="warn">未落盘 (验收降级)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="paths">
+    <h2>技术路径探索</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>路径</th><th>结论</th><th>阻断点</th></tr></thead>
+        <tbody>
+          <tr><td>A. NVIDIA Megatron-Bridge 升级</td><td class="bad">❌ 证伪</td><td>5 项硬阻断: python3.12 / transformers&lt;5.9 / flashinfer / NPU kernels / mcore≥0.16</td></tr>
+          <tr><td>B. 训练容器 vLLM 0.24 在线同步</td><td class="bad">❌ 证伪</td><td>weight shape 不匹配 GLM-5.2</td></tr>
+          <tr><td>C. 单卡 4.52B full 训练</td><td class="bad">❌ 证伪</td><td>~57GB 基线 + 峰值超 64GB</td></tr>
+          <tr><td>D. SP=True + 变长序列</td><td class="bad">❌ 证伪</td><td>reduce-scatter 整除失败</td></tr>
+          <tr><td class="ok"><b>E. 4+4 卡 TP=4 训推分离</b></td><td class="ok">✅ 当前</td><td>每卡 ~20.7GB, 余量充足</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>C 路径内存核算</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项</th><th class="num">单卡 TP=1</th><th class="num">4 卡 TP=4</th></tr></thead>
+        <tbody>
+          <tr><td>权重 bf16</td><td class="num">9.0 GB</td><td class="num">2.25 GB</td></tr>
+          <tr><td>Adam fp32 双状态</td><td class="num">27 GB</td><td class="num">6.75 GB</td></tr>
+          <tr><td>实测基线</td><td class="num bad">~57GB (OOM)</td><td class="num ok">20.7 GB ✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="failures">
+    <h2>失败记录 (23 项)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>阶段</th><th>#</th><th>症状</th><th>根因</th><th>修复</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="4">1 编排</td><td>1-4</td><td>ConnectionReset 系列</td><td>MQ 阻塞主 loop / 无等待 / 无重试 / 端口</td><td>独立线程 / 900s 轮询 / 退避 / 21010</td></tr>
+          <tr><td rowspan="4">2 单卡</td><td>5-6</td><td>_create_trainer 缺失</td><td>DC 类复制遗漏</td><td>补方法 / 去参</td></tr>
+          <tr><td>7</td><td>LayerNorm 161002</td><td>dtype 失配</td><td>weight.to(x.dtype)</td></tr>
+          <tr><td>8</td><td>actual_seq_qlen 空</td><td>BNSD + divide_qk</td><td>SBH + False</td></tr>
+          <tr><td rowspan="5">3 4+4 卡</td><td>9</td><td>NPU OOM</td><td>单卡 57GB 超限</td><td>转 4+4 卡</td></tr>
+          <tr><td>10-14</td><td>依赖/backend/CUDA/glm5_spec/端口</td><td>容器重建丢失</td><td>archive 恢复 / runtime_env / -p</td></tr>
+          <tr><td>15</td><td>Ray IndexError</td><td>env 长度≠注册数</td><td>8 元素排列 env</td></tr>
+          <tr><td>16</td><td class="bad">HCCL scatter ★</td><td>linear_qkv TP 切分</td><td>mbridge 重写</td></tr>
+          <tr><td>17</td><td>MoE+TP 需 SP</td><td>硬 raise</td><td>warning 降级 + SP=False</td></tr>
+          <tr><td rowspan="4">4 循环</td><td>18</td><td>SP 整除失败</td><td>变长序列冲突</td><td>SP 回退 False</td></tr>
+          <tr><td>19</td><td class="bad">NPU OOM 撞卡 ★</td><td>rollouter 落 0-3</td><td>排列 env + vLLM env</td></tr>
+          <tr><td>20</td><td>event loop</td><td>run_until_complete</td><td>async 化</td></tr>
+          <tr><td>21-22</td><td>checkpoint / 时序</td><td>save_freq / 不同步</td><td>save_freq=-1 / 先 rollouter</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="timeline">
+      <div class="tl-item ok"><div class="tl-date">阶段 1 · 编排 (4)</div><div class="tl-body">MQ 独立线程 · 编排等待 · 重试 · 端口 — trainer 稳定连 MQ</div></div>
+      <div class="tl-item ok"><div class="tl-date">阶段 2 · 单卡 (4)</div><div class="tl-body">_create_trainer · dtype · SBH · divide_qk — 训练前向通过</div></div>
+      <div class="tl-item warn"><div class="tl-date">阶段 3 · 4+4 卡 (10)</div><div class="tl-body">依赖恢复 · env · glm5_spec · Ray 排列 · mbridge 重写 — TP=4 模型构建成功</div></div>
+      <div class="tl-item ok"><div class="tl-date">阶段 4 · 训练循环 (5)</div><div class="tl-body">mbridge 切分 · MoE · async · checkpoint — <b>2/2 steps 冒烟</b></div></div>
+    </div>
+  </section>
+
+  <section id="next">
+    <h2>下一步</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>任务</th><th>类型</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>冒烟日志归档 + score_mean 补证</td><td>L3S1 收尾 P0</td><td class="warn">⏳ 验收降级</td></tr>
+          <tr><td>dist checkpoint sharding 修复</td><td>L3S1 收尾 P0</td><td class="warn">⏳ save_freq=-1</td></tr>
+          <tr><td>MoE-SP 替代方案</td><td>L3S1 收尾 P0</td><td class="warn">⏳</td></tr>
+          <tr><td>L3S2 精度验证</td><td>L3 推进 P1</td><td class="info">⏳</td></tr>
+          <tr><td>L3S1-fsdp-full 主路径</td><td>L3 其余后端 P1</td><td class="info">⏳ 待转向决策</td></tr>
+          <tr><td>真实 GLM-5.2 bf16 (78L-256E)</td><td>长期 P2</td><td class="info">⏳</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note warn">
+      <div class="note-title">格完成判定</div>
+      冒烟通过 (2/2 steps) + P0 收尾闭环 (checkpoint / MoE-SP / 日志归档) — 当前 🔴→✅ 冒烟, P0 未闭环。
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Generated 2026-08-06 · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a>
+</footer>
+
+</body>
+</html>
