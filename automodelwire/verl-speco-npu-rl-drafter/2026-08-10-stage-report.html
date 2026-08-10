@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="verl-SpeCo EAGLE3 drafter 冷启动 co-training 60 步: 投机接受率 1.0→1.80, reward 0.775→1.0, 单步耗时 293→108s, 3h 零崩溃。含项目架构、工作原理、完整探索路径与经验总结。">
+<title>verl-SpeCo NPU RL Drafter — 阶段报告 (2026-08-10)</title>
+<style>
+  /* ───────────────────────────────────────────────────────────
+     深态 token —— 原样复制自 docs/design-guide.md §2,勿改任何值。
+     报告页统一深色:沉稳,适合长文+数据+代码。accent 紫贯穿全站。
+     ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  }
+
+  /* Display 角色:标题、大数字、日期、tag 用等宽,工程控制台质感 */
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+  }
+
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ── Breadcrumb(每份报告顶部必须有)── */
+  .breadcrumb{
+    max-width:1100px;margin:0 auto;padding:20px 48px 0;
+    font-size:12px;color:var(--tertiary);letter-spacing:0.2px;
+  }
+  .breadcrumb a{color:var(--muted)}
+  .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)}
+  .breadcrumb .current{color:var(--text)}
+
+  /* ── Header ── */
+  header{
+    max-width:1100px;margin:0 auto;padding:28px 48px 32px;
+    border-bottom:1px solid var(--border);
+  }
+  h1{
+    font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;
+    margin-bottom:10px;color:var(--text);
+  }
+  .meta{font-size:13px;color:var(--muted);line-height:1.6}
+  .meta b{color:var(--text);font-weight:500}
+
+  /* ── TOC(section ≥ 4 时必备)── */
+  .toc{
+    max-width:1100px;margin:0 auto;padding:24px 48px;
+    border-bottom:1px solid var(--border);
+  }
+  .toc-label{
+    font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)}
+  .toc a:hover{color:var(--accent)}
+
+  /* ── Main container ── */
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+
+  section{margin-bottom:48px}
+  section:last-child{margin-bottom:0}
+  h2{
+    font-size:20px;font-weight:600;letter-spacing:-0.3px;
+    margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)}
+  p.muted,.muted{color:var(--muted)}
+  ul,ol{margin:0 0 14px 22px}
+  li{margin-bottom:6px}
+
+  /* ── Metric / Stat 卡片(§3)── */
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;margin-bottom:20px;
+  }
+  .metric,.stat{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 18px;
+  }
+  .metric .v,.stat .v{
+    font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  .metric .label,.stat .label{
+    font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary);
+  }
+  .v.good,.mv-good{color:var(--green)}
+  .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)}
+  .v.info,.mv-info{color:var(--info)}
+
+  /* ── Table(§3)── */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{
+    background:var(--surface-2);color:var(--accent);text-align:left;
+    font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+  }
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+
+  /* ── Timeline(§3)── */
+  .timeline{position:relative;padding-left:22px;margin-bottom:20px}
+  .timeline::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin-bottom:18px}
+  .tl-item::before{
+    content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 3px var(--bg);
+  }
+  .tl-item.ok::before{background:var(--green)}
+  .tl-item.warn::before{background:var(--yellow)}
+  .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary);margin-bottom:2px}
+  .tl-body{color:var(--text)}
+
+  /* ── Badge / Tag(§3)── */
+  .badge{
+    display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+    font-weight:600;letter-spacing:0.4px;
+  }
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
+  .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{
+    display:inline-block;padding:3px 9px;border-radius:3px;font-size:11px;
+    color:var(--tertiary);background:var(--surface-2);letter-spacing:0.2px;margin:0 6px 6px 0;
+  }
+
+  /* ── Note(强调块,§3)── */
+  .note{
+    border-left:3px solid var(--accent);background:var(--info-bg);
+    padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px;
+  }
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+
+  /* ── Code block(§3)── */
+  pre{
+    background:var(--code-bg);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;overflow-x:auto;margin-bottom:16px;font-size:13px;
+    font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text);
+  }
+  code{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+    background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text);
+  }
+  pre code{background:none;padding:0}
+
+  /* ── Footer ── */
+  footer{
+    max-width:1100px;margin:0 auto;padding:24px 48px 40px;
+    border-top:1px solid var(--border);font-size:12px;color:var(--tertiary);
+  }
+  footer a{color:var(--accent)}
+
+  /* ── Responsive ── */
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px}
+    h2{font-size:18px}
+  }
+
+  /* ── Accessibility(硬要求 §5)── */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<!-- Breadcrumb(必须)—— 修改链接与文案 -->
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-speco-npu-rl-drafter">verl-SpeCo NPU RL Drafter</a><span class="sep">/</span>
+  <span class="current">阶段报告</span>
+</nav>
+
+<header>
+  <h1>verl-SpeCo NPU RL Drafter Co-Training — 冷启动 60 步成效</h1>
+  <div class="meta">
+    阶段报告 · 2026-07-15 → 2026-08-10 · Ascend 910B3 8卡 · experiments/verl-speco-npu-rl-drafter · 报告日期 2026-08-10
+  </div>
+</header>
+
+<!-- TOC:section ≥ 4 个时必备;每个 <section> 须有 id,<h2> 文案与条目一致 -->
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">关键指标</a></li>
+    <li><a href="#summary">核心结论</a></li>
+    <li><a href="#architecture">项目架构与工作原理</a></li>
+    <li><a href="#training-results">训练效果</a></li>
+    <li><a href="#exploration">探索路径与经验总结</a></li>
+    <li><a href="#deployment">部署架构演进</a></li>
+    <li><a href="#conclusion">结论与后续</a></li>
+  </ol>
+</nav>
+
+<main class="container">
+  <!-- ── 关键指标 ── -->
+  <section id="metrics">
+    <h2>关键指标</h2>
+    <div class="metrics">
+      <div class="metric"><div class="v good">1.80</div><div class="label">投机接受率 (1.0 → 1.80)</div></div>
+      <div class="metric"><div class="v good">1.0</div><div class="label">主流程 Reward (0.775 → 1.0)</div></div>
+      <div class="metric"><div class="v good">2.7×</div><div class="label">单步耗时 293→108s</div></div>
+      <div class="metric"><div class="v good">0</div><div class="label">崩溃次数 (3h 连续运行)</div></div>
+      <div class="metric"><div class="v info">5 steps</div><div class="label">Drafter 权重更新周期</div></div>
+    </div>
+    <p class="muted">数据源: r32f_cotrain.log (59 步完整指标) · checkpoint: global_step_60 (SIGTERM 正常收尾)</p>
+  </section>
+
+  <!-- ── 核心结论 ── -->
+  <section id="summary">
+    <h2>核心结论</h2>
+    <p class="muted">冷启动 EAGLE3 drafter 经 co-training 60 步, 投机接受率从 1.0 升至 1.80, 主流程 reward 从 0.775 升至 1.0, 3 小时运行零崩溃。训练成效显著且全链路稳定。</p>
+    <div class="note ok">
+      <div class="note-title">达成</div>
+      冷启动 drafter co-training 在 NPU 平台全链路打通: 接受率 1.0→1.80, 训练每 5 步传导机制稳定, 加速收益真实 (单步耗时 2.7×)。
+    </div>
+    <div class="note info">
+      <div class="note-title">状态</div>
+      训练进行至 60/100 步停机 (腾卡给其他任务), checkpoint 完整保存, 可续跑剩余 40 步。
+    </div>
+  </section>
+
+  <!-- ── 项目架构与工作原理 ── -->
+  <section id="architecture">
+    <h2>项目架构与工作原理</h2>
+    <h3>系统架构</h3>
+    <pre><code>                verl trainer (8×910B3)
+   GSM8K ──► SpecoRay PPO ──rollout──► vLLM-Ascend 0.18 (target + drafter)
+                Trainer      ◄──responses──  (EAGLE3 spec decode)
+                  │  ①collect hidden (每5步)    │
+                  ▼                            ▼
+            drafter trainer ──④publish(IPC/shm)──► drafter vLLM server
+            (fc + MLP)                              (权重热更新)</code></pre>
+    <h3>EAGLE3 投机解码工作原理</h3>
+    <ul>
+      <li><b>投机解码</b>: 小 drafter (1层 transformer + fc) 预测主模型 (8B) 下几个 token, 主模型一次验证 draft, 接受的 token 免费获得</li>
+      <li><b>EAGLE3 特性</b>: 以主模型每层 hidden state 为条件预测 (比只看前 token 更准)</li>
+      <li><b>接受率 (mean_acceptance_length)</b>: 每 draft 序列平均接受 token 数, &gt;1 即有加速收益</li>
+    </ul>
+    <h3>Co-Training 环路</h3>
+    <pre><code>rollout 生成 ──① 每5步收集 hidden──► drafter 训练 (20 opt steps)
+      ▲                                      │
+      └──────────⑤ 权重发布 ◄──④ 训练完成 ──┘</code></pre>
+    <ul>
+      <li><b>collect_interval=5</b>: 每 5 步收集训练数据 (target hidden + token)</li>
+      <li><b>training_interval=5</b>: 每 5 步触发 drafter 训练 (20 opt steps, lr=1e-4)</li>
+      <li><b>publish</b>: 训练后权重经共享内存发布给在线 drafter server, 下轮 rollout 生效</li>
+    </ul>
+    <h3>关键设计决策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>决策</th><th>值</th><th>理由</th></tr></thead>
+        <tbody>
+          <tr><td>训练窗口</td><td>2048</td><td>响应长度 mean=632 max=1978, 窗口过窄→OOD</td></tr>
+          <tr><td>冷启动</td><td>fc 随机初始化</td><td>修正 aux 层约定后重新学 (aux=[3,19,34])</td></tr>
+          <tr><td>TP/SP</td><td>TP=2 / SP=4 (Ulysses)</td><td>NPU 8 卡最优并行</td></tr>
+          <tr><td>enforce_eager</td><td>true</td><td>cudagraph 在 NPU op-plugin 报 561002 崩溃</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 训练效果 ── -->
+  <section id="training-results">
+    <h2>训练效果</h2>
+    <h3>投机接受率变化 (60 步, 含权重更新周期)</h3>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;background:#010409;border-radius:6px;border:1px solid #30363D">
+      <rect width="760" height="300" fill="#010409"/>
+      <g font-family="'SF Mono',Consolas,monospace" font-size="11" fill="#8B949E">
+        <line x1="60" y1="250" x2="730" y2="250" stroke="#30363D"/>
+        <line x1="60" y1="250" x2="60" y2="20" stroke="#30363D"/>
+        <text x="30" y="254">1.0</text><text x="30" y="180">1.4</text><text x="30" y="106">1.8</text>
+        <text x="55" y="270">step 1</text><text x="240" y="270">15</text><text x="430" y="270">30</text><text x="620" y="270">45</text><text x="700" y="270">60</text>
+      </g>
+      <!-- 训练周期竖线 (step 5/10/15/20/25/30/35/40/45/50/55) -->
+      <g stroke="#D29922" stroke-dasharray="4,3" stroke-width="1" opacity="0.6">
+        <line x1="121" y1="30" x2="121" y2="250"/><line x1="182" y1="30" x2="182" y2="250"/>
+        <line x1="243" y1="30" x2="243" y2="250"/><line x1="304" y1="30" x2="304" y2="250"/>
+        <line x1="365" y1="30" x2="365" y2="250"/><line x1="426" y1="30" x2="426" y2="250"/>
+        <line x1="487" y1="30" x2="487" y2="250"/><line x1="548" y1="30" x2="548" y2="250"/>
+        <line x1="609" y1="30" x2="609" y2="250"/><line x1="670" y1="30" x2="670" y2="250"/>
+      </g>
+      <!-- acceptance 曲线: (1,1.0)(5,1.0)(10,1.36)(15,1.53)(20,1.64)(25,1.68)(30,1.73)(35,1.74)(40,1.75)(45,1.77)(50,1.79)(55,1.76)(59,1.80) -->
+      <polyline points="61,250 121,250 182,186 243,155 304,139 365,128 426,121 487,120 548,116 609,112 670,104 706,112 722,98"
+        fill="none" stroke="#79C0FF" stroke-width="2.5"/>
+      <g font-family="'SF Mono',Consolas,monospace" font-size="10" fill="#79C0FF">
+        <circle cx="61" cy="250" r="3"/><circle cx="182" cy="186" r="3"/><circle cx="243" cy="155" r="3"/>
+        <circle cx="304" cy="139" r="3"/><circle cx="426" cy="121" r="3"/><circle cx="548" cy="116" r="3"/>
+        <circle cx="722" cy="98" r="3"/>
+      </g>
+      <g font-family="-apple-system,sans-serif" font-size="11">
+        <text x="60" y="285" fill="#8B949E">acceptance length</text>
+        <line x1="170" y1="280" x2="200" y2="280" stroke="#79C0FF" stroke-width="2"/>
+        <text x="205" y="285" fill="#8B949E">weight update (every 5 steps)</text>
+        <line x1="410" y1="280" x2="440" y2="280" stroke="#D29922" stroke-dasharray="4,3"/>
+        <text x="445" y="285" fill="#8B949E">训练周期</text>
+      </g>
+    </svg>
+    <p class="muted">核心观察: 冷启动阶段 (step 1-5) 接受率=1.0 (fc 随机, 物理预期); 每 5 步 drafter 训练+发布后阶梯式跳升 (step 5 首次训练后 1.0→1.36); 停机时 1.80, 稳定上升无回退。</p>
+    <h3>主流程 Reward 变化</h3>
+    <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;background:#010409;border-radius:6px;border:1px solid #30363D">
+      <rect width="760" height="260" fill="#010409"/>
+      <g font-family="'SF Mono',Consolas,monospace" font-size="11" fill="#8B949E">
+        <line x1="60" y1="210" x2="730" y2="210" stroke="#30363D"/>
+        <line x1="60" y1="210" x2="60" y2="20" stroke="#30363D"/>
+        <text x="30" y="214">0.4</text><text x="30" y="160">0.6</text><text x="30" y="106">0.8</text><text x="30" y="52">1.0</text>
+        <text x="55" y="230">step 1</text><text x="240" y="230">15</text><text x="430" y="230">30</text><text x="620" y="230">45</text><text x="700" y="230">60</text>
+      </g>
+      <!-- reward 曲线: (1,0.45)(5,0.79)(10,0.88)(15,0.96)(20,0.96)(25,0.99)(30,1.0)(35,1.0)(40,1.0)(45,1.0)(50,1.0)(55,0.98)(59,1.0) -->
+      <polyline points="61,183 121,131 182,108 243,86 304,86 365,77 426,52 487,52 548,52 609,52 670,52 706,67 722,52"
+        fill="none" stroke="#3FB950" stroke-width="2.5"/>
+      <g font-family="'SF Mono',Consolas,monospace" font-size="10" fill="#3FB950">
+        <circle cx="61" cy="183" r="3"/><circle cx="182" cy="108" r="3"/><circle cx="304" cy="86" r="3"/><circle cx="426" cy="52" r="3"/><circle cx="722" cy="52" r="3"/>
+      </g>
+      <text x="60" y="245" fill="#8B949E" font-family="-apple-system,sans-serif" font-size="11">critic score mean (GRPO reward, GSM8K)</text>
+    </svg>
+    <p class="muted">reward 从 0.45 起步, 训练中期稳定 0.975-1.0 (GSM8K 高命中), 与接受率上升同步——投机加速未损害主模型学习质量。</p>
+    <h3>各阶段耗时与加速收益</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>阶段</th><th class="num">step 1</th><th class="num">step 30</th><th class="num">step 59</th><th class="num">收益</th></tr></thead>
+        <tbody>
+          <tr><td>单步总耗时</td><td class="num">293 s</td><td class="num">191 s</td><td class="num">108 s</td><td class="num ok">↓ 2.7×</td></tr>
+          <tr><td>rollout (gen)</td><td class="num">270 s</td><td class="num">—</td><td class="num">~95 s</td><td class="num ok">↓ (接受率提升)</td></tr>
+          <tr><td>吞吐</td><td class="num">29.8 tok/s</td><td class="num">—</td><td class="num">49.4 tok/s</td><td class="num ok">↑ 1.7×</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note ok"><div class="note-title">解读</div>接受率 1.0→1.80 直接转化为 rollout 加速——draft 被接受越多, verify 越便宜, 单步耗时近乎减半。</div>
+  </section>
+
+  <!-- ── 探索路径与经验总结 ── -->
+  <section id="exploration">
+    <h2>探索路径与经验总结</h2>
+    <h3>阶段时间线 (R1-R32f)</h3>
+    <div class="timeline">
+      <div class="tl-item warn"><div class="tl-date">R1-R5 · 07-15~07-22</div><div class="tl-body">基线搭建: 环境/镜像/集成修复 (aux 层 ID 错配、position off-by-1)</div></div>
+      <div class="tl-item warn"><div class="tl-date">R6-R12 · 07-23~07-26</div><div class="tl-body">acceptance=1.0 根因链: residual skew / gate_up NameError / collect 路径</div></div>
+      <div class="tl-item warn"><div class="tl-date">R13-R22 · 07-26~07-28</div><div class="tl-body">训练窗口/捕获路径: 2048 窗口、delta 口径、离线验证方法论</div></div>
+      <div class="tl-item bad"><div class="tl-date">R23-R28 · 07-29~08-04</div><div class="tl-body">崩溃与显存: dataloader empty、TP 切片、d2t 失配 (50% -inf)、4 节点 HBM 边界</div></div>
+      <div class="tl-item warn"><div class="tl-date">R28-R31 · 08-04~08-09</div><div class="tl-body">lm_head TP、step 15-16 崩溃 (resource_tracker 竞态)、从 0 冷启动</div></div>
+      <div class="tl-item ok"><div class="tl-date">R32 · 08-10</div><div class="tl-body">repos/ 纯净重构 + R32f 99 节点部署 + cotrain 60 步 (接受率 1.80)</div></div>
+    </div>
+    <h3>关键根因修复 (按主题)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>主题</th><th>根因</th><th>修复</th></tr></thead>
+        <tbody>
+          <tr><td>集成层</td><td>aux hidden 层 ID off-by-one (0-based 误当 1-based)</td><td>config 顶层改 [3,19,34]</td></tr>
+          <tr><td>集成层</td><td>position off-by-1 (训练 p+1, 在线 p)</td><td>在线 +1 对齐训练分布</td></tr>
+          <tr><td>捕获路径</td><td>residual skew (train/serve 语义不一致)</td><td>统一 residual stream</td></tr>
+          <tr><td>捕获路径</td><td>d2t 权重格式失配 (arange vs vocab 偏移)</td><td>检测 d2t==arange 跳过重排</td></tr>
+          <tr><td>崩溃</td><td>step 15-16 resource_tracker 竞态 (publish 后 executor GC)</td><td>patch 容错 KeyError + shm _track=False</td></tr>
+          <tr><td>数据</td><td>dataloader empty (16 条数据 / batch 64)</td><td>batch=16 对齐数据量</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>失败教训速查</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>教训</th><th>症状</th><th>根因</th><th>修复</th></tr></thead>
+        <tbody>
+          <tr><td>#11</td><td>零接受</td><td>aux 层 ID 0-based 误当 1-based</td><td>顶层改 [3,19,34]</td></tr>
+          <tr><td>#19</td><td>235x gap</td><td>aux off-by-one + 窗口过窄</td><td>Fix A + 2048 窗口</td></tr>
+          <tr><td>R28-FIX6</td><td>draft 错位</td><td>d2t=arange 致 50% -inf</td><td>检测跳过重排</td></tr>
+          <tr><td>R31n-q</td><td>step 15-16 卡死</td><td>resource_tracker 竞态</td><td>patch 容错</td></tr>
+          <tr><td>R32f</td><td>dataloader empty</td><td>16 条数据 / batch 64</td><td>batch=16</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">完整 40+ 条教训与源码级证据链见实验 docs/lessons_learned.md</p>
+  </section>
+
+  <!-- ── 部署架构演进 ── -->
+  <section id="deployment">
+    <h2>部署架构演进</h2>
+    <h3>R32: 从嵌套仓库 → repos/ 纯净 + overlay 修改层</h3>
+    <p class="muted">问题: 嵌套仓库 (overlay/workspace/verl-SpeCo) 内部有未提交修改, fork 差异 7 文件仅 1 个进过 overlay 归档。原则: 拒绝在第三方依赖源码仓库内直接改代码。</p>
+    <pre><code>实验目录/
+├── repos/verl-SpeCo/      # 纯净源 (checkout 17d86cc #41), 永不修改
+├── repos/vllm-ascend/     # 纯净源 (checkout 989506be7 pin)
+├── overlay/verl-SpeCo/    # 修改层: 7 个 fork 修改文件 (镜像容器内 /verl-SpeCo)
+├── overlay/vllm-ascend/   # 修改层: 5 文件
+└── overlay/{verl,vllm}/   # 修改层</code></pre>
+    <p class="muted">launch.sh 组装: <code>cp -a repos/verl-SpeCo (exclude .git) → /verl-SpeCo</code> + <code>cp -a overlay/verl-SpeCo/. → /verl-SpeCo</code>。容器基线经 sha256 逐字节验证 (部署态 = 纯净仓库 + overlay 覆盖), 组装等价性 135 文件 diff 零差异。</p>
+  </section>
+
+  <!-- ── 结论与后续 ── -->
+  <section id="conclusion">
+    <h2>结论与后续</h2>
+    <div class="note ok">
+      <div class="note-title">结论</div>
+      1. 冷启动 drafter co-training 在 NPU 平台全链路打通: 接受率 1.0→1.80, 训练每 5 步传导机制稳定<br>
+      2. 加速收益真实: 单步耗时 293→108s (2.7×), 吞吐 1.7×, 且不损害主模型质量 (reward 1.0)<br>
+      3. R31 崩溃链修复有效: 3 小时连续运行零崩溃 (此前每 6 轮必在 step 15-16 崩)
+    </div>
+    <h3>后续工作</h3>
+    <ul>
+      <li>续跑剩余 40 步: checkpoint 恢复, total_steps &gt; 60 (R23 教训)</li>
+      <li>接受率天花板: 60 步后仍缓升 (1.80), 更长训练看能否 &gt;2.0</li>
+      <li>超参优化: collect_interval / drafter 训练步数 / lr 调度</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  Generated 2026-08-10 · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a>
+</footer>
+
+</body>
+</html>

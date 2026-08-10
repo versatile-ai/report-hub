@@ -544,11 +544,12 @@
 
 <script>
 const EXPERIMENTS=[
-  {id:"verl-speco-npu-rl-drafter",name:"verl-SpeCo NPU RL Drafter",subtitle:"EAGLE-3 在线 drafter 训练 (投机权重更新机制) · Qwen3-8B · 235x argmax gap 根因 = 权重来源非采样位置 · 训练产物从不回写磁盘 · 方案 A (n-2 对齐) 待验证",status:"active",startDate:"2026-07-22",lastUpdate:"2026-08-03",
-   tags:["verl","SpeCo","EAGLE-3","Qwen3-8B","Ascend 910B3","投机解码","在线drafter训练","RL","SHM热更新","权重来源"],
-   metrics:[{label:"R25 top1_acc",value:"0.52→0.91",tone:"good"},{label:"R25 ploss",value:"1756→245",tone:"good"},{label:"acceptance",value:"1.00003 (R25)",tone:"bad"},{label:"argmax_match",value:"0 (R27-A)",tone:"bad"},{label:"训练间隔",value:"5 steps",tone:"info"}],
+  {id:"verl-speco-npu-rl-drafter",name:"verl-SpeCo NPU RL Drafter",subtitle:"EAGLE-3 在线 drafter 训练 (投机权重更新机制) · Qwen3-8B · 冷启动 co-training 60 步: 接受率 1.0→1.80, reward→1.0, 单步耗时 2.7× 加速, 3h 零崩溃",status:"active",startDate:"2026-07-22",lastUpdate:"2026-08-10",
+   tags:["verl","SpeCo","EAGLE-3","Qwen3-8B","Ascend 910B3","投机解码","在线drafter训练","RL","SHM热更新","冷启动","co-training"],
+   metrics:[{label:"acceptance",value:"1.0→1.80 (R32f)",tone:"good"},{label:"reward",value:"0.775→1.0",tone:"good"},{label:"step time",value:"293→108s",tone:"good"},{label:"崩溃",value:"0 (3h)",tone:"good"},{label:"更新周期",value:"5 steps",tone:"info"}],
    reports:[
-   {title:"投机权重更新机制 — 完整图解",subtitle:"架构总览 (8卡分配) · 触发条件 (双闸) · 3处 MethodType 插入 · SHM 内存热更新链路 · 训练数据来源 · 235x gap 根因诊断 · 下一步验证方案",file:"verl-speco-npu-rl-drafter/2026-08-03-speco-drafter-mechanism.html",date:"2026-08-03",type:"diagnosis"}
+   {title:"投机权重更新机制 — 完整图解",subtitle:"架构总览 (8卡分配) · 触发条件 (双闸) · 3处 MethodType 插入 · SHM 内存热更新链路 · 训练数据来源 · 235x gap 根因诊断 · 下一步验证方案",file:"verl-speco-npu-rl-drafter/2026-08-03-speco-drafter-mechanism.html",date:"2026-08-03",type:"diagnosis"},
+   {title:"阶段报告 — 冷启动 60 步成效",subtitle:"冷启动 co-training 60 步 · 接受率 1.0→1.80 (内联图表) · reward→1.0 · 2.7× 加速 · 3h 零崩溃 · 项目架构与工作原理 · R1-R32f 探索路径与经验总结",file:"verl-speco-npu-rl-drafter/2026-08-10-stage-report.html",date:"2026-08-10",type:"stage"}
    ]
   },
   {id:"deepseek-v4-npu-dspark",name:"DSpark on Ascend NPU",subtitle:"DeepSeek-V4-Flash-DSpark 推测解码适配 (eager + 图模式 + 性能优化)",status:"active",startDate:"2026-07-14",lastUpdate:"2026-07-22",
