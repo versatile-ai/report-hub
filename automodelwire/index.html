@@ -607,6 +607,13 @@ const EXPERIMENTS=[
    {title:"L3S1 集成层 — GRPO 训推分离冒烟",subtitle:"4+4 卡 TP=4 双容器 · 分离架构 (NFS+MQ+coordinator) · mbridge 权重链路 + NPU 分域隔离 · 2/2 steps exit 0 · 23 Bug · 4 路径证伪 · 双镜像版本矩阵",file:"verl-npu-grpo-glm52/2026-08-06-l3s1-integration.html",date:"2026-08-06",type:"stage"},
    {title:"GLM-5.2 GRPO RL — 实验主报告",subtitle:"7/33 格完成度 3×3 矩阵 · L×S 细化表 · 依赖 DAG · 双镜像三列版本矩阵 (名称+ID) · 6 关键适配 · 23 失败记录 · 下一步 P0-P2",file:"verl-npu-grpo-glm52/2026-08-06-overall.html",date:"2026-08-06",type:"stage"}
    ]
+  },
+  {id:"verl-npu-grpo-double-cluster",name:"verl GRPO 训推双集群拆分",subtitle:"物理隔离双集群 (TRAIN/INFER 独立镜像独立 Ray, 零跨集群 NPU 通信) · NFS/TCP/HTTP 三通道 · 30 步完整验证: 7/7 权重同步成功, reward 0.169→0.609 (+260%), 零崩溃 · 24 轮排查",status:"active",startDate:"2026-08-04",lastUpdate:"2026-08-11",
+   tags:["verl","GRPO","双集群","训推分离","fully-async","Ascend 910B","Qwen3-8B","NFS权重同步","ZMQ IPC","coordinator"],
+   metrics:[{label:"训练步数",value:"30/30",tone:"good"},{label:"权重同步",value:"7/7 成功",tone:"good"},{label:"reward",value:"0.169→0.609",tone:"good"},{label:"同步耗时",value:"73.4s/次",tone:"good"},{label:"崩溃",value:"0",tone:"good"},{label:"ppo_kl",value:"~0.001 稳定",tone:"info"},{label:"排查轮次",value:"24",tone:"warn"}],
+   reports:[
+   {title:"30 步验证实验报告",subtitle:"7/7 权重同步成功 (66.7-81.1s/次) · reward +260% · 三通道架构 (NFS/TCP/HTTP) · 并发模型/ZMQ IPC/staleness 背压/字节序 4 技术点 · 24 轮排查因果链 · 图表 (reward 曲线/同步耗时/KL)",file:"verl-npu-grpo-double-cluster/2026-08-11-stage-report.html",date:"2026-08-11",type:"stage"}
+   ]
   }
 ];
 
