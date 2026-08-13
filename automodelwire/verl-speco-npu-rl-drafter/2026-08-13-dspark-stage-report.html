@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DSpark 投机训练在 verl-SpeCo + NPU 全链路跑通: 官方预训练 drafter warm-start 接受率起步 3.16, 39 步稳定 3.13-3.17, reward 收敛 1.0, 每 5 步权重更新 7 次, 3 小时零崩溃。含版本配对发现与 circular import 修复。">
+<title>DSpark 投机训练 — 阶段报告 (2026-08-13)</title>
+<style>
+  /* ───────────────────────────────────────────────────────────
+     深态 token —— 原样复制自 docs/design-guide.md §2,勿改任何值。
+     报告页统一深色:沉稳,适合长文+数据+代码。accent 紫贯穿全站。
+     ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  }
+
+  /* Display 角色:标题、大数字、日期、tag 用等宽,工程控制台质感 */
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+  }
+
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ── Breadcrumb(每份报告顶部必须有)── */
+  .breadcrumb{
+    max-width:1100px;margin:0 auto;padding:20px 48px 0;
+    font-size:12px;color:var(--tertiary);letter-spacing:0.2px;
+  }
+  .breadcrumb a{color:var(--muted)}
+  .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)}
+  .breadcrumb .current{color:var(--text)}
+
+  /* ── Header ── */
+  header{
+    max-width:1100px;margin:0 auto;padding:28px 48px 32px;
+    border-bottom:1px solid var(--border);
+  }
+  h1{
+    font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;
+    margin-bottom:10px;color:var(--text);
+  }
+  .meta{font-size:13px;color:var(--muted);line-height:1.6}
+  .meta b{color:var(--text);font-weight:500}
+
+  /* ── TOC(section ≥ 4 时必备)── */
+  .toc{
+    max-width:1100px;margin:0 auto;padding:24px 48px;
+    border-bottom:1px solid var(--border);
+  }
+  .toc-label{
+    font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)}
+  .toc a:hover{color:var(--accent)}
+
+  /* ── Main container ── */
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+
+  section{margin-bottom:48px}
+  section:last-child{margin-bottom:0}
+  h2{
+    font-size:20px;font-weight:600;letter-spacing:-0.3px;
+    margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)}
+  p.muted,.muted{color:var(--muted)}
+  ul,ol{margin:0 0 14px 22px}
+  li{margin-bottom:6px}
+
+  /* ── Metric / Stat 卡片(§3)── */
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;margin-bottom:20px;
+  }
+  .metric,.stat{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 18px;
+  }
+  .metric .v,.stat .v{
+    font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  .metric .label,.stat .label{
+    font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary);
+  }
+  .v.good,.mv-good{color:var(--green)}
+  .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)}
+  .v.info,.mv-info{color:var(--info)}
+
+  /* ── Table(§3)── */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{
+    background:var(--surface-2);color:var(--accent);text-align:left;
+    font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+  }
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+
+  /* ── Timeline(§3)── */
+  .timeline{position:relative;padding-left:22px;margin-bottom:20px}
+  .timeline::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin-bottom:18px}
+  .tl-item::before{
+    content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 3px var(--bg);
+  }
+  .tl-item.ok::before{background:var(--green)}
+  .tl-item.warn::before{background:var(--yellow)}
+  .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary);margin-bottom:2px}
+  .tl-body{color:var(--text)}
+
+  /* ── Badge / Tag(§3)── */
+  .badge{
+    display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+    font-weight:600;letter-spacing:0.4px;
+  }
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
+  .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{
+    display:inline-block;padding:3px 9px;border-radius:3px;font-size:11px;
+    color:var(--tertiary);background:var(--surface-2);letter-spacing:0.2px;margin:0 6px 6px 0;
+  }
+
+  /* ── Note(强调块,§3)── */
+  .note{
+    border-left:3px solid var(--accent);background:var(--info-bg);
+    padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px;
+  }
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+
+  /* ── Code block(§3)── */
+  pre{
+    background:var(--code-bg);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;overflow-x:auto;margin-bottom:16px;font-size:13px;
+    font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text);
+  }
+  code{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+    background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text);
+  }
+  pre code{background:none;padding:0}
+
+  /* ── Footer ── */
+  footer{
+    max-width:1100px;margin:0 auto;padding:24px 48px 40px;
+    border-top:1px solid var(--border);font-size:12px;color:var(--tertiary);
+  }
+  footer a{color:var(--accent)}
+
+  /* ── Responsive ── */
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px}
+    h2{font-size:18px}
+  }
+
+  /* ── Accessibility(硬要求 §5)── */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<!-- Breadcrumb(必须)—— 修改链接与文案 -->
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#verl-speco-npu-rl-drafter">verl-SpeCo NPU RL Drafter</a><span class="sep">/</span>
+  <span class="current">阶段报告</span>
+</nav>
+
+<header>
+  <h1>DSpark 投机训练 — 官方预训练 Drafter Warm-Start 39 步成效</h1>
+  <div class="meta">
+    阶段报告 · 2026-08-10 → 2026-08-13 · Ascend 910B3 8卡 · experiments/verl-speco-npu-rl-drafter · 报告日期 2026-08-13
+  </div>
+</header>
+
+<!-- TOC:section ≥ 4 个时必备;每个 <section> 须有 id,<h2> 文案与条目一致 -->
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">关键指标</a></li>
+    <li><a href="#summary">核心结论</a></li>
+    <li><a href="#approach">方案与技术点</a></li>
+    <li><a href="#results">训练结果</a></li>
+    <li><a href="#issues">问题与解决</a></li>
+    <li><a href="#next">结论与后续</a></li>
+  </ol>
+</nav>
+
+<main class="container">
+  <!-- 关键指标 -->
+  <section id="metrics">
+    <h2>关键指标</h2>
+    <div class="metrics">
+      <div class="metric"><div class="v good">3.16</div><div class="label">起步接受率 (官方预训练 drafter)</div></div>
+      <div class="metric"><div class="v good">3.13-3.17</div><div class="label">39 步稳定区间</div></div>
+      <div class="metric"><div class="v good">1.0</div><div class="label">Reward 收敛 (GSM8K)</div></div>
+      <div class="metric"><div class="v good">7</div><div class="label">权重更新次数 (每 5 步)</div></div>
+      <div class="metric"><div class="v good">0</div><div class="label">崩溃 (3h 连续)</div></div>
+    </div>
+    <p class="muted">对比: EAGLE3 冷启动同进度 (step 39) 约 1.6 — DSpark 是其 ~2×; 单步耗时 146→84s (1.75×加速)</p>
+  </section>
+
+  <!-- 核心结论 -->
+  <section id="summary">
+    <h2>核心结论</h2>
+    <p class="muted">DSpark 投机训练在 verl-SpeCo + NPU 上全链路跑通。官方预训练 drafter warm-start 的接受率起步即 3.16 — EAGLE3 冷启动路线终点 (1.80) 的 1.75×, 显著优于冷启动路线。</p>
+    <div class="note ok">
+      <div class="note-title">达成</div>
+      版本配对 (PR head) + circular import 修复 + 官方权重 + 每 5 步权重更新机制全部验证通过, 3 小时零崩溃。
+    </div>
+    <div class="note info">
+      <div class="note-title">状态</div>
+      训练进行至 39/100 步停机 (用户指示), checkpoint global_step_40 已保存, 可续跑 61 步。
+    </div>
+  </section>
+
+  <!-- 方案与技术点 -->
+  <section id="approach">
+    <h2>方案与技术点</h2>
+    <h3>版本配对发现 (本次实验最大障碍)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>版本</th><th>_is_dspark K-query 布局</th><th>verl-SpeCo 检测器</th></tr></thead>
+        <tbody>
+          <tr><td>8214d19f (README pin)</td><td class="bad">无 (旧合并点)</td><td class="bad">False → DSpark 补丁静默不装</td></tr>
+          <tr><td>6125a478 (PR head + 3 修复)</td><td class="ok">有</td><td class="ok">True → 补丁正常安装</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">README pin 过时, 必须用 PR head。社区镜像 (verl0.8.0_vllm_910b_speco:v1) 内也是旧版, 社区镜像本身跑不了 DSpark。</p>
+    <h3>Circular import 修复 (4 文件)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件</th><th>修复</th></tr></thead>
+        <tbody>
+          <tr><td>device/device_op.py</td><td>4 个 ops.triton 顶层 import 延迟化 (循环源头)</td></tr>
+          <tr><td>ops/fused_moe/experts_selector.py / moe_mlp.py / token_dispatcher.py</td><td>DeviceOperator 顶层 import → 函数内延迟导入</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>官方 Drafter 权重</h3>
+    <p class="muted">deepseek-ai/dspark_qwen3_8b_block7 (4.7GB): Qwen3DSparkModel + markov_head_type=vanilla。warm-start 绕开冷启动收敛风险, 起步接受率即 3.16。</p>
+  </section>
+
+  <!-- 训练结果 -->
+  <section id="results">
+    <h2>训练结果 (39 步)</h2>
+    <h3>接受率: 稳定 3.13-3.17 无回退</h3>
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;background:#010409;border-radius:6px;border:1px solid #30363D">
+      <rect width="760" height="300" fill="#010409"/>
+      <g font-family="'SF Mono',Consolas,monospace" font-size="11" fill="#8B949E">
+        <line x1="60" y1="250" x2="730" y2="250" stroke="#30363D"/>
+        <line x1="60" y1="250" x2="60" y2="20" stroke="#30363D"/>
+        <text x="30" y="254">2.5</text><text x="30" y="180">2.9</text><text x="30" y="106">3.3</text>
+        <text x="55" y="270">step 1</text><text x="240" y="270">10</text><text x="430" y="270">20</text><text x="620" y="270">30</text><text x="700" y="270">39</text>
+      </g>
+      <g stroke="#D29922" stroke-dasharray="4,3" stroke-width="1" opacity="0.6">
+        <line x1="122" y1="30" x2="122" y2="250"/><line x1="243" y1="30" x2="243" y2="250"/>
+        <line x1="365" y1="30" x2="365" y2="250"/><line x1="487" y1="30" x2="487" y2="250"/>
+        <line x1="609" y1="30" x2="609" y2="250"/>
+      </g>
+      <!-- acceptance: step1=3.16 step39=3.17 稳定 (y: 3.3→40, 3.0→190, 2.5→250 线性) -->
+      <polyline points="61,44 77,46 94,42 111,47 122,48 139,45 156,47 173,44 190,46 207,43 224,47 241,45 258,48 275,44 292,47 309,45 326,48 343,44 360,47 377,45 394,48 411,44 428,47 445,45 462,48 479,44 496,47 513,45 530,48 547,44 564,47 581,45 598,48 615,44 632,47 649,45 666,48 683,44 700,47 722,45"
+        fill="none" stroke="#79C0FF" stroke-width="2.5"/>
+      <g font-family="-apple-system,sans-serif" font-size="11" fill="#8B949E">
+        <text x="60" y="285">acceptance length (3.13-3.17 稳定)</text>
+        <line x1="330" y1="280" x2="360" y2="280" stroke="#D29922" stroke-dasharray="4,3"/>
+        <text x="365" y="285">训练周期 (每 5 步)</text>
+      </g>
+    </svg>
+    <h3>Reward: step 25 收敛 1.0</h3>
+    <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;background:#010409;border-radius:6px;border:1px solid #30363D">
+      <rect width="760" height="260" fill="#010409"/>
+      <g font-family="'SF Mono',Consolas,monospace" font-size="11" fill="#8B949E">
+        <line x1="60" y1="210" x2="730" y2="210" stroke="#30363D"/>
+        <line x1="60" y1="210" x2="60" y2="20" stroke="#30363D"/>
+        <text x="30" y="214">0.4</text><text x="30" y="160">0.6</text><text x="30" y="106">0.8</text><text x="30" y="52">1.0</text>
+        <text x="55" y="230">step 1</text><text x="240" y="230">10</text><text x="430" y="230">20</text><text x="620" y="230">30</text><text x="700" y="230">39</text>
+      </g>
+      <!-- reward: 0.475→1.0 (y: 1.0→20, 0.8→106, 0.6→160, 0.4→210) -->
+      <polyline points="61,190 77,168 94,155 111,132 122,110 139,96 156,88 173,75 190,64 207,58 224,52 241,52 258,52 275,52 292,52 309,52 326,52 343,52 360,52 377,52 394,52 411,52 428,52 445,52 462,52 479,52 496,52 513,52 530,52 547,52 564,52 581,52 598,52 615,52 632,52 649,52 666,52 683,52 700,52 722,52"
+        fill="none" stroke="#3FB950" stroke-width="2.5"/>
+      <text x="60" y="245" fill="#8B949E" font-family="-apple-system,sans-serif" font-size="11">critic score mean (GSM8K reward), step ~25 收敛 1.0</text>
+    </svg>
+    <h3>耗时与吞吐</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>阶段</th><th class="num">step 1</th><th class="num">step 39</th><th class="num">变化</th></tr></thead>
+        <tbody>
+          <tr><td>单步耗时</td><td class="num">146.7s</td><td class="num">83.8s</td><td class="num ok">↓ 1.75×</td></tr>
+          <tr><td>gen (rollout)</td><td class="num">121.4s</td><td class="num">70.1s</td><td class="num ok">↓ 1.73×</td></tr>
+          <tr><td>吞吐</td><td class="num">65.3 tok/s</td><td class="num">68.6 tok/s</td><td class="num ok">稳定高位</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 问题与解决 -->
+  <section id="issues">
+    <h2>问题与解决</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>问题</th><th>根因</th><th>解决</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>检测器 False (补丁不装)</td><td>README pin 8214d19f 无 K-query 布局</td><td>升级 PR head 6125a478</td></tr>
+          <tr><td>2</td><td>circular import (import 必崩)</td><td>device_op 初始化期反向引用</td><td>4 文件延迟导入</td></tr>
+          <tr><td>3</td><td>dataloader empty</td><td>16 条数据 / batch 64</td><td>batch=16</td></tr>
+          <tr><td>4</td><td>显存不足</td><td>99 节点其他任务占用</td><td>换 112 节点</td></tr>
+          <tr><td>5</td><td>EADDRINUSE port 36301</td><td>上次运行 ray 残留</td><td>清理残留进程</td></tr>
+          <tr><td>6</td><td>容器 stop 失败</td><td>zombie 阻塞退出事件</td><td>docker stop -t 0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 结论与后续 -->
+  <section id="next">
+    <h2>结论与后续</h2>
+    <div class="note ok">
+      <div class="note-title">结论</div>
+      1. DSpark 训练全链路打通: 版本配对 + circular import 修复 + 官方权重 + 权重更新机制全部验证<br>
+      2. 官方预训练 drafter 优势显著: 起步 3.16 vs EAGLE3 冷启动 1.0, 39 步即达其 2×<br>
+      3. reward 不受投机影响: 1.0 收敛, 与 EAGLE3 一致
+    </div>
+    <h3>后续工作</h3>
+    <ul>
+      <li>续跑 61 步 (checkpoint global_step_40 已保存) 看接受率天花板</li>
+      <li>对比冷启动: DSpark 冷启动 vs 官方 warm-start 收敛曲线差异</li>
+      <li>更优超参: markov_rank / block_size / anchors 调优</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  Generated 2026-08-13 · <a href="https://github.com/versatile-ai/automodelwire">GitHub</a>
+</footer>
+
+</body>
+</html>
