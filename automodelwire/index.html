@@ -544,6 +544,12 @@
 
 <script>
 const EXPERIMENTS=[
+  {id:"glm53-flash-sft",name:"GLM-5.3-Flash 全量 SFT 训练",subtitle:"321B 模型昇腾 64 卡 SFT 20 步跑通 · loss 9.77→0.083 · 0-size alltoallv notify 握手死锁根因定位与修复 (msprof 点名 + 最小实验复现)",status:"active",startDate:"2026-08-31",lastUpdate:"2026-09-08",
+   tags:["GLM-5.3-Flash","321B","SFT","MindSpeed-LLM","fla","MoE","alltoallv","Ascend 910B3","8节点"],
+   metrics:[{label:"loss",value:"9.77→0.083 (20步)",tone:"good"},{label:"崩溃",value:"0 (20/20步)",tone:"good"},{label:"稳态耗时",value:"89.4 s/step",tone:"info"},{label:"吞吐",value:"366 tok/s",tone:"info"}],
+   reports:[
+   {title:"全量 SFT 训练跑通 — 0-size alltoallv 根因定位与修复",subtitle:"20 步训练完整跑通 (loss 9.77→0.083) · msprof 全节点采样点名 alltoallv · Demo 单变量复现 0-size 挂起 · SEQ=1024 从概率根上消除 · 代码适配与价值评估",file:"glm53-flash-sft/2026-09-08-stage.html",date:"2026-09-08",type:"stage"}
+   ]},
   {id:"verl-speco-npu-rl-drafter",name:"verl-SpeCo NPU RL Drafter",subtitle:"EAGLE-3 在线 drafter 训练 (投机权重更新机制) · Qwen3-8B · 冷启动 co-training 60 步: 接受率 1.0→1.80, reward→1.0, 单步耗时 2.7× 加速, 3h 零崩溃",status:"active",startDate:"2026-07-22",lastUpdate:"2026-08-13",
    tags:["verl","SpeCo","EAGLE-3","Qwen3-8B","Ascend 910B3","投机解码","在线drafter训练","RL","SHM热更新","冷启动","co-training"],
    metrics:[{label:"acceptance",value:"1.0→1.80 (R32f)",tone:"good"},{label:"reward",value:"0.775→1.0",tone:"good"},{label:"step time",value:"293→108s",tone:"good"},{label:"崩溃",value:"0 (3h)",tone:"good"},{label:"更新周期",value:"5 steps",tone:"info"}],

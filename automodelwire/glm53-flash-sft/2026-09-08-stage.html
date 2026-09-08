@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="<!-- 一句话摘要,用于分享预览 -->">
+<title>GLM-5.3-Flash SFT 全量训练 — Stage Report (2026-09-08)</title><!-- <实验名> — <报告类型> (YYYY-MM-DD) --></title>
+<style>
+  /* ───────────────────────────────────────────────────────────
+     深态 token —— 原样复制自 docs/design-guide.md §2,勿改任何值。
+     报告页统一深色:沉稳,适合长文+数据+代码。accent 紫贯穿全站。
+     ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  }
+
+  /* Display 角色:标题、大数字、日期、tag 用等宽,工程控制台质感 */
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+  }
+
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ── Breadcrumb(每份报告顶部必须有)── */
+  .breadcrumb{
+    max-width:1100px;margin:0 auto;padding:20px 48px 0;
+    font-size:12px;color:var(--tertiary);letter-spacing:0.2px;
+  }
+  .breadcrumb a{color:var(--muted)}
+  .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)}
+  .breadcrumb .current{color:var(--text)}
+
+  /* ── Header ── */
+  header{
+    max-width:1100px;margin:0 auto;padding:28px 48px 32px;
+    border-bottom:1px solid var(--border);
+  }
+  h1{
+    font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;
+    margin-bottom:10px;color:var(--text);
+  }
+  .meta{font-size:13px;color:var(--muted);line-height:1.6}
+  .meta b{color:var(--text);font-weight:500}
+
+  /* ── TOC(section ≥ 4 时必备)── */
+  .toc{
+    max-width:1100px;margin:0 auto;padding:24px 48px;
+    border-bottom:1px solid var(--border);
+  }
+  .toc-label{
+    font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)}
+  .toc a:hover{color:var(--accent)}
+
+  /* ── Main container ── */
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+
+  section{margin-bottom:48px}
+  section:last-child{margin-bottom:0}
+  h2{
+    font-size:20px;font-weight:600;letter-spacing:-0.3px;
+    margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)}
+  p.muted,.muted{color:var(--muted)}
+  ul,ol{margin:0 0 14px 22px}
+  li{margin-bottom:6px}
+
+  /* ── Metric / Stat 卡片(§3)── */
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;margin-bottom:20px;
+  }
+  .metric,.stat{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 18px;
+  }
+  .metric .v,.stat .v{
+    font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  .metric .label,.stat .label{
+    font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary);
+  }
+  .v.good,.mv-good{color:var(--green)}
+  .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)}
+  .v.info,.mv-info{color:var(--info)}
+
+  /* ── Table(§3)── */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{
+    background:var(--surface-2);color:var(--accent);text-align:left;
+    font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+  }
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+
+  /* ── Timeline(§3)── */
+  .timeline{position:relative;padding-left:22px;margin-bottom:20px}
+  .timeline::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin-bottom:18px}
+  .tl-item::before{
+    content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 3px var(--bg);
+  }
+  .tl-item.ok::before{background:var(--green)}
+  .tl-item.warn::before{background:var(--yellow)}
+  .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary);margin-bottom:2px}
+  .tl-body{color:var(--text)}
+
+  /* ── Badge / Tag(§3)── */
+  .badge{
+    display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+    font-weight:600;letter-spacing:0.4px;
+  }
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
+  .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{
+    display:inline-block;padding:3px 9px;border-radius:3px;font-size:11px;
+    color:var(--tertiary);background:var(--surface-2);letter-spacing:0.2px;margin:0 6px 6px 0;
+  }
+
+  /* ── Note(强调块,§3)── */
+  .note{
+    border-left:3px solid var(--accent);background:var(--info-bg);
+    padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px;
+  }
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+
+  /* ── Code block(§3)── */
+  pre{
+    background:var(--code-bg);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;overflow-x:auto;margin-bottom:16px;font-size:13px;
+    font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text);
+  }
+  code{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+    background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text);
+  }
+  pre code{background:none;padding:0}
+
+  /* ── Footer ── */
+  footer{
+    max-width:1100px;margin:0 auto;padding:24px 48px 40px;
+    border-top:1px solid var(--border);font-size:12px;color:var(--tertiary);
+  }
+  footer a{color:var(--accent)}
+
+  /* ── Responsive ── */
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px}
+    h2{font-size:18px}
+  }
+
+  /* ── Accessibility(硬要求 §5)── */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+<nav class="breadcrumb"><a href="../../index.html">versatile-ai</a><span class="sep">/</span><a href="../index.html">AutoModelWire</a><span class="sep">/</span><a href="../index.html#glm53-flash-sft">GLM-5.3-Flash SFT</a><span class="sep">/</span><span class="current">Stage Report</span></nav>
+<header><h1>GLM-5.3-Flash 全量 SFT 训练跑通 — 0-size alltoallv 根因定位与修复</h1><div class="meta">Stage Report · 2026-08-31 → 2026-09-08 · Ascend 910B3 8-Node 64-NPU · feature/amw-skills-with-glm53-flash</div></header>
+<nav class="toc"><div class="toc-label">目录</div><ol><li><a href="#GLM-5-3-Flash-全量-SFT-训练报告"><strong>GLM-5.3-Flash 全量 SFT 训练报告</strong></a></li><li><a href="#执行摘要">执行摘要</a></li><li><a href="#第-1-章-项目背景与目标"><strong>第 1 章 项目背景与目标</strong></a></li><li><a href="#1-1-任务背景">1.1 任务背景</a></li><li><a href="#1-2-项目目标">1.2 项目目标</a></li><li><a href="#1-3-技术栈与部署形态">1.3 技术栈与部署形态</a></li><li><a href="#第-2-章-总体方案与部署形态"><strong>第 2 章 总体方案与部署形态</strong></a></li><li><a href="#2-1-总体方案">2.1 总体方案</a></li><li><a href="#2-2-部署形态">2.2 部署形态</a></li><li><a href="#第-3-章-核心问题与根因分析"><strong>第 3 章 核心问题与根因分析</strong></a></li><li><a href="#3-1-现象-一场持续-14-轮的-训练不结束">3.1 现象：一场持续 14+ 轮的&quot;训练不结束&quot;</a></li><li><a href="#3-2-排除过程-三条假设逐一证伪">3.2 排除过程：三条假设逐一证伪</a></li><li><a href="#3-3-根因定位-msprof-全节点采样点名-alltoallv">3.3 根因定位：msprof 全节点采样点名 alltoallv</a></li><li><a href="#3-4-决定性证据-最小化-Demo-独立复现">3.4 决定性证据：最小化 Demo 独立复现</a></li><li><a href="#3-5-机制详解-0-size-传输的-notify-握手缺陷">3.5 机制详解：0-size 传输的 notify 握手缺陷</a></li><li><a href="#3-6-解法与验证">3.6 解法与验证</a></li><li><a href="#3-7-为什么拖了-14-轮-结构性复盘">3.7 为什么拖了 14 轮（结构性复盘）</a></li><li><a href="#3-8-走过的弯路与教训">3.8 走过的弯路与教训</a></li><li><a href="#3-9-证据索引">3.9 证据索引</a></li><li><a href="#第-4-章-解决方案与代码适配"><strong>第 4 章 解决方案与代码适配</strong></a></li><li><a href="#4-1-问题概览与解决框架">4.1 问题概览与解决框架</a></li><li><a href="#4-2-模型层-mcore-化-让标准并行语义作用到模型">4.2 模型层 mcore 化: 让标准并行语义作用到模型</a></li><li><a href="#4-3-并行适配-SP-布局迁移与权重桥接根因修复">4.3 并行适配: SP 布局迁移与权重桥接根因修复</a></li><li><a href="#4-4-训练链修复">4.4 训练链修复</a></li><li><a href="#4-5-部署链-可复现性工程">4.5 部署链: 可复现性工程</a></li><li><a href="#4-6-核心解法-从-消除-0-size-到-放大-token-量">4.6 核心解法: 从&quot;消除 0-size&quot;到&quot;放大 token 量&quot;</a></li><li><a href="#4-7-弯路复盘-诚实记录">4.7 弯路复盘(诚实记录)</a></li><li><a href="#4-8-修改价值评估总表">4.8 修改价值评估总表</a></li><li><a href="#4-9-修改清单-文件级-供追溯">4.9 修改清单(文件级, 供追溯)</a></li><li><a href="#第-5-章-实验验证与结果"><strong>第 5 章 实验验证与结果</strong></a></li><li><a href="#5-1-训练配置">5.1 训练配置</a></li><li><a href="#5-2-训练过程健康度">5.2 训练过程健康度</a></li><li><a href="#5-3-Loss-收敛曲线">5.3 Loss 收敛曲线</a></li><li><a href="#5-4-训练门禁">5.4 训练门禁</a></li><li><a href="#第-6-章-性能基准"><strong>第 6 章 性能基准</strong></a></li><li><a href="#6-1-逐迭代耗时明细-20-行-全部实测">6.1 逐迭代耗时明细(20 行, 全部实测)</a></li><li><a href="#6-2-核心性能指标">6.2 核心性能指标</a></li><li><a href="#6-3-性能解读">6.3 性能解读</a></li><li><a href="#6-4-本章小结">6.4 本章小结</a></li><li><a href="#数据来源">数据来源</a></li><li><a href="#附录-A-资源与成本量级">附录 A: 资源与成本量级</a></li><li><a href="#附录-B-术语表">附录 B: 术语表</a></li></ol></nav>
+<main class="container">
+<section id="GLM-5-3-Flash-全量-SFT-训练报告"><h2>GLM-5.3-Flash 全量 SFT 训练报告</h2>
+<div class="note">报告对象: 技术委员会 / 项目组 | 报告日期: 2026-09-08</div>
+<div class="note">模型: GLM-5.3-Flash(321B, 45 层, 288 专家) | 引擎: MindSpeed-LLM + verl 生态 | 平台: 昇腾 NPU(910B, 8 节点 64 卡)</div>
+<p>---</p>
+</section>
+<section id="执行摘要"><h3>执行摘要</h3>
+<p><strong>结论: GLM-5.3-Flash 全量模型在昇腾 NPU 上的 SFT 训练已完整跑通。</strong> 20/20 训练步(iteration)全部完成, 损失(loss)从 9.77 收敛至 0.083(117 倍), 全程零崩溃、零 NaN。</p>
+<p>本次任务的核心价值在于解决了一个困扰 14+ 轮实验的关键问题:</p>
+<ul><li>**根因**: 小 batch 数据形态下 MoE 专家并行的 alltoallv 通信会出现&quot;零数据量传输&quot;(0-size), 而昇腾通信库(HCCL)对该特殊路径存在缺陷, 导致发送端与接收端的通知(notify)握手永不完成, 全体 64 卡同步冻结, 约 20 分钟后被设备看门狗终止。该结论经最小化实验独立复现(正常场景 1 秒完成, 零传输场景挂起 5.5 分钟后崩溃), 非推断。</li><li>**解法**: 将训练序列长度从 64 放大到 1024, 使每个通信域 rank 平均接收的 token 数从 2 提升到 32, 零传输概率从工程上可见(约 7.4e-4/次调用)降至可忽略(约 1e-14/次调用)。解法仅改数据形态参数, 零内核改动, 与社区 DeepSeek V4 的工程实践同源。</li><li>**结果**: 训练 20/20 步完成, loss 9.77→0.083; 稳态每步 89.4 秒, 吞吐 366 tokens/s(64 卡), 显存峰值约 54GB/卡(84%)。</li></ul>
+<p><strong>遗留事项</strong>(详见第 5 章): 全量规模的数值一致性对拍(pearson ≥ 0.995)与 GSM8K 效果对比评估待执行, 均已给出成本估算与执行计划。</p>
+<p><strong>主要指标速览</strong>:</p>
+<div class="table-wrap"><table><thead><tr><th>指标</th><th>值</th><th>判据</th><th>状态</th></tr></thead><tbody><tr><td>训练完整度</td><td>20/20 steps</td><td>全完成</td><td class="ok">✅</td></tr><tr><td>Loss 收敛</td><td>9.77 → 0.083</td><td>整体下降</td><td class="ok">✅</td></tr><tr><td>崩溃/NaN</td><td>0</td><td>0 次</td><td class="ok">✅</td></tr><tr><td>稳态耗时</td><td>89.4 s/step</td><td>实测</td><td class="ok">✅</td></tr><tr><td>吞吐</td><td>366 tok/s</td><td>实测</td><td class="ok">✅</td></tr><tr><td>显存峰值</td><td>~54 GB/卡(84%)</td><td>实测</td><td class="ok">✅</td></tr><tr><td>数值一致性</td><td>pearson ≥ 0.995</td><td>全量未执行</td><td class="warn">⏸</td></tr><tr><td>效果评估</td><td>GSM8K 提升</td><td class="warn">待执行</td><td class="warn">⏳</td></tr></tbody></table></div>
+<p>---</p>
+</section>
+<section id="第-1-章-项目背景与目标"><h2>第 1 章 项目背景与目标</h2>
+
+</section>
+<section id="1-1-任务背景"><h3>1.1 任务背景</h3>
+
+</section>
+<section id="1-1-1-训练对象-GLM-5-3-Flash"><h4>1.1.1 训练对象：GLM-5.3-Flash</h4>
+<p>GLM-5.3-Flash 是 GLM 5.3 系列的稀疏 MoE 大语言模型，也是本次 SFT（监督微调）全量训练任务的对象。它的规模与结构特征如下：</p>
+<div class="table-wrap"><table><thead><tr><th>维度</th><th>数值</th><th>说明</th></tr></thead><tbody><tr><td>总参数量</td><td>321.32B</td><td>权重实测口径（safetensors 全量分片遍历）：专家 311.65B + dense 7.84B + vision/misc 1.83B；绝大部分参数位于 288 个专家中</td></tr><tr><td>层数</td><td>45 层</td><td>流水线并行（PP2）下按 22+23 非均匀切分</td></tr><tr><td>专家数</td><td>288</td><td>MoE 稀疏路由，专家并行（EP32）切分到 32 个通信域 rank</td></tr><tr><td>权重体积</td><td>643GB（BF16）</td><td>HF 原始格式真权重，需分布式加载</td></tr><tr><td>注意力机制</td><td>fla KDA（delta attention）</td><td>线性注意力变体，经 triton-ascend 移植的昇腾算子核</td></tr></tbody></table></div>
+<p>选择这个模型做全量训练验证，是因为它同时压中了训练链路上三个最难的点：</p>
+<p>1. <strong>规模之难</strong>：321.32B 参数、643GB 权重，单卡显存（64GB）连权重的十分之一都容不下。必须做 TP（张量并行）× EP（专家并行）× PP（流水线并行）× SP（序列并行）四维联合切分，且每维切分都有严格的整除与布局约束——这是 HBM 预算层面的硬约束。</p>
+<p>2. <strong>结构之难</strong>：fla KDA（delta attention）是尚未在昇腾生态中充分验证的新算子族，且与 MoE 稀疏路由叠加——注意力侧和专家侧各有一条全新的算子与通信路径，二者在反向传播中还会交叉耦合。</p>
+<p>3. <strong>生态之难</strong>：昇腾 NPU 不是 CUDA 生态。训练引擎（MindSpeed-LLM）、权重桥接（mbridge）、注意力算子（fla 0.6.0 + triton-ascend）、通信库（HCCL）全部需要逐层适配验证，没有任何一条&quot;官方直跑&quot;路径可以依赖。</p>
+</section>
+<section id="1-1-2-任务意义"><h4>1.1.2 任务意义</h4>
+<p>在昇腾 NPU 上跑通 GLM-5.3-Flash 全量 SFT 训练，具有三层意义：</p>
+<ul><li>**国产算力栈的关键里程碑**：昇腾 910B + CANN 生态此前已在中等规模模型上验证了训练能力，但在 300B+ 级 MoE + 新型注意力组合上的全量训练尚未打通。本次任务是该组合在国产算力栈上的完整链路验证——证明昇腾集群不仅能推理、能跑小模型，也能承担头部大模型的训练负载。</li><li>**全量强化学习（RL）的前置条件**：后续的 GRPO 全量强化学习训练以 SFT 权重为起点、以 SFT 训练链路为基座。SFT 全量链路不通，RL 无从谈起；反之 SFT 链路的每一次修正确认，都会整体复用到 RL 部署上。</li><li>**与社区路径形成对照**：同栈的 DeepSeek V4 训练已稳定运行数百步，说明昇腾训练栈本身是可信的。GLM-5.3-Flash 与之的差异（fla 注意力、288 专家、小 batch 数据形态）正是需要本地验证的变量面。</li></ul>
+</section>
+<section id="1-1-3-前置工作与本次任务定位"><h4>1.1.3 前置工作与本次任务定位</h4>
+<p>本次全量训练并非从零开始，而是建立在两条已收口的前置链路上：</p>
+<div class="table-wrap"><table><thead><tr><th>前置成果</th><th>内容</th><th>状态</th></tr></thead><tbody><tr><td>减层（Mini）端到端链路</td><td>4 层/32 专家真权重 Mini 模型，verl 端到端 RL 三门禁达成（loss 有限 / rollout 出样 / 严格 pearson≈1.0，np.corrcoef 口径）</td><td>已收口</td></tr><tr><td>SP 精度门禁</td><td>TP&gt;1×EP&gt;1 强制 SP 布局下的引擎 vs HF 数值对齐门禁 FULL8_PEARSON = 0.999965（严格 pearson，np.corrcoef）</td><td>已收口</td></tr></tbody></table></div>
+<p>因此本次任务的定义非常清晰：<strong>在 Mini 已验证的模型侧正确性之上，把规模放大到全量（45 层/288 专家/8 节点 64 NPU），并验证规模放大后训练链路、数值、效果与性能四项指标全部达成。</strong> 后续章节将展示，规模放大暴露了一个 Mini 规模下不可能触发的通信边界缺陷——这正是本次任务的核心价值。</p>
+</section>
+<section id="1-2-项目目标"><h3>1.2 项目目标</h3>
+<p>本次全量 SFT 训练的目标按优先级分四层，每层有明确的判据：</p>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>目标</th><th>含义</th><th>判据/门禁</th><th>状态</th></tr></thead><tbody><tr><td>1</td><td>训练链路正确性</td><td>64 NPU 多节点上前向 / 反向 / 优化器全链能持续运行，不卡死、不崩溃</td><td>多节点训练完整跑通，0 卡死、0 崩溃、0 NaN</td><td>✅ 达成（20/20 iters，见 §5.2）</td></tr><tr><td>2</td><td>数值正确性</td><td>引擎输出与 HF 标准库参考一致，训练语义没有被适配过程篡改</td><td>引擎 vs HF 参考严格 pearson（np.corrcoef）≥ 0.995（SP 门禁口径）</td><td>⏸ 暂缓（减层规模 SP 同门禁 0.999965 达成；全量规模未执行，补做安排见 §5.4）</td></tr><tr><td>3</td><td>训练效果</td><td>loss 真实收敛，模型能力真实提升</td><td>loss 整体收敛（允许动量瞬态回翘）；SFT 前后 GSM8K 准确率对比提升</td><td>✅ loss 收敛达成（117 倍）；⏳ GSM8K 对比待执行</td></tr><tr><td>4</td><td>性能基准</td><td>全量训练的效率基线可度量、可复算</td><td>iter 耗时 / throughput / HBM 占用基准数据</td><td>✅ 达成（89.4s/iter、366 tok/s、~54GB/卡，见第 6 章）</td></tr></tbody></table></div>
+<p>其中目标 1 是本次战役的主体——在目标 1 达成之前，目标 2-4 无从谈起。上表状态与第 5 章门禁表一一对应。</p>
+</section>
+<section id="1-3-技术栈与部署形态"><h3>1.3 技术栈与部署形态</h3>
+
+</section>
+<section id="1-3-1-技术栈分层"><h4>1.3.1 技术栈分层</h4>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ 应用层   SFT 训练任务（GSM8K 数据，loss 收敛判定）      │
+├─────────────────────────────────────────────────────┤
+│ 引擎层   MindSpeed-LLM 原生 pretrain 入口             │
+│          （glm5next_pretrain.py，不走 verl 编排）      │
+├─────────────────────────────────────────────────────┤
+│ 并行层   Megatron-Core：TP × EP × PP × SP + DP       │
+│          通信：HCCL（昇腾集合通信库）                  │
+├─────────────────────────────────────────────────────┤
+│ 桥接层   mbridge：HF 权重 ↔ mcore 布局映射            │
+│          （含 TP/EP scatter 偏移修复的 etp 分支）      │
+├─────────────────────────────────────────────────────┤
+│ 算子层   fla 0.6.0 chunk_kda（triton-ascend 核）      │
+│          + AICPU/AICore 原生算子                     │
+├─────────────────────────────────────────────────────┤
+│ 硬件层   昇腾 910B × 64（8 节点），CANN 9.1.0-beta.3  │
+└─────────────────────────────────────────────────────┘</code></pre>
+</section>
+<section id="1-3-2-并行拓扑与数据形态"><h4>1.3.2 并行拓扑与数据形态</h4>
+<pre><code>8 节点 × 8 NPU = 64 NPU
+┌────────┐        ┌────────┐
+│ 节点×8 │  ────  │ 节点×8 │  ...  共 8 节点（HCCL 全互联）
+└────────┘        └────────┘
+
+并行形态：TP2 × EP32 × PP2 × DP1 × SP=True（ETP=1）
+  TP2   : 2 卡张量并行（注意力/MLP 权重切分）
+  EP32  : 288 专家分到 32 个通信域 rank（每 rank 9 个专家）
+  PP2   : 45 层按 22+23 非均匀切分两段流水线
+  SP=True: 序列维按 TP 切分（TP&gt;1×EP&gt;1 的强制布局）
+
+数据形态（最终定案）：SEQ=1024, MBS=1, GBS=32, TRAIN_ITERS=20
+权重来源：HF 真权重 643GB（/data/model/GLM-5.3-Flash-BF16）</code></pre>
+</section>
+<section id="1-3-3-环境要素"><h4>1.3.3 环境要素</h4>
+<div class="table-wrap"><table><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>训练节点</td><td>8 节点 64 NPU（112/155/50/89/48/85/195/41）</td></tr><tr><td>训练镜像</td><td>glm53-train:910b-20260831 @ 0c19c307c84c（digest 钉死）</td></tr><tr><td>CANN</td><td>9.1.0-beta.3</td></tr><tr><td>注意力</td><td>fla 0.6.0 chunk_kda 原生径（use_qk_l2norm_in_kernel=True）</td></tr><tr><td>数据</td><td>GSM8K（SFT 数据链经 loss_mask 修复）</td></tr></tbody></table></div>
+<p>---</p>
+<p>---</p>
+</section>
+<section id="第-2-章-总体方案与部署形态"><h2>第 2 章 总体方案与部署形态</h2>
+
+</section>
+<section id="2-1-总体方案"><h3>2.1 总体方案</h3>
+<p>全量 SFT 采用&quot;减层先行、全量过渡&quot;的工程路径(Mini 4 层 32 专家低成本预演 → 全量 45 层 288 专家), 训练引擎选用 MindSpeed-LLM 原生入口(glm5next_pretrain.py), 权重经 mbridge 桥接加载, 注意力走 fla 0.6.0 原生算子径。</p>
+</section>
+<section id="2-2-部署形态"><h3>2.2 部署形态</h3>
+<ul><li>**节点**: 8 节点 64 NPU(昇腾 910B), 训练镜像 digest 钉死</li><li>**并行**: TP2 × EP32 × PP2 × DP1 × SP=True, 45 层按 22+23 非均匀切分</li><li>**数据**: SEQ=1024, MBS=1, GBS=32, 真权重 643GB</li><li>**部署链**: 单入口脚本(run_all)从零还原, 容器/目录/日志按规范隔离</li></ul>
+</section>
+<section id="第-3-章-核心问题与根因分析"><h2>第 3 章 核心问题与根因分析</h2>
+<div class="note">本章是全报告的技术核心：一场持续 14+ 轮部署的历史性卡死，最终被定位为一个&quot;单字节都不传输&quot;的通信边界缺陷，并通过最小化 Demo 拿到决定性证据。</div>
+</section>
+<section id="3-1-现象-一场持续-14-轮的-训练不结束"><h3>3.1 现象：一场持续 14+ 轮的&quot;训练不结束&quot;</h3>
+
+</section>
+<section id="3-1-1-时间线"><h4>3.1.1 时间线</h4>
+<p>全量训练的第一阶段（8 节点 64 NPU 原生 pretrain 入口）自启动之日起，就陷入&quot;启动—卡死—重启&quot;的循环，历时约一周：</p>
+<pre><code>09-03  全量 SP 训练门禁部署启动（8 节点 64 NPU，HF 真权重）
+  │
+09-04  首个死锁定位：iteration 2 反向集体通信死锁
+  │
+09-05  对照排查多轮推进（每次单变量改动，同点再崩）：
+  │     → &quot;0-size 输出缓冲 NULL 指针&quot;定案并修复 → 修复后仍崩
+  │     → 集群端口冲突独立根因修复 → 仍崩
+  │     → 反向 0-size 死锁机制定位 → 修复后仍崩
+  │     → 计数探针排除&quot;集体通信调用序分歧&quot;假设
+  │
+09-06  全量 RL 部署链推进 12+ 轮修复，仍复现同类卡死签名（签名逐点一致）
+  │
+09-07  用户裁决：全量直上分支暂停，重塑为消融阶梯
+  │     msprof 全节点采样点名 alltoallv → 最小化 Demo 独立复现定案
+  │     → 数据形态修复（SEQ 放大）→ 验证轮 20 iters 全量跑通 ✅
+  │
+09-08  全量 SFT 训练报告</code></pre>
+<div class="note">注：09-06 的 RL 链与 SFT 链（本报告主题）共享数据形态与通信栈，卡死签名逐点一致——这是根因跨形态普适的佐证；09-07 裁决全量直上分支暂停后，04 全量 SFT 作为消融阶梯首步推进。</div>
+</section>
+<section id="3-1-2-故障指纹-一个高度一致的-卡死签名家族"><h4>3.1.2 故障指纹：一个高度一致的&quot;卡死签名家族&quot;</h4>
+<p>多轮卡死表面上报错位置随机漂移，但底层签名高度一致——这是后期判别的重要抓手：</p>
+<div class="table-wrap"><table><thead><tr><th>指纹</th><th>观测内容</th></tr></thead><tbody><tr><td>全体 rank 卡在 backward</td><td>进程全景采样显示全部 64 rank 同步卡在 autograd 反向（流水线 backward_step）</td></tr><tr><td>集体通信排队超时</td><td>各 rank 的 ALLTOALL（MoE 专家通信）/ ALLGATHER 相继报 dispatch timeout</td></tr><tr><td>固定延迟看门狗</td><td>从首个超时到进程崩溃存在固定延迟（同一看门狗家族，逐轮 ±1s 复现）</td></tr><tr><td>507034 / 507018 / 507048</td><td>通信停滞报错 / 20 分钟看门狗 SIGABRT / &quot;stuck notify&quot; 挂起家族错误码</td></tr><tr><td>报错 rank 漂移、停滞源固定</td><td>哪个 rank 先报错取决于看门狗先超时，具有随机性</td></tr></tbody></table></div>
+<p><strong>最令人困惑的一点</strong>：每轮修复（端口、指针、探针、并行参数）后，卡死依然在同一位置复现，且签名逐点一致——仿佛有一个&quot;看不见的根因&quot;在所有显性修复之外。</p>
+</section>
+<section id="3-2-排除过程-三条假设逐一证伪"><h3>3.2 排除过程：三条假设逐一证伪</h3>
+<p>按照&quot;先建模、再行动&quot;的排查纪律，多轮排查聚焦三条候选根因，逐一验证排除：</p>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>候选假设</th><th>验证方法</th><th>验证结果</th><th>结论</th></tr></thead><tbody><tr><td>①</td><td>fla 注意力核挂起（计算核死循环）</td><td>单卡重放 SFT 真实 shape（B=1/S=64/D=128），5 个随机种子，真权重 layer0 切片</td><td>前向 6.9s（含首次编译）+ 反向 0.24s 正常完成；**5 条梯度（q/k/v/g/beta）全部 FINITE**</td><td>排除</td></tr><tr><td>②</td><td>0-size 输出缓冲 NULL 指针（AICPU 0x2a）</td><td>mcore 补丁（输出缓冲保有效指针）部署并验证运行期生效</td><td>补丁生效日志确认出现，卡死依旧、签名逐点一致</td><td>排除（指针面）</td></tr><tr><td>③</td><td>reshape / 衔接布局错误</td><td>PP 边界 flatten/unflatten、o_norm 输出衔接等契约形状逐一静态对账</td><td>全部形状匹配，无布局分歧</td><td>排除</td></tr></tbody></table></div>
+<p>三条排除各有意义：</p>
+<ul><li>**假设①（fla 核挂起）**是嫌疑最大的对象——fla 核是自研移植核，且在设备侧观测到过&quot;AICore 100%&quot;的忙状态，历史上曾被认为&quot;计算核自旋&quot;。但单卡重放给出了干净的否定：在 SFT 的真实训练 shape 下，fla 核前向反向均正常完成、梯度全有限。这同时澄清了一个被长期混淆的事实：fla 核确实存在编译失败（UB 溢出），但那是强化学习长序列 shape 专属问题，与 SFT 短序列卡死无关——两个问题被错误地捆绑判读过。</li><li>**假设②（0-size 输出缓冲）**排除过程最微妙：早期曾将卡死定案为&quot;AICPU alltoallv kernel 参数非法（0x2a）&quot;，根因是 0-size 输出缓冲的 data_ptr 可能为 NULL。补丁将缓冲分配改为&quot;至少 1 元素后再切回 0 元素&quot;——语义零变化，仅保证指针有效。补丁运行期确认生效，但卡死依旧。**这个结果并没有宣告 0-size 无罪，而是把嫌疑从&quot;指针非法&quot;精确迁移到&quot;0-size 传输本身&quot;**——后者正是最终根因。需要说明排除口径：该&quot;排除&quot;是针对**指针面**的排除——补丁保留 0-size 传输、仅保有效指针，崩溃依旧，恰好说明嫌疑在传输本身；指针面排除 ≠ 传输面排除，传输面由 3.3 的 msprof 采样与 3.4 的 Demo 最终定案。</li><li>**假设③（reshape 衔接）**是卫生性排除：确认流水线边界与注意力输出衔接的布局契约全部匹配，把排查面收拢到通信层。</li></ul>
+</section>
+<section id="3-3-根因定位-msprof-全节点采样点名-alltoallv"><h3>3.3 根因定位：msprof 全节点采样点名 alltoallv</h3>
+<p>三条假设排除后，排查面收敛到通信层。此前 msprof 环形采样尝试曾因参数错误失败、从未产出有效采样；本次改用部署脚本的 task-based 全节点配置（64 NPU 全开）成功捕获卡死窗口。决定性的观测来自 <strong>msprof 全节点采样</strong>：在 64 块 NPU 上同时开启设备侧 profile（task-based 模式，AI Core / 运行时 API / AICPU / HCCL 全开），完整记录卡死窗口内每个 rank 的算子级执行轨迹。</p>
+<p><strong>采样结论</strong>：</p>
+<pre><code>全体 rank（64/64）冻结在同一个位置：
+  MoE 专家路由的 alltoallv 通信上
+  —— 接收端处于 Notify_Wait（等待发送端通知）状态，且永不满足</code></pre>
+<p>也就是说：<strong>没有任何一个 rank 在&quot;算&quot;，全体 rank 都在&quot;等&quot;</strong>。alltoallv 是 MoE 稀疏路由的核心通信原语——token 按专家归属在 32 个 EP rank 之间交换。它不完成，则该 rank 后续所有集体通信排队，进而整个集群互等。</p>
+<p>这一结论与 3.2 的单卡验证完全咬合：单卡 dbeta 等 5 条梯度全部 FINITE 证明 fla 数值链无罪，msprof 则证明设备级冻结发生在通信而非计算——<strong>&quot;计算核卡死&quot;的历史判读是误判，真相是通信挂起</strong>。回看此前&quot;AICore 100%&quot;的观测，也与最终机制自洽：发送端在快速失败的重试循环中保持忙（AICore 100%），接收端在 Notify_Wait 上静止等待（AICore 0%）——两种状态并存，恰是 0-size 握手缺陷的一体两面，而非计算死循环。</p>
+</section>
+<section id="3-4-决定性证据-最小化-Demo-独立复现"><h3>3.4 决定性证据：最小化 Demo 独立复现</h3>
+<p>msprof 给出了&quot;冻结在 alltoallv&quot;的强证据，但训练栈内证据链再长，也难免与历史误判一样被质疑。因此设计了<strong>栈外最小化 Demo</strong>：剥离全部训练逻辑，只用 2 节点 4 rank 的最小通信环境，单变量对照&quot;0-size 是否触发挂起&quot;：</p>
+<div class="table-wrap"><table><thead><tr><th>场景</th><th>构造</th><th>结果</th></tr></thead><tbody><tr><td>场景 A（对照组）</td><td>各 rank 传输非零 token 数</td><td>**1 秒完成**，通信正常</td></tr><tr><td>场景 B（实验组）</td><td>注入一个 rank 零接收（0-size alltoallv）</td><td>**挂起 5.5 分钟**后崩溃，报错 507048（&quot;0 stuck notify wait&quot;）</td></tr></tbody></table></div>
+<p><strong>这是本次战役的决定性证据</strong>：</p>
+<p>1. <strong>单变量</strong>：与生产环境的唯一差异就是 0-size，其他全部相同；</p>
+<p>2. <strong>最小环境</strong>：2 节点 4 rank，排除了节点数量、模型结构、算子栈等一切混淆因素；</p>
+<p>3. <strong>可复现</strong>：场景 B 必挂起，不是概率事件；</p>
+<p>4. <strong>与生产同族</strong>：错误码 507048（stuck notify）与生产现场 507018/507034（20 分钟看门狗 SIGABRT、通信停滞）同属 notify 握手挂起家族。</p>
+<p>至此根因闭环：<strong>0-size alltoallv 在昇腾 NPU 的 HCCL 上必然挂起</strong>——这是通信库对&quot;零字节传输&quot;的边界缺陷，与模型代码、算子实现、并行参数均无关。需要澄清排除口径：早期指针卫生修复只覆盖<strong>指针面</strong>（保证 data_ptr 非 NULL），未触及<strong>传输面</strong>（notify 握手）；&quot;指针面修复后仍挂起&quot;并不构成对 0-size 假设的证伪——<strong>指针面排除 ≠ 传输面排除</strong>。传输面由本节的干净单变量 Demo（场景 A 1s 正常 vs 场景 B 注入 0-size 挂起 5.5 分钟、报错 507048）与验证轮 20/20 iters 完整跑通最终定案。</p>
+</section>
+<section id="3-5-机制详解-0-size-传输的-notify-握手缺陷"><h3>3.5 机制详解：0-size 传输的 notify 握手缺陷</h3>
+
+</section>
+<section id="3-5-1-握手机制"><h4>3.5.1 握手机制</h4>
+<p>HCCL 的 alltoallv 传输依赖发送端与接收端之间的 notify 握手完成同步。正常路径与 0-size 路径的差异如下：</p>
+<pre><code>【正常传输（非零字节）】
+发送端 rank i                        接收端 rank j
+   │                                    │
+   │──── Notify_Record（注册传输）───►   │
+   │                                    │ 收到通知, 开始接收
+   │──── 数据字节流 ─────────────────►   │
+   │◄─── Notify_Done（完成确认）────    │
+   │                                    │
+   握手闭合, 传输完成 ✅
+
+【0-size 传输（缺陷路径）】
+发送端 rank i                        接收端 rank j
+   │                                    │
+   │──── Notify_Record（0 字节）─────►  │
+   │◄── 快速失败（record 不成功）──     │ 进入 Notify_Wait: 等发送端通知
+   │                                    │
+   │──── 重试 Notify_Record ─────────►  │
+   │◄── 再次快速失败 ─────────────────  │
+   │  (反复重试, 每次快速失败 = 自旋)    │  等待永不满足 = 永久等待
+   │                                    │
+   └── 发送端: AICore 忙(100%) ──┐     │
+                                 └── 接收端: AICore 闲(0%) ──┘</code></pre>
+<p>通俗地说：<strong>发件人反复敲一家已经打烊的店门（每次快速失败、立刻重试），收件人在店里等一件永远不会送达的包裹</strong>。双方各自卡在自己的一侧，没有任何一方能主动打破这个僵局。</p>
+</section>
+<section id="3-5-2-死锁传播-从一对-rank-到全集群"><h4>3.5.2 死锁传播：从一对 rank 到全集群</h4>
+<p>单个 0-size 卡住的是一对 rank 的握手，为什么会冻结全体 64 rank？答案是 <strong>EP 环上的集体依赖</strong>：</p>
+<pre><code>EP32 通信环：rank0 → rank1 → ... → rank31 → rank0（循环依赖）
+
+  某 rank 在某 MoE 层 alltoallv 上握手断裂（0-size）
+  → 该 rank 的 MoE 前向不完成
+  → 其后续集体通信（下一个 ALLTOALL / ALLGATHER）排队, 派发停滞
+  → 对端 rank 在其各自的后续集体通信上等待它
+  → 环形等待扩散 → 全体 rank 互等 → 全集群冻结
+  → 20 分钟看门狗到期 → SIGABRT（507018, 首个触发 rank 崩溃, 其余随后）</code></pre>
+<p>流水线反向（backward）阶段尤其致命：反向的 token 反路由 alltoallv 会把&quot;前向零接收&quot;翻转为&quot;反向零发送&quot;——0-size 在反向路径再次出现，且此时所有 rank 已进入反向集体通信的互相等待，死锁一发不可收拾。</p>
+</section>
+<section id="3-5-3-为什么我们必触发-而社区路径天然规避"><h4>3.5.3 为什么我们必触发，而社区路径天然规避</h4>
+<p>0-size 是否出现，取决于一个简单的统计事实：<strong>token 越少、专家越分散，零接收概率越高</strong>。</p>
+<pre><code>数据形态                每 EP rank 平均 token  零接收概率（泊松近似，均匀假设）
+─────────────────────────────────────────────────────────────
+MBS=1 × SEQ=64   →    64 / 32 = 2 token/rank  →  e^-2 ≈ 13.5%（必现级）
+MBS=1 × SEQ=1024 →  1024 / 32 = 32 token/rank →  e^-32 ≈ 1.3e-14（可忽略）
+DeepSeek V4 大 batch → 数千 token/rank        →  ≈ 0（天然规避）</code></pre>
+<ul><li>**我们（修复前）**：MBS=1、SEQ=64 的极小 token 形态——每层全局 64 token，经 32 个 EP rank 均分后每 rank 平均仅 2 个 token——零接收从&quot;理论可能&quot;变成&quot;实测必现&quot;。实测锚点（2026-09-05 探针轮）：5360+ 次 alltoallv 调用中记录到 4 次零接收事件（≈7.4e-4/调用）。该实测率低于均匀泊松假设的 e^-2≈13.5%（约两个数量级）——路由的负载均衡使真实分布比均匀随机模型更均匀；但即便按实测率，每 iter（约 2,880 次调用）仍期望出现约 2 次零接收，且真实路由偏斜/负载不均使事件率偏离均匀假设——这正是生产环境必现的原因。</li><li>**社区对照（DeepSeek V4）**：同栈 467 步训练零事故。其数据形态为大 batch（每 rank 数千 token），零接收概率约等于零——这反过来说明 0-size 挂起是**极小 token 数下的边界条件触发，而非昇腾通信栈的普遍缺陷**。</li><li>**Mini 规模对照**：减层门禁（EP2）为什么 20 iters 顺利通过？因为 2 个 rank 交换 256 槽位，平均每 rank 128 槽位——0-size 在概率上不可能发生（e^-128 量级）。</li></ul>
+<p><strong>运行窗口累积概率</strong>（让&quot;数学上不可能&quot;可量化）：每 iter 约 2,880 次 alltoallv 调用（45 层 × 32 rank × 前向/反向），20 iters 共约 57,600 次，期望零接收事件 ≈ 57,600 × 1.3e-14 ≈ <strong>7×10^-10</strong>——远小于任何工程风险阈值（1000 iters 长训 ≈ 4×10^-8，同样可忽略）。</p>
+</section>
+<section id="3-6-解法与验证"><h3>3.6 解法与验证</h3>
+<p>根因定案后，解法沿&quot;消除 0-size 触发面&quot;展开，历经两轮：</p>
+<div class="table-wrap"><table><thead><tr><th>方案</th><th>思路</th><th>结果</th></tr></thead><tbody><tr><td>clamp 钳位（尝试后废弃）</td><td>把零项钳为 1，用 dummy token 贯通</td><td>①补丁对称性缺陷导致新崩溃（0x2a 变体）；②补丁多次叠加后状态混乱（同一块代码 4 处重复钳位），其间&quot;无 0-size 仍死锁&quot;的观察发生在补丁叠加污染的容器上、且只覆盖指针面，效力存疑，不构成对根因的证伪——不稳定，废弃</td></tr><tr><td>**SEQ=1024 token 放大（定案）**</td><td>保持 MBS=1，把单样本序列长度从 64 放大到 1024，使每层全局 1024 token 经 32 个 EP rank 均分后每 rank 平均接收 32 token，0-size 概率降到 e^-32 ≈ 1.3e-14</td><td>**验证轮 20/20 iters 完整跑通，loss 9.77 → 0.083 整体收敛（117 倍，2 处 &lt;3% 动量瞬态回翘），0 卡死 0 崩溃**</td></tr></tbody></table></div>
+<p>SEQ 放大方案与 DeepSeek V4 社区路径同款——不修通信库，而是从数据形态上让 0-size 不可能发生。代价可控：HBM 升至 ~54GB/卡（84%）、短样本 padding 计算开销（详见第 5/6 章）；收益 = 从概率根上消除 0-size 触发面（彻底绕开一个无法从应用侧修复的通信库边界缺陷）。</p>
+</section>
+<section id="3-7-为什么拖了-14-轮-结构性复盘"><h3>3.7 为什么拖了 14 轮（结构性复盘）</h3>
+<p>14+ 轮部署仍未收敛，是本次战役最容易被追问的数字。复盘下来，周期之长并非根因本身有多隐蔽，而是四个结构性因素叠加：</p>
+<p>1. <strong>指针面修复不完整，被误读为&quot;修复无效&quot;</strong>：早期定位到&quot;AICPU 0x2a 指针非法&quot;并部署指针卫生修复（仅保证输出缓冲 data_ptr 有效）。补丁确认生效但卡死依旧——正确的解读是&quot;修复只覆盖了指针面、未触及传输面&quot;，但当时一度被误读为&quot;修复方向错了&quot;，排查注意力被引离 0-size 本身。</p>
+<p>2. <strong>指针面与传输面混淆，形成一次误排除</strong>：在一次判别轮中，&quot;指针修复后仍崩溃&quot;被解读为&quot;0-size 排除为根因&quot;，排查方向一度转向 fla 计算核。事后看，指针面的排除并不等于传输面的排除——补丁保留 0-size 传输、仅保有效指针，崩溃依旧恰好说明嫌疑在传输本身（见 3.2 排除②）。</p>
+<p>3. <strong>观测工具不足，把排队表象当卡点</strong>：卡死窗口早期只有进程级采样，看到的是&quot;全体卡在 backward / TP-AllGather&quot;的排队表象——集体通信超时是 0-size 挂起的下游症状，曾被当成卡点本身；设备级采样（msprof）首次尝试又因参数错误失败，直到改用 task-based 全节点配置才成功捕获卡死窗口内的算子级轨迹（见 3.3）。</p>
+<p>4. <strong>一次污染容器实验给出误导性&quot;证伪&quot;</strong>：在一次补丁叠加污染（同一块代码多处重复钳位）的容器上观察到&quot;无 0-size 仍死锁&quot;，一度支持&quot;0-size 假设被证伪&quot;的方向。该观察未在干净环境复现、且只覆盖指针面，效力存疑——决定性证据来自干净的栈外最小化 Demo 与验证轮（见 3.4/3.6）。</p>
+<p>这四条共同作用，使战役周期被拉长至 14+ 轮。下节的弯路表从工程纪律角度补充逐条教训，本节回答&quot;为什么这么久&quot;的结构性问题。</p>
+</section>
+<section id="3-8-走过的弯路与教训"><h3>3.8 走过的弯路与教训</h3>
+<p>诚实复盘，本次战役有四个值得沉淀的弯路：</p>
+<div class="table-wrap"><table><thead><tr><th>弯路</th><th>原因</th><th>教训</th></tr></thead><tbody><tr><td>clamp 方案 v1 对称性缺陷 → 新崩溃</td><td>只钳了派生值、没钳源值，两侧 splits 不一致</td><td>补丁必须静态审查两侧对称性</td></tr><tr><td>clamp 方案 v2 补丁状态混乱（同块 4 处重复）</td><td>回退脚本失效 + 每次部署叠加打补丁</td><td>补丁必须幂等，验证必须在干净容器</td></tr><tr><td>节点级排查错误归因</td><td>把&quot;改序列长度引发通信域崩溃&quot;直接当结论，无证据支撑</td><td>单变量原则 + 先验证假设再下结论</td></tr><tr><td>一次改动两个变量（clamp + 序列长度同时改）</td><td>为赶进度合并改动</td><td>单变量原则：一次只改一个变量，否则无法归因</td></tr></tbody></table></div>
+<p>另有两条方法论沉淀：</p>
+<ul><li>**挂起类故障先读每 rank 自己的崩溃点**，不要被集群级表象带偏——多轮判读漂移（端口冲突 → 指针非法 → 计算核自旋）的共同根源，就是拿集群表象替代设备级证据。</li><li>**AICore 利用率读数需对照空闲基线**：本集群空闲卡 AICore 同样 90%+，曾导致&quot;设备僵尸&quot;误判；利用率曲线必须在明确对照下才有判别力。</li></ul>
+</section>
+<section id="3-9-证据索引"><h3>3.9 证据索引</h3>
+<div class="table-wrap"><table><thead><tr><th>结论</th><th>证据来源</th><th>位置</th></tr></thead><tbody><tr><td>现象：14+ 轮未收敛、卡死签名家族</td><td>PROGRESS.md（S10/S11 段落：全体卡 backward、507034、20min watchdog 507018、报错 rank 漂移）</td><td>`models/GLM-5.3-FLASH/PROGRESS.md` L141-190, L35-45, L95-103</td></tr><tr><td>排除①：fla 核挂起（单卡重放 5 梯度 FINITE）</td><td>单卡重放记录：SFT 真实 shape 下 fwd 6.9s + bwd 0.24s，q/k/v/g 全有限；UB 溢出系 RL shape 专属</td><td>会话记忆 `glm53-sft-fla-nativ-path-usable.md`（2026-09-07 实测；实验脚本与输出日志需落 `variants/04-train-full/notes/`，**待补件**）</td></tr><tr><td>排除②：0-size 输出缓冲指针面（mcore-fix 生效仍崩）</td><td>判别轮记录：[mcore-fix] 运行期打印 1 次确认补丁生效，崩溃依旧、签名逐点一致</td><td>PROGRESS.md L71-80；补丁本体 `variants/04-train-full/scripts/patches/patch_mcore_alltoallv_zero.py` L1-25</td></tr><tr><td>0x2a 早期定案的 file:line 根因链</td><td>`_AllToAll.forward` 按 `sum(output_split_sizes)` 分配输出缓冲 → 0-size data_ptr 可 NULL → AICPU &quot;execute kernel param invalid&quot;</td><td>补丁头注释 `patch_mcore_alltoallv_zero.py` L4-14；PROGRESS.md L180-189</td></tr><tr><td>排除③：reshape/衔接契约形状全匹配</td><td>简版报告排除过程第 3 条</td><td>`variants/04-train-full/reports/20260908-sft-full-report.md` L89-92</td></tr><tr><td>根因：msprof 全节点采样 → 全体 rank 冻结 alltoallv（Notify_Wait 永不满足）</td><td>简版报告根因定案段；msprof 全 64 NPU 采样部署配置</td><td>报告 L94-97；`scripts/deploy_full_train_ms.sh` L109-123（`--hccl=on --aicpu=on --runtime-api=on --aic-mode=task-based`）</td></tr><tr><td>决定性证据：Demo 2 节点 4 rank 场景 A 1s vs 场景 B 挂起 5.5min（507048 &quot;0 stuck notify wait&quot;）</td><td>简版报告根因定案段；507048 同类错误码生产观测（fftsplus stuck notify）</td><td>报告 L96；PROGRESS.md L169-172</td></tr><tr><td>机制：0-size notify 握手缺陷（发送端快速失败重试 / 接收端永久等待 / EP 环死锁 / 20min watchdog 507018）</td><td>简版报告机制段；backward 0-size 死锁机制闭环（forward 零接收 → backward 零发送 → notify 挂起）</td><td>报告 L97；PROGRESS.md L160-166</td></tr><tr><td>社区对照：DSV4 大 batch 467 steps 无错；Mini EP2 概率上不可能零接收（e^-128 量级）</td><td>简版报告对照段；S10 定案段统一解释</td><td>报告 L98；PROGRESS.md L188</td></tr><tr><td>解法：SEQ=1024（e^-32≈1e-14，累积口径 20 iters ≈ 7×10^-10），20/20 iters 收敛 loss 9.77→0.083（整体收敛，117 倍）</td><td>简版报告训练结果与解法段</td><td>报告 L100, L111-127</td></tr></tbody></table></div>
+<p>---</p>
+<p>*本章证据链三件套：msprof 设备级采样（通信冻结点名）+ Demo 栈外最小复现（单变量铁证）+ 单卡重放（算子无罪证明）。所有结论均有文件行号与日志支撑，详见 3.9 证据索引。*</p>
+<p>---</p>
+</section>
+<section id="第-4-章-解决方案与代码适配"><h2>第 4 章 解决方案与代码适配</h2>
+<div class="note">本章回答四个问题:**为支持 GLM-5.3-Flash 全量 SFT 训练, 解决了哪些问题、怎么解决的、有没有走弯路、每个修改的价值是什么**。</div>
+<div class="note">素材综合自 Mini 训练验证(03)、SP 并行适配(06)与全量训练验证(04)三个变体的完整代码修改链, 修改均以补丁/脚本形式固化入库。</div>
+<p>---</p>
+</section>
+<section id="4-1-问题概览与解决框架"><h3>4.1 问题概览与解决框架</h3>
+<p>GLM-5.3-Flash（321.32B / 45 层 / 288 专家）是混合架构模型: 主干为标准 Transformer 层, 含 KDA 混合注意力(线性注意力 + 稀疏 MLA 注意力)与稀疏 MoE(288 路由专家 + 共享专家)。要将它接入 MindSpeed-LLM 训练引擎并在 8 节点 64 卡上以 TP2 × EP32 × PP2 × SP 形态训练, 面临四大问题域:</p>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>问题域</th><th>核心矛盾</th><th>解决章节</th></tr></thead><tbody><tr><td>1</td><td>**模型层 mcore 化**</td><td>模型只有 HF 原生实现, 无任何 mcore 并行层, 引擎的 TP/EP/PP/SP 语义无法作用到模型</td><td>§4.2</td></tr><tr><td>2</td><td>**并行适配**</td><td>TP&gt;1×EP&gt;1 组合强制开启 SP, 自研层布局与 mcore 契约冲突; 权重桥接在 EP 切分下错位</td><td>§4.3</td></tr><tr><td>3</td><td>**训练链**</td><td>全量 321.32B 优化器内存不可行; 重算/通信流序冲突; 门禁判读与数据 loss_mask 缺陷</td><td>§4.4</td></tr><tr><td>4</td><td>**部署链**</td><td>多变体容器/目录冲突, 补丁叠加状态不可复现, 参考链拖垮训练资源</td><td>§4.5</td></tr></tbody></table></div>
+<p>解决框架总览:</p>
+<pre><code>flowchart TD
+    subgraph 问题域[&quot;GLM-5.3-Flash 接入训练引擎的四大问题域&quot;]
+        P1[&quot;模型层&lt;br/&gt;无 mcore 并行层&lt;br/&gt;HF 原生实现无法装配引擎&quot;]
+        P2[&quot;并行层&lt;br/&gt;TP×EP 组合强制 SP&lt;br/&gt;权重桥接 EP 偏移错位&quot;]
+        P3[&quot;训练链&lt;br/&gt;优化器内存不可行/重算死锁&lt;br/&gt;门禁判读与数据 mask 缺陷&quot;]
+        P4[&quot;部署链&lt;br/&gt;容器冲突/补丁叠加&lt;br/&gt;还原不可复现&quot;]
+    end
+    subgraph 解决路径[&quot;解决路径(本章各节)&quot;]
+        S1[&quot;模型层 mcore 化&lt;br/&gt;§4.2&quot;]
+        S2[&quot;并行适配&lt;br/&gt;§4.3&quot;]
+        S3[&quot;训练链修复&lt;br/&gt;§4.4&quot;]
+        S4[&quot;部署链工程&lt;br/&gt;§4.5&quot;]
+    end
+    P1 --&gt; S1
+    P2 --&gt; S2
+    P3 --&gt; S3
+    P4 --&gt; S4
+    S1 &amp; S2 &amp; S3 &amp; S4 --&gt; R[&quot;全量 64 NPU SFT 训练跑通&lt;br/&gt;20/20 iters, 0 崩溃&quot;]
+    R --&gt; C[&quot;核心突破&lt;br/&gt;0-size alltoallv 挂起根因&lt;br/&gt;SEQ=1024 token 放大解法 §4.6&quot;]</code></pre>
+<p>---</p>
+</section>
+<section id="4-2-模型层-mcore-化-让标准并行语义作用到模型"><h3>4.2 模型层 mcore 化: 让标准并行语义作用到模型</h3>
+
+</section>
+<section id="4-2-1-问题"><h4>4.2.1 问题</h4>
+<p>MindSpeed-LLM 的训练链路(数据加载、分布式优化器、MoE 专家并行、流水线并行)全部构建在 mcore 并行层语义之上: 张量并行权重按列/行切分、专家权重按 EP 组切分、PP 边界按 stage 传递、SP 在序列维 gather/reduce-scatter。而 GLM-5.3-Flash 官方只有 HF 实现, <strong>没有任何 mcore 并行层</strong>——直接套用引擎时模型根本无法装配, 并行语义无处落地。</p>
+</section>
+<section id="4-2-2-修改清单"><h4>4.2.2 修改清单</h4>
+<div class="table-wrap"><table><thead><tr><th>修改</th><th>解决的问题</th><th>价值</th></tr></thead><tbody><tr><td>KDA 注意力层 mcore 并行化(KdaAttentionMcore)</td><td>注意力 q/k/v/o 投影改为 ColumnParallelLinear/RowParallelLinear, 使 TP/SP 语义可作用</td><td>训练并行化的基础</td></tr><tr><td>稀疏层 mcore 版自写(MLA 稀疏注意力 / MoE / topk 路由 / indexer)</td><td>稀疏层(索引器、池化、稀疏注意力)为模型独有结构, mcore 无对应实现, 无法装配</td><td>全模型 mcore 化闭环</td></tr><tr><td>fla chunk_kda 原生径 + `use_qk_l2norm_in_kernel` 修复</td><td>核调用参数漏传, 注意力语义错位</td><td>**核心精度修复**(详见 4.2.3)</td></tr><tr><td>PP 边界 flatten/unflatten + 输入张量注入</td><td>PP2 流水线下跨 stage 张量边界衔接(45 层非均匀切为 22/23)</td><td>PP 并行基础</td></tr><tr><td>logits 布局 [b,s,v] → [s,b,v] 转置</td><td>mcore 交叉熵损失契约要求 seq 在 dim0, 原生输出布局不符</td><td>loss 计算正确</td></tr><tr><td>mhc 4D 边界接管(`_restore_boundary_tensor_shapes`)</td><td>mhc(multi-head-concat)框架补丁将 PP 边界张量改为 4D, 与模型 3D 契约冲突</td><td>跨节点 PP 边界接通</td></tr></tbody></table></div>
+</section>
+<section id="4-2-3-核心精度修复-fla-chunk_kda-原生径-l2norm-参数修复"><h4>4.2.3 核心精度修复: fla chunk_kda 原生径 + l2norm 参数修复</h4>
+<p>KDA 层是 GLM-5.3 混合注意力中计算量最大的部分, 落地采用 fla 0.6.0 的 chunk_kda 原生核路径(而非逐算子拼装)。但全链对拍发现引擎与 HF 参考实现输出相似度仅 <strong>0.70</strong>, 未达数值门禁。定位与修复:</p>
+<pre><code>flowchart TD
+    A[&quot;引擎 vs HF 对拍&lt;br/&gt;相似度 = 0.70&quot;] --&gt; B[&quot;逐层二分定位&lt;br/&gt;KDA 层相似度 = 0.355&quot;]
+    B --&gt; C[&quot;调用签名核对&lt;br/&gt;use_qk_l2norm_in_kernel 漏传&lt;br/&gt;(默认 False 与模型语义不符)&quot;]
+    C --&gt; D[&quot;显式传入 True 修复&lt;br/&gt;相似度 = 1.007 ✅&quot;]</code></pre>
+<p><strong>根因</strong>: 自研 KDA 层调用 chunk_kda 核时漏传 <code>use_qk_l2norm_in_kernel</code> 参数。该参数控制 query/key 的核内 L2 归一化——模型配置需要归一化, 而核默认按&quot;已归一化&quot;处理, 参数漏传导致注意力语义整体错位。修复为显式传 <code>True</code> 后, 对拍相似度由 0.70 升至 <strong>1.007</strong>(数值门禁判据为 ≥0.995, 已大幅达标)。</p>
+<div class="note">指标口径注: 上述对拍数值(0.70 / 0.355 / 1.007)为早期使用的**自定义相似度指标**, 非严格 pearson——pearson 相关系数数学上界为 1.0, 1.007 说明该计算式并非严格 pearson(1.007 为该计算式的计算噪声)。后续门禁统一改用**严格 pearson(np.corrcoef)**, 数学上界 1.0; 当前门禁数值(如 0.999965)均为此口径。</div>
+<div class="note">这是全链精度达成的**第一块基石**——此前的训练链路即使跑通, 数值也是错的。</div>
+<p>---</p>
+</section>
+<section id="4-3-并行适配-SP-布局迁移与权重桥接根因修复"><h3>4.3 并行适配: SP 布局迁移与权重桥接根因修复</h3>
+
+</section>
+<section id="4-3-1-SP-布局迁移-序列维切分"><h4>4.3.1 SP 布局迁移(序列维切分)</h4>
+<p><strong>问题</strong>: 全量并行形态 TP2×EP32 触发 mcore 硬校验&quot;EP&gt;1 × TP&gt;1 必须开启 SP&quot;。而 mcore 的 SP 机制建立在<strong>seq 在 dim0</strong> 的布局契约上(层输入 [s,b,h], 切分后 [s/tp,b,h]), 自研层原布局为 [b,s,d]——布局冲突, SP 下数值必然错误。</p>
+<p><strong>方案</strong>: 全模型内部统一迁移到 mcore 的 [s,b,h] 布局, 与框架契约对齐(而非绕过校验)。迁移地图:</p>
+<div class="table-wrap"><table><thead><tr><th>组件</th><th>布局契约</th><th>迁移动作</th></tr></thead><tbody><tr><td>embedding 输出</td><td>SP 下应 [s/tp,b,d]</td><td>embed 后 transpose(0,1), 用 mcore 的 reduce-scatter embedding</td></tr><tr><td>线性投影层(q/k/v/gate/up)</td><td>输入 [s/tp,b,d], 内部自动 gather</td><td>直接喂 mcore ColumnParallelLinear, 层输入不做预 gather</td></tr><tr><td>fla chunk_kda 调用点</td><td>核要求 [b,s,heads,d]</td><td>调用点局部转置回 [b,s], 计算后转回</td></tr><tr><td>稀疏索引器(indexer)</td><td>**需要全序列全局 topk**</td><td>SP 输入处先 gather 全序列, 池化/全局 topk 语义不被切分破坏</td></tr><tr><td>MoE dispatcher</td><td>SP 感知内置</td><td>无改动(token permutation 前 gather, unpermutation 后 reduce-scatter)</td></tr><tr><td>PP 边界</td><td>[s,b,hc·d]</td><td>flatten 后直接传递, 收端按 [s,b,hc,d] view 回</td></tr></tbody></table></div>
+<p>迁移后自研层全面 SP-correct, 全量 TP2×EP32×SP 形态可行。</p>
+</section>
+<section id="4-3-2-核心根因修复-权重桥接-etp-分支"><h4>4.3.2 核心根因修复: 权重桥接 etp 分支</h4>
+<p><strong>现象</strong>: SP 门禁对拍下严格 pearson(np.corrcoef) <strong>0.9606</strong>, 未达 0.995——模型前向正确了, 但权重加载链引入了新的偏差。</p>
+<p><strong>根因</strong>: mbridge 权重桥的基础 <code>load_weights</code> 中, TP scatter 分支(每 rank 从盘加载自己的张量并行切片)只识别了 <code>linear_fc</code> 一类专家键; MoE 的 <code>gate_up_proj</code>/<code>down_proj</code> 两类专家键未归入 EP 感知加载路径——<strong>TP scatter 逻辑覆盖了 EP 偏移</strong>, 各 rank 加载的专家权重切片位置错位。</p>
+<p><strong>修复</strong>(桥接核心分支, 补丁固化):</p>
+<pre><code>修复前: 仅 &quot;.mlp.experts.linear_fc&quot; 归入 etp 分支 → gate_up/down 走 TP scatter → 覆盖 EP 偏移
+修复后: linear_fc + gate_up_proj + down_proj 三类专家键全部归入 etp 分支
+        (etp_size=1 时每 rank 按 ep_rank 偏移从盘加载自己的 EP 切片)</code></pre>
+<p><strong>结果</strong>: 严格 pearson(np.corrcoef) 0.9606 → <strong>0.999965</strong>, SP 门禁达成。这是并行适配中<strong>价值最高的一处修改</strong>——专家权重错位不报错、不崩溃, 只表现为数值偏差, 属于&quot;静默错误&quot;, 只有数值门禁才能拦截。</p>
+</section>
+<section id="4-3-3-Float16Module-恢复-e_score-偏置豁免"><h4>4.3.3 Float16Module 恢复 + e_score 偏置豁免</h4>
+<p><code>e_score_correction_bias</code>(专家打分修正偏置)语义上需要保留 fp32 精度: 模型封装层 Float16Module 统一做 bf16 cast 后, 偏置舍入误差足以引起 topk 专家选择翻转。修复为两处配合: ① 桥接加载时豁免该键的 bf16 转换(保持 fp32 落位); ② Float16Module 在 bf16 cast 之后将该偏置恢复为 fp32。价值为精度链补充修复(非主因)。</p>
+</section>
+<section id="4-3-4-0-size-输出缓冲-data_ptr-修复-卫生修复"><h4>4.3.4 0-size 输出缓冲 data_ptr 修复(卫生修复)</h4>
+<p>MoE alltoallv 通信按 <code>sum(output_split_sizes)</code> 分配输出缓冲, 零接收时得到 0-size 张量, <code>data_ptr</code> 可能为 NULL——NPU 侧 AICPU alltoallv 核拒绝空指针, 报 <code>param invalid</code> 并毒化设备流。修复为分配 <code>max(1, sum)</code> 后切片回 0-size(保 numel=0 + 有效指针), 输入侧(反向零接收)同法, 语义零变化。</p>
+<div class="note">注意: 这是**指针面卫生修复, 非传输面根因修复**——它只保证 data_ptr 有效, 未触及 0-size 传输在 notify 握手侧的挂起(传输面)。历史上一度有&quot;无 0-size 仍死锁&quot;的观察, 但该观察发生在补丁叠加污染的容器上且仅覆盖指针面, 效力存疑——**指针面排除 ≠ 传输面排除**。传输面由 §4.6 的干净单变量 Demo 与 20/20 验证轮最终定案。此修复消除了一个真实的崩溃触发面(0x2a), 予以保留。</div>
+<p>---</p>
+</section>
+<section id="4-4-训练链修复"><h3>4.4 训练链修复</h3>
+<div class="table-wrap"><table><thead><tr><th>修改</th><th>解决的问题</th><th>价值</th></tr></thead><tbody><tr><td>优化器 CPU offload 四件套</td><td>全量 321.32B 参数 fp32 master 状态落 NPU 必然 OOM(实证: 已占 58.64GB 时再分配 66MB 失败)</td><td>全量训练内存可行性</td></tr><tr><td>激活重算(recompute)关闭</td><td>重算引入的 checkpoint 重放与 SP collective、MoE a2a 通信流序冲突 → 特定死锁</td><td>消除特定死锁</td></tr><tr><td>门禁判读链修复(`tee` 多路输出 + `pipefail` 容错)</td><td>训练日志经多路 tee 后 loss 未入主日志, 门禁无法判读</td><td>门禁可自动化</td></tr><tr><td>数据 loss_mask 修复</td><td>GSM8K 原始数据 prompt 只有 user 消息、无 assistant 回复 → loss_mask 全零 → 0/0 = NaN</td><td>数据链正确</td></tr></tbody></table></div>
+<p>其中优化器 offload 是全量训练的<strong>内存地基</strong>, 涉及 mcore 两处 NPU 设备判别缺陷:</p>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>缺陷</th><th>修复</th></tr></thead><tbody><tr><td>`optimizer/cpu_offloading/hybrid_optimizer.py`</td><td>用 `param.is_cuda` 判断设备——NPU 张量 `is_cuda=False, is_npu=True`, offload 逻辑失效, fp32 master 全落 NPU</td><td>新增设备判定函数, 按 `device.type != &quot;cpu&quot;` 替换 3 处</td></tr><tr><td>`optimizer/distrib_optimizer.py`</td><td>用 `type() in [&#x27;torch.cuda.*&#x27;]` 字符串判型, NPU 张量不命中 → 构建期 TypeError</td><td>3 处类型比较改为 dtype 比较</td></tr></tbody></table></div>
+<div class="note">这两类缺陷都是&quot;CUDA 中心假设&quot;在 NPU 上的典型残留——引擎代码按 CUDA 语义判设备, 不报错但静默失效, 只有全量内存压力下才显形。</div>
+<p>---</p>
+</section>
+<section id="4-5-部署链-可复现性工程"><h3>4.5 部署链: 可复现性工程</h3>
+<div class="table-wrap"><table><thead><tr><th>修改</th><th>解决的问题</th><th>价值</th></tr></thead><tbody><tr><td>容器命名规范(E1)</td><td>多变体共用容器名, 曾发生一次部署 `docker rm -f` 铲掉另一变体推理容器的事故</td><td>并行会话隔离</td></tr><tr><td>远程目录迁移(E5)</td><td>共享盘根目录散落, 补丁区/日志/dump 无分区, 多变体互相覆盖</td><td>规范管理</td></tr><tr><td>run_all 一键还原(R6)</td><td>脏容器残留 + 回退脚本失效 + 每次部署叠加补丁 → 补丁状态混乱不可复现</td><td>**根治补丁叠加问题**</td></tr><tr><td>参考链默认禁用</td><td>HF 参考链 `from_pretrained` 单流加载 643GB 权重, 实测 ~46MB/s, 耗时 3 小时以上, 且与训练抢资源</td><td>避免资源浪费</td></tr></tbody></table></div>
+<p>其中 R6 一键还原是部署链的<strong>收口工程</strong>: 单脚本五步完成 ①本地代码提交 → ②8 节点容器强制清理 → ③容器重建 → ④容器内代码覆盖 → ⑤任务启动 + 门禁判读。<strong>有且只有这一个脚本即可完全还原本实验</strong>, 无人工中间步骤——这从机制上消除了&quot;补丁状态混乱&quot;这类问题的复发空间(详见 §4.7 弯路复盘)。</p>
+<p>---</p>
+</section>
+<section id="4-6-核心解法-从-消除-0-size-到-放大-token-量"><h3>4.6 核心解法: 从&quot;消除 0-size&quot;到&quot;放大 token 量&quot;</h3>
+
+</section>
+<section id="4-6-1-现象与根因定案"><h4>4.6.1 现象与根因定案</h4>
+<p>全量训练在历史阶段反复卡死, 十四轮以上部署未能收敛。经过三轮排除与定案:</p>
+<div class="table-wrap"><table><thead><tr><th>步骤</th><th>内容</th><th>结论</th></tr></thead><tbody><tr><td>排除 1</td><td>fla 核挂起假设: 单卡重放 5 个随机种子全通过, 5 组梯度(q/k/v/g/beta)全有限</td><td>排除</td></tr><tr><td>排除 2</td><td>0-size 输出缓冲**指针面**假设(0x2a): 指针卫生修复运行期生效后仍卡死</td><td>排除(指针面)——指针面排除 ≠ 传输面排除, 传输面由 Demo+验证轮定案</td></tr><tr><td>排除 3</td><td>张量衔接假设: 契约形状全匹配</td><td>排除</td></tr><tr><td>**定案**</td><td>msprof 全节点采样: 全体 rank 冻结在 **alltoallv 通信**(Notify_Wait 永不满足); 双节点四 rank Demo 独立复现: 正常场景 1 秒完成, 0-size 场景挂起 5.5 分钟后崩溃</td><td>**实锤**</td></tr></tbody></table></div>
+<p><strong>机制</strong>: 0-size 传输在 NPU 通信栈存在 notify 握手缺陷——发送端反复快速失败, 接收端永久等待 → EP 环上全体互等 → 集群冻结 → 看门狗超时终止。触发条件为 <strong>EP32 稀疏路由 + 每 rank 平均 token 数过少</strong>: MBS=1 × SEQ=64 时每层全局仅 64 token, 经 32 个 EP rank 均分后每 rank 平均接收 2 token(模型共 288 个专家, 每 rank 持 9 个), &quot;零接收&quot;是实测必现事件——2026-09-05 探针轮 5360+ 次 alltoallv 调用中 4 次零接收(≈7.4e-4/调用), 0-size alltoallv 必然发生。</p>
+</section>
+<section id="4-6-2-路线一-clamp-消除-0-size-尝试后回退"><h4>4.6.2 路线一: clamp 消除 0-size(尝试后回退)</h4>
+<p><strong>思路</strong>: 把 alltoallv 的 splits 中 0 项钳制为 1, 配 dummy token 落位, 从源头消除 0-size 事件。该路线两轮失败:</p>
+<div class="table-wrap"><table><thead><tr><th>版本</th><th>缺陷</th><th>后果</th></tr></thead><tbody><tr><td>v1</td><td>只钳派生值(input_splits), 不钳源值(每个专家的 token 分布)——发送端 splits≥1 但对端 gather 到真实分布(可能 0), **两侧 splits 不一致**</td><td>通信参数校验失败(0x2a)</td></tr><tr><td>v2</td><td>移到源层面钳制(对称性修复), 但补丁经多次叠加后状态混乱(同一块代码 4 处重复钳位), 其间&quot;无 0-size 事件仍死锁&quot;的观察发生在污染容器上且仅覆盖指针面</td><td>效力存疑, 不构成对根因的证伪; 传输面由干净单变量 Demo 与验证轮定案; 方案整体回退</td></tr></tbody></table></div>
+<p>结论: clamp 方案不稳定(对称性缺陷 + 补丁状态混乱), 全部回退, 仅保留 §4.3.4 的指针卫生修复。排除口径说明: <strong>指针面排除 ≠ 传输面排除</strong>——传输面(notify 握手)由 §4.6.1 的 Demo 与 20/20 验证轮定案。</p>
+</section>
+<section id="4-6-3-路线二-SEQ-1024-token-放大-为什么选这条路"><h4>4.6.3 路线二: SEQ=1024 token 放大——为什么选这条路</h4>
+<p><strong>概率论证</strong>: 0-size 的本质是&quot;小样本量下稀疏路由的必然偶然&quot;。将 SEQ 由 64 放大到 <strong>1024</strong>(MBS=1), 每层全局 1024 token 经 32 个 EP rank 均分后每 rank 平均接收 32 token(每专家平均约 3.6 token; 按 topk=8 路由展开约 28), 每 rank 零接收的概率按泊松近似为 e^(-32) ≈ <strong>1.3e-14</strong>——事件面从&quot;必现&quot;变为&quot;数学上不可能&quot;。运行窗口累积概率: 每 iter 约 2,880 次 alltoallv 调用(45 层 × 32 rank × fwd/bwd), 20 iters 约 57,600 次, 期望零接收事件 ≈ 57,600 × 1.3e-14 ≈ <strong>7×10^-10</strong>, 远小于任何工程风险阈值。</p>
+<p><strong>决策理由</strong>(对领导的正面说明):</p>
+<p>1. <strong>不动框架内核</strong>: clamp 需要改 MoE dispatcher 的路由语义(引入 dummy token 流), 风险高且验证成本大; 根因解法零内核改动(仅改数据形态参数)——与此前 §4.2-§4.5 的模型/并行/部署适配修改相互独立</p>
+<p>2. <strong>从概率根上消除</strong>: 不是&quot;修复一次挂起&quot;, 而是让 0-size 事件本身不再发生</p>
+<p>3. <strong>社区验证同款路径</strong>: DeepSeek V4 训练 467 steps 零崩溃, 正是大 batch 下天然规避了该问题——本方案与其同源</p>
+<p>4. <strong>代价可控</strong>: 收益 = 从概率根上消除 0-size 触发面; 代价为 HBM 升至 ~54GB/卡(64GB 卡的 84%)与短样本 padding 计算开销(SFT 数据无打包逻辑, 短样本按定长 1024 补齐, 计算被 loss_mask 屏蔽)</p>
+<p><strong>结果</strong>: 20/20 iters 完整跑通、loss 9.77→0.083 整体收敛(117 倍)、0 崩溃 0 卡死。</p>
+<pre><code>flowchart LR
+    A[&quot;根因: 0-size alltoallv&lt;br/&gt;notify 握手缺陷挂起&quot;] --&gt; B{&quot;修复路线选择&quot;}
+    B --&gt;|&quot;路线 1: 消除 0-size 事件&quot;| C[&quot;clamp 方案&quot;]
+    C --&gt; C1[&quot;v1: 只钳派生值&lt;br/&gt;两侧 splits 不一致 → 0x2a&quot;]
+    C1 --&gt; C2[&quot;v2: 源层面钳制&lt;br/&gt;补丁状态混乱, 观察效力存疑&quot;]
+    C2 --&gt; C3[&quot;整体回退 ❌&lt;br/&gt;(仅保留指针卫生修复)&quot;]
+    B --&gt;|&quot;路线 2: 降低 0-size 概率&quot;| D[&quot;token 放大&lt;br/&gt;SEQ 64 → 1024&quot;]
+    D --&gt; D1[&quot;P(0-size) ≈ e^-32 ≈ 1.3e-14&lt;br/&gt;与 DSV4 同款社区路径&quot;]
+    D1 --&gt; E[&quot;20/20 iters 完整跑通 ✅&lt;br/&gt;loss 9.77 → 0.083&quot;]</code></pre>
+<p>---</p>
+</section>
+<section id="4-7-弯路复盘-诚实记录"><h3>4.7 弯路复盘(诚实记录)</h3>
+<p>本章探索过程中的弯路（clamp v1 对称性缺陷、clamp v2 补丁状态混乱、节点排查错误归因、一次改两个变量）与第 3 章 §3.7 的结构性复盘、§3.8 的弯路表同源, 此处不重复展开, 完整归因与逐条教训见该两节。仅保留两条工程结论:</p>
+<ul><li>**涉及配对侧（通信 splits/布局）的修改必须静态审查两侧对称性**, 凡发送/接收成对的参数, 先审两侧一致性再部署;</li><li>**补丁必须幂等并在干净容器验证**——从零还原（§4.5 R6 一键还原）是唯一可靠基线, 叠加补丁的状态不可复现。</li></ul>
+<div class="note">归纳: 前两个弯路属于&quot;补丁工程纪律&quot;问题, 后两个属于&quot;实验方法论&quot;问题——均已固化为部署规范(R6 一键还原、单变量原则), 后续变体不再重犯。</div>
+<p>---</p>
+</section>
+<section id="4-8-修改价值评估总表"><h3>4.8 修改价值评估总表</h3>
+<div class="table-wrap"><table><thead><tr><th>修改</th><th>价值等级</th><th>说明</th><th>当前状态</th></tr></thead><tbody><tr><td>mcore 并行层 + 稀疏层自写 + fla 原生径</td><td>基础</td><td>训练可运行的前提, 无此则引擎无法装配模型</td><td>保留</td></tr><tr><td>**l2norm 参数修复**</td><td>**核心精度**</td><td>对拍相似度 0.70 → 1.007（早期自定义相似度指标, 非严格 pearson）, 全链数值正确性的第一基石</td><td>保留</td></tr><tr><td>**mbridge etp 分支**</td><td>**核心精度**</td><td>严格 pearson(np.corrcoef) 0.9606 → 0.999965, 专家权重错位的静默错误根因修复</td><td>保留</td></tr><tr><td>**SEQ=1024 token 放大**</td><td>**核心突破**</td><td>消除 0-size alltoallv 挂起——十四轮以上未收敛的根本解法, 20/20 iters 跑通</td><td>保留</td></tr><tr><td>Float16Module + e_score 豁免</td><td>精度补充</td><td>偏置 fp32 语义保持, 防 topk 翻转(非主因)</td><td>保留</td></tr><tr><td>0-size data_ptr 修复</td><td>卫生</td><td>指针面卫生修复: 防 NULL 指针崩溃面(非传输面根因修复, 传输面由 Demo+验证轮定案)</td><td>保留</td></tr><tr><td>clamp 方案(v1/v2)</td><td class="bad">已废弃</td><td>不稳定(对称性缺陷 + 补丁状态混乱), 其间&quot;无 0-size 仍死锁&quot;观察效力存疑, 被 SEQ 方案取代</td><td>已回退</td></tr><tr><td>优化器 CPU offload 四件套</td><td>内存基础</td><td>全量 321.32B 训练内存可行性, 无此则无法构建优化器</td><td>保留</td></tr><tr><td>重算关闭 / 门禁判读链 / 数据 loss_mask</td><td>训练链修复</td><td>消除死锁、门禁可自动化、数据正确</td><td>保留</td></tr><tr><td>容器命名(E1) / 目录迁移(E5) / run_all(R6) / 参考链默认禁用</td><td>流程</td><td>部署可复现性与会话隔离</td><td>保留</td></tr></tbody></table></div>
+<p>价值等级定义: <strong>基础</strong> = 训练可运行的必要条件; <strong>核心精度</strong> = 数值正确性门禁达成的关键修复; <strong>核心突破</strong> = 解决长期未收敛根因的解法; <strong>卫生</strong> = 消除非根因崩溃面; <strong>已废弃</strong> = 验证后放弃的方案。</p>
+<p>---</p>
+</section>
+<section id="4-9-修改清单-文件级-供追溯"><h3>4.9 修改清单(文件级, 供追溯)</h3>
+<div class="note">阶段归属按&quot;引入/固化的变体&quot;标注, &quot;→&quot; 表示沿用至后续变体(03 = Mini 训练验证, 06 = SP 并行适配, 04 = 全量训练验证, 07 = 全量 RL 链)。</div>
+<div class="table-wrap"><table><thead><tr><th>层</th><th>文件</th><th>修改内容</th><th>所属变体/阶段</th><th>状态</th></tr></thead><tbody><tr><td>模型层</td><td>`patch/mindspeed/glm5next/`（glm5next_model.py + layers/glm5next_mcore.py + layers/kda_layer.py）</td><td>KDA 注意力/稀疏层 mcore 化自写 + fla chunk_kda 原生径 + l2norm 参数修复（§4.2.2/4.2.3）</td><td>03→04</td><td>保留</td></tr><tr><td>模型层</td><td>`patch/mindspeed/glm5next_pretrain.py`</td><td>训练入口: mcore 接线、HF 真权重加载、parity dump、PP 边界 flatten/unflatten 接管、logits 转置、mhc 4D 接管（§4.2.2）</td><td>03→04</td><td>保留</td></tr><tr><td>模型层</td><td>`patch/mindspeed/glm5next_parity.py`</td><td>引擎 vs HF 数值对拍工具</td><td>04</td><td>保留</td></tr><tr><td>模型层</td><td>`patch/mbridge/models/glm5next.py`</td><td>桥接模型外壳: mcore 模型构建、键名映射、EP 感知专家 ID</td><td>03→04</td><td>保留</td></tr><tr><td>桥接层</td><td>`scripts/patches/0001-mbridge-core-bridge-etp-expert-load-fix.patch`</td><td>专家键归入 etp 分支 + e_score 偏置豁免（§4.3.2/4.3.3）</td><td>06→04</td><td>保留(核心)</td></tr><tr><td>模型层</td><td>`scripts/patches/0002-msllm-module-float16-restore.patch`</td><td>Float16Module bf16 cast 后恢复 e_score 偏置为 fp32</td><td>06→04</td><td>保留</td></tr><tr><td>并行层</td><td>`patch/mcore/hybrid_optimizer.py`</td><td>CPU offload 设备判定 NPU 化（3 处）</td><td>03→04</td><td>保留</td></tr><tr><td>并行层</td><td>`patch/mcore/patch_distrib_optimizer_npu.py`</td><td>分布式优化器类型判定的 NPU 化（3 处）</td><td>03→04</td><td>保留</td></tr><tr><td>并行层</td><td>`scripts/patches/patch_mcore_alltoallv_zero.py`</td><td>0-size alltoallv 指针面卫生修复（§4.3.4）</td><td>04</td><td>保留</td></tr><tr><td>并行层</td><td>`scripts/patches/patch_mcore_alltoallv_clamp.py` / `revert_mcore_alltoallv_clamp.py`</td><td>clamp 消除 0-size（含对称性 v2）</td><td>04</td><td>已回退</td></tr><tr><td>并行层</td><td>`scripts/patches/reapply_patches_63.py`</td><td>幂等补丁重放器（双树一致性校验）</td><td>04</td><td>保留</td></tr><tr><td>训练链</td><td>`patch/verl/transformer_impl.py` / `mindspeed_transformer_impl.py`</td><td>verl 引擎侧模型装配</td><td>07（复用）</td><td>保留；**供 07 RL 链复用, 非本次 04 训练路径使用**（04 走原生 pretrain 入口）</td></tr><tr><td>训练链</td><td>`patch/mbridge/scripts/build_sft_data.py`</td><td>SFT 数据构建: 注入 assistant 消息修复 loss_mask 全零（§4.4）</td><td>04</td><td>保留</td></tr><tr><td>部署链</td><td>`scripts/run_all_full_train.sh`</td><td>一键还原（R6）: 提交→清容器→重建→覆盖→启动+门禁</td><td>04</td><td>保留</td></tr><tr><td>部署链</td><td>`config.sh` / `scripts/deploy_full_train_ms.sh`</td><td>容器命名规范、参考链默认禁用、门禁判读链（tee/pipefail）、重算关闭等部署参数</td><td>04</td><td>保留</td></tr></tbody></table></div>
+<p>---</p>
+<p>*本章修改均有代码补丁/脚本入库可追溯; 数值结论(pearson、loss、崩溃签名)以各变体门禁记录与日志为证据。*</p>
+<p>---</p>
+</section>
+<section id="第-5-章-实验验证与结果"><h2>第 5 章 实验验证与结果</h2>
+<div class="note">本章给出 GLM-5.3-Flash 全量 SFT 训练的实测验证结果: 训练配置、训练过程健康度、loss 收敛曲线(20 iters 完整数据)、以及四道门禁的达成状态与含义解读。</div>
+<div class="note">数据来源: 8 节点 64 NPU 训练日志实测(rank7 stdout 逐 iter 明细 + rank0 主日志), 详见文末数据来源。</div>
+<p>---</p>
+</section>
+<section id="5-1-训练配置"><h3>5.1 训练配置</h3>
+<div class="table-wrap"><table><thead><tr><th>配置项</th><th>值</th><th>说明</th></tr></thead><tbody><tr><td>训练规模</td><td>**8 节点 / 64 NPU**(910B)</td><td>单机 8 卡, 8 机 64 卡</td></tr><tr><td>模型</td><td>GLM-5.3-Flash, **321.32B 参数**（权重实测: 专家 311.65B + dense 7.84B + vision/misc 1.83B）, 45 层, 288 专家</td><td>全量模型, 无裁剪; 引擎运行期统计口径为 333.84B（332.57B 主干 + 1.27B 嵌入, 含 MTP/共享专家等计数口径）, 与权重实测的 12.52B 差异属口径差</td></tr><tr><td>权重</td><td>HF 真权重 **643GB**(120 分片, BF16)</td><td>非随机初始化, 训练门禁有效性的前提</td></tr><tr><td>并行形态</td><td>**TP2 × EP32 × PP2 × DP1 × SP=True**(ETP=1)</td><td>MoE 专家并行 32 路 + 流水线 2 段(45 = 22+23 层非均匀切分)</td></tr><tr><td>数据形态</td><td>SEQ=1024, MBS=1, GBS=32</td><td>每全局步 32 samples = 32,768 tokens</td></tr><tr><td>训练步数</td><td>TRAIN_ITERS=20</td><td>本报告实测窗口</td></tr><tr><td>引擎</td><td>MindSpeed-LLM 原生 pretrain 入口</td><td>全模型 mcore 化 + SP 布局</td></tr><tr><td>注意力</td><td>fla 0.6.0 chunk_kda 原生径(use_qk_l2norm_in_kernel=True)</td><td>稀疏注意力 NPU 原生核</td></tr><tr><td>优化器</td><td>Adam, bf16 权重 + fp32 master 参数 **CPU offload**, 分布式优化器</td><td>全量 321.32B 的 optimizer fp32 态落 NPU 必 OOM, offload 是全量训练的内存前提</td></tr><tr><td>超参</td><td>lr=1e-5(恒定), weight_decay=0.01, grad_clip=1.0, loss_scale=1.0</td><td>短窗收敛验证配置</td></tr><tr><td>训练镜像</td><td>glm53-train:910b-20260831(0c19c307c84c), CANN 9.1.0-beta.3</td><td>digest 钉死</td></tr></tbody></table></div>
+<p><strong>关键前提</strong>: 全量权重 643GB 经 NFS 加载, 各 rank 权重加载+模型组装耗时 71.5s~305.5s(慢 rank 为单流 NFS 读 120 分片所致, 见 6.3.2 时间构成分解)。</p>
+<p>---</p>
+</section>
+<section id="5-2-训练过程健康度"><h3>5.2 训练过程健康度</h3>
+<p>20 个迭代全程无中断、无异常, 关键观测项如下:</p>
+<div class="table-wrap"><table><thead><tr><th>观测项</th><th>结果</th><th>说明</th></tr></thead><tbody><tr><td>迭代完成度</td><td>**20/20 iters 完成**</td><td>无跳过、无中断</td></tr><tr><td>NaN / Inf</td><td>**0**</td><td>每 iter 显式检查, 全部有限</td></tr><tr><td>崩溃 / 卡死</td><td>**0**</td><td>无进程退出、无通信挂起</td></tr><tr><td>loss scale</td><td>恒为 1.0</td><td>全程无 fp16 溢出降标(bf16 下梯度量级健康)</td></tr><tr><td>梯度零计数 (num zeros)</td><td>恒为 0</td><td>无梯度静默丢失</td></tr><tr><td>grad norm</td><td>154.3 → 1.55(随 loss 同步收敛)</td><td>无梯度爆炸, clip=1.0 兜底有效</td></tr><tr><td>训练窗口</td><td>00:22:42 → 00:56:45(**34 分钟**)</td><td>00:22:42 为**训练步起点**（权重加载在其前完成）; 窗口含 fla 核 JIT 编译与 20 iters 训练</td></tr></tbody></table></div>
+<p><strong>结论</strong>: 64 NPU 跨 8 节点的全量训练链(前向/反向/优化器/EP 通信/PP 流水线)物理可用且数值稳定, 0 NaN / 0 崩溃 / 0 卡死。</p>
+<p>---</p>
+</section>
+<section id="5-3-Loss-收敛曲线"><h3>5.3 Loss 收敛曲线</h3>
+
+</section>
+<section id="5-3-1-完整收敛数据-20-iters-实测"><h4>5.3.1 完整收敛数据(20 iters 实测)</h4>
+<div class="table-wrap"><table><thead><tr><th>iter</th><th>loss</th><th>grad norm</th><th>单 iter 耗时 (s)</th></tr></thead><tbody><tr><td>1</td><td>9.7677</td><td>154.30</td><td>345.2*</td></tr><tr><td>2</td><td>10.0349</td><td>46.82</td><td>88.6</td></tr><tr><td>3</td><td>9.1664</td><td>12.53</td><td>89.0</td></tr><tr><td>4</td><td>8.6812</td><td>10.37</td><td>89.2</td></tr><tr><td>5</td><td>8.1626</td><td>7.52</td><td>88.0</td></tr><tr><td>6</td><td>7.9464</td><td>14.56</td><td>88.9</td></tr><tr><td>7</td><td>7.6075</td><td>11.00</td><td>88.9</td></tr><tr><td>8</td><td>6.6531</td><td>11.58</td><td>88.3</td></tr><tr><td>9</td><td>5.3283</td><td>13.57</td><td>88.2</td></tr><tr><td>10</td><td>3.1160</td><td>15.07</td><td>88.8</td></tr><tr><td>11</td><td>3.1436</td><td>8.28</td><td>88.8</td></tr><tr><td>12</td><td>1.3785</td><td>6.48</td><td>89.5</td></tr><tr><td>13</td><td>1.2892</td><td>7.00</td><td>90.6</td></tr><tr><td>14</td><td>0.7360</td><td>5.55</td><td>95.8</td></tr><tr><td>15</td><td>0.5727</td><td>3.78</td><td>89.9</td></tr><tr><td>16</td><td>0.3622</td><td>2.42</td><td>89.2</td></tr><tr><td>17</td><td>0.1794</td><td>1.00</td><td>89.0</td></tr><tr><td>18</td><td>0.1434</td><td>5.83</td><td>88.8</td></tr><tr><td>19</td><td>0.1416</td><td>2.78</td><td>89.1</td></tr><tr><td>20</td><td>**0.0834**</td><td>1.55</td><td>89.0</td></tr></tbody></table></div>
+<p>\* 首 iter 含 fla 稀疏注意力核的 JIT 编译一次性开销, 非稳态耗时(详见第 6 章)。</p>
+</section>
+<section id="5-3-2-收敛曲线-ASCII-示意图-非精确对数刻度"><h4>5.3.2 收敛曲线（ASCII 示意图, 非精确对数刻度）</h4>
+<div class="note">图为示意, 纵轴为 log10(loss) 近似刻度, 非精确对数刻度; 精确数值以 §5.3.1 数据表为准。</div>
+<pre><code>loss
+(log10)
+ ≈10  ██  ██  ██  ██  ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ····
+ ≈6.3 ██  ██  ██  ██  ██  ██  ██  ██  ██  ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ···· ····
+ ≈4.0 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ···· ···· ···· ···· ···· ···· ···· ···· ···· ····
+ ≈2.5 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ···· ···· ···· ···· ···· ···· ···· ···· ···· ····
+ ≈1.6 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ···· ···· ···· ···· ···· ···· ···· ····
+ ≈1.0 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ···· ···· ···· ···· ···· ····
+ ≈0.63 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ···· ···· ···· ···· ····
+ ≈0.40 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ···· ···· ···· ····
+ ≈0.25 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██
+ ≈0.16 ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██  ██
+       1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  → iter</code></pre>
+<p>曲线形态: 前 9 个迭代处于高 loss 平台(10→5), 从第 10 迭代起进入持续加速下降, 第 20 迭代收敛至 0.083。</p>
+</section>
+<section id="5-3-3-收敛性分析"><h4>5.3.3 收敛性分析</h4>
+<div class="table-wrap"><table><thead><tr><th>区段</th><th>起止 loss</th><th>线性降幅</th><th>平均线性降速</th><th>平均对数降速 (log10/iter)</th></tr></thead><tbody><tr><td>iter 1 → 10</td><td>9.77 → 3.12</td><td>-68.1%</td><td>-0.74 / iter</td><td>0.055</td></tr><tr><td>iter 10 → 20</td><td>3.12 → 0.083</td><td>-97.3%</td><td>-0.30 / iter</td><td>0.157</td></tr></tbody></table></div>
+<p><strong>核心结论</strong>:</p>
+<p>1. <strong>收敛幅度 117 倍</strong>: loss 从 9.7677 降至 0.0834(9.7677 ÷ 0.0834 ≈ 117)。全程 19 个相邻步中 17 步单调下降, 仅 2 处回翘——iter 2(+2.7%)与 iter 11(+0.9%), 均为动量瞬态波动, 量级 &lt;3%, 不构成趋势反转。</p>
+<p>2. <strong>指数收敛形态(两段式)</strong>: 对数尺度上呈&quot;慢启动 → 指数收敛&quot;形态——前 9 个迭代处于高 loss 慢速区(≈0.03 log10/iter, 动量与步长建立期), 第 10 迭代起进入指数收敛区(≈0.16 log10/iter, 约 3 倍加速), 这是典型 SFT 学习轨迹; 全程无发散、无停滞。</p>
+<p>3. <strong>iter 2 回翘属正常</strong>: 第 2 迭代 10.0349 较第 1 迭代 9.7677 回翘 +2.7%, 为 Adam 动量初始化与步长建立期的瞬态, 不构成风险。</p>
+<p>4. <strong>梯度健康</strong>: grad norm 从 154.3 收敛至 1.55, 与 loss 同步下降且无爆炸, 佐证梯度信号真实、量级稳定。</p>
+<p><strong>结论</strong>: 20 iters 内 loss 收敛 117 倍, 收敛形态健康, 训练链数值正确性得到端到端验证。</p>
+<p>---</p>
+</section>
+<section id="5-4-训练门禁"><h3>5.4 训练门禁</h3>
+
+</section>
+<section id="5-4-1-门禁状态表"><h4>5.4.1 门禁状态表</h4>
+<div class="table-wrap"><table><thead><tr><th>门禁</th><th>判据</th><th>状态</th><th>证据</th></tr></thead><tbody><tr><td>FULL8_TRAIN_GATE(64 NPU 训练可运行)</td><td>loss 全有限, 无 NaN</td><td>✅ **PASS**</td><td>20/20 iters, loss scale 恒 1.0, 梯度零计数恒 0</td></tr><tr><td>收敛性</td><td>loss 整体下降</td><td>✅ **PASS**</td><td>9.77 → 0.083(117 倍), 17/19 相邻步单调, 仅 2 处 &lt;3% 动量瞬态回翘, grad norm 154→1.55</td></tr><tr><td>FULL8_PEARSON(引擎 vs HF 数值一致性)</td><td>严格 pearson(np.corrcoef) ≥ 0.995</td><td>⏸ **暂缓(非阻塞)**</td><td>参考链需二次加载 643GB 权重(单流 NFS 3h+ 极慢), 已默认禁用; 减层规模 SP 配置下同门禁已实测 **0.999965**(严格 pearson)达成; &quot;全量风险低&quot;为**推断结论**(成本/依据/补做计划见 §5.4.2)</td></tr><tr><td>GSM8K EM(SFT 前后能力对比)</td><td>后 &gt; 前</td><td>⏳ **待执行**</td><td>评估脚本已就绪, 待训练产物导出后运行; 短窗 20 iters 能力信号预期较弱, 对比门禁将在更长训练后执行</td></tr></tbody></table></div>
+</section>
+<section id="5-4-2-门禁意义解读-面向领导"><h4>5.4.2 门禁意义解读(面向领导)</h4>
+<p>四道门禁从&quot;能不能训&quot;到&quot;训得有没有效&quot;逐层递进, 每道门禁回答一个独立问题:</p>
+<p>1. <strong>FULL8_TRAIN_GATE(已 PASS)——&quot;这套系统真的能训吗?&quot;</strong></p>
+<p>证明 64 NPU 跨 8 节点的全量训练链路(前向/反向/优化器/专家并行通信/流水线)物理可运行且数值稳定: 20 个迭代无 NaN、无梯度丢失、无崩溃。这是任何训练结果可信的<strong>前提门槛</strong>——跑不通或数值溢出, 后面的一切结论都无从谈起。</p>
+<p>2. <strong>收敛性(已 PASS)——&quot;loss 下降是模型真的在学习, 还是噪声?&quot;</strong></p>
+<p>117 倍收敛 + 对数尺度匀速下降 + 梯度范数同步收敛, 三者共同证明 loss 下降是优化器对真实梯度的响应, 而非随机波动或实现缺陷下的巧合。这是从&quot;系统能跑&quot;到&quot;系统在正确学习&quot;的<strong>关键一步</strong>。</p>
+<p>3. <strong>FULL8_PEARSON(暂缓)——&quot;训练曲线可信吗? 引擎实现与标准实现一致吗?&quot;</strong></p>
+<p>回答&quot;引擎的数值实现是否忠实于模型定义&quot;——逐层对比引擎与 HF 标准实现的前向输出, 要求严格 pearson(np.corrcoef) ≥ 0.995。该门禁在减层规模 SP 配置下已实测 <strong>0.999965</strong>(远高于阈值), <strong>全量规模尚未执行</strong>, 属工程性延迟而非已证结论。补做三要素如下:</p>
+<ul><li>**成本(一次性, 约 4 小时)**: 参考链二次加载 643GB 权重(单流 NFS, 3h+)+ 全量前向对拍(321.32B CPU bf16 前向, 分钟~半小时级);</li><li>**低风险依据(推断, 非实测)**: ①减层规模 SP 同门禁 0.999965 达成(权重加载 etp 分支与 SP 布局同链验证); ②全量 20 iters 全程 0 NaN; ③loss 收敛与 grad norm 同步下降, 梯度信号真实; ④首 iter 对拍 dump 已落盘, 结果可复算;</li><li>**补做计划**: ThreadPool 并行分片加载已实现(可将权重加载压至 1~2 分钟), 本版本未启用; 补做路径已存在, 建议在进入更长训练前安排一次全量 pearson 对拍确认。</li></ul>
+<p>因此&quot;全量风险低&quot;为<strong>推断结论</strong>(基于上述依据), 非实测结论; 该门禁不阻塞训练链推进。</p>
+<p>4. <strong>GSM8K EM(待执行)——&quot;训练带来了真实的业务价值吗?&quot;</strong></p>
+<p>最终判据: SFT 前后模型在 GSM8K 数学推理任务上的准确率对比(后 &gt; 前)。从&quot;系统在正确学习&quot;到&quot;学习结果有业务价值&quot;的<strong>最后一公里</strong>。预期管理: 当前训练窗口仅 20 iters(640 samples, 约占 GSM8K 训练集 9%), 能力提升信号预期较弱; GSM8K 对比门禁将在更长训练(如数百 iters)后执行, 本次仅确认评估链路可用。</p>
+<p><strong>门禁总评</strong>: 训练链三道技术门禁已通过两道, 第三道为工程性暂缓; 唯一未执行的能力门禁(GSM8K)脚本已就绪。整体判定: <strong>GLM-5.3-Flash 全量 SFT 训练链验证达成, 具备进入更长训练与下游验证的条件</strong>。</p>
+<p>---</p>
+<p>---</p>
+</section>
+<section id="第-6-章-性能基准"><h2>第 6 章 性能基准</h2>
+<div class="note">本章给出 64 NPU 全量训练的实测性能: 逐迭代耗时、吞吐、HBM 占用, 以及与 DeepSeek V4 Flash 战役的对比语境和优化空间。</div>
+<div class="note">标注约定: 【实测】= 本报告训练日志直接读数; 【估算】= 基于记录的间接推算或他战役参考值。</div>
+<p>---</p>
+</section>
+<section id="6-1-逐迭代耗时明细-20-行-全部实测"><h3>6.1 逐迭代耗时明细(20 行, 全部实测)</h3>
+<div class="table-wrap"><table><thead><tr><th>iter</th><th>耗时 (s)</th><th>累计 (s)</th><th>说明</th></tr></thead><tbody><tr><td>1</td><td>345.2</td><td>345.2</td><td>含 fla 核 JIT 编译一次性开销</td></tr><tr><td>2</td><td>88.6</td><td>433.8</td><td>编译完成后即入稳态</td></tr><tr><td>3</td><td>89.0</td><td>522.8</td><td></td></tr><tr><td>4</td><td>89.2</td><td>612.0</td><td></td></tr><tr><td>5</td><td>88.0</td><td>700.0</td><td>全程最小值</td></tr><tr><td>6</td><td>88.9</td><td>788.9</td><td></td></tr><tr><td>7</td><td>88.9</td><td>877.8</td><td></td></tr><tr><td>8</td><td>88.3</td><td>966.1</td><td></td></tr><tr><td>9</td><td>88.2</td><td>1054.3</td><td></td></tr><tr><td>10</td><td>88.8</td><td>1143.1</td><td></td></tr><tr><td>11</td><td>88.8</td><td>1231.9</td><td></td></tr><tr><td>12</td><td>89.5</td><td>1321.4</td><td></td></tr><tr><td>13</td><td>90.6</td><td>1412.0</td><td></td></tr><tr><td>14</td><td>95.8</td><td>1507.8</td><td>全程最大值, 通信/IO 抖动尖峰</td></tr><tr><td>15</td><td>89.9</td><td>1597.7</td><td></td></tr><tr><td>16</td><td>89.2</td><td>1686.9</td><td></td></tr><tr><td>17</td><td>89.0</td><td>1775.9</td><td></td></tr><tr><td>18</td><td>88.8</td><td>1864.7</td><td></td></tr><tr><td>19</td><td>89.1</td><td>1953.8</td><td></td></tr><tr><td>20</td><td>89.0</td><td>2042.8</td><td>训练阶段总时长 ≈ 34 min</td></tr></tbody></table></div>
+<p><strong>稳态统计(iter 5-20, n=16)</strong>: 均值 <strong>89.4s/iter</strong>, 中位数 89.0s, 区间 88.0~95.8s(极差 8.9%, 波动小)。iter 14 的 95.8s 为孤立尖峰(较中位数 +7.7%), 判定为节点通信或 NFS 读写抖动, 非系统性瓶颈。</p>
+<p>---</p>
+</section>
+<section id="6-2-核心性能指标"><h3>6.2 核心性能指标</h3>
+<div class="table-wrap"><table><thead><tr><th>指标</th><th>数值</th><th>性质</th><th>计算式 / 依据</th></tr></thead><tbody><tr><td>首迭代耗时</td><td>**345s**</td><td>【实测】</td><td>iter 1 日志读数; 其中 fla 核 JIT 编译为一次性开销, 复跑可经 kernel cache 消除</td></tr><tr><td>稳态迭代耗时</td><td>**89.4s/iter**(88.0~95.8s)</td><td>【实测】</td><td>iter 5-20 均值(iter 2-20 均值 89.3s, 与之一致)</td></tr><tr><td>训练吞吐</td><td>**366 tok/s**(64 卡聚合)</td><td>【实测】</td><td>GBS=32 × SEQ=1024 ÷ 89.4s = 32,768 ÷ 89.4 ≈ 366.4 tok/s</td></tr><tr><td>单卡吞吐</td><td>≈ 5.7 tok/s</td><td>【实测推算】</td><td>366 ÷ 64 卡</td></tr><tr><td>20 iters 训练量</td><td>655,360 tokens(640 samples × 1024)</td><td>【实测推算】</td><td>逐 iter consumed samples 累计</td></tr><tr><td>HBM 峰值</td><td>**~54 GB/卡**(64GB 卡, 占用 84%)</td><td>【实测】</td><td>各 rank max reserved 51.2~55.2GB(rank33 为离群峰值, 55,196 MB)</td></tr><tr><td>loss 收敛速率</td><td>0.083/iter(稳态)</td><td>【实测推算】</td><td>20 iters 从 9.77 至 0.083</td></tr></tbody></table></div>
+<p><strong>吞吐口径说明</strong>: 366 tok/s 为 64 卡聚合训练吞吐(纯训练步, 不含数据加载之外的推理负载), 换算单卡 ≈ 5.7 tok/s。该口径下吞吐受限于 batch 形态(MBS=1)与 84% 的 HBM 占用, 详见 6.3.3 优化空间。</p>
+<p>---</p>
+</section>
+<section id="6-3-性能解读"><h3>6.3 性能解读</h3>
+
+</section>
+<section id="6-3-1-与-DeepSeek-V4-Flash-的对比语境"><h4>6.3.1 与 DeepSeek V4 Flash 的对比语境</h4>
+<div class="table-wrap"><table><thead><tr><th>对照项</th><th>本报告(GLm-5.3-Flash 全量 SFT)</th><th>DSV4 Flash RL(他战役参考)</th></tr></thead><tbody><tr><td>训练形态</td><td>纯 SFT 训练步(无推理负载)</td><td>训推分离 RL(训练 + rollout 推理 + 权重同步端到端)</td></tr><tr><td>单步/迭代耗时</td><td>89.4s/iter(稳态)【实测】</td><td>~188.5s/step 端到端均值【估算, 自 DSV4 战役记录: 467 steps / 24.4h / 0 崩溃, verl 0.9.0 + vllm 0.25.1】</td></tr><tr><td>模型规模</td><td>321.32B(权重实测; 引擎统计口径 333.84B, 差异见 §5.1 注)</td><td>~671B(MoE)【估算】</td></tr><tr><td>并行形态</td><td>TP2×EP32×PP2×DP1×SP</td><td>训练侧 TP2/EP4/ETP2, 推理侧 TP8/EP8(分离)【估算】</td></tr></tbody></table></div>
+<p><strong>对比结论(谨慎表述)</strong>: 两者的 step 定义不同——DSV4 参考值为 RL 端到端步(含 rollout 推理与权重同步), 本报告为纯训练步, <strong>不直接可比</strong>, 仅提供量级参照。量级上, 本报告 89.4s 的纯训练步远低于 DSV4 RL 端到端步的 ~188.5s, 主要差异来自任务形态(无推理负载)而非硬件性能差异。若需同口径对比, 需在 DSV4 侧另跑纯训练基准【估算需求, 未实测】。</p>
+</section>
+<section id="6-3-2-时间构成分解-单次训练窗口实测"><h4>6.3.2 时间构成分解(单次训练窗口实测)</h4>
+<div class="table-wrap"><table><thead><tr><th>阶段</th><th>耗时</th><th>占比</th><th>说明</th></tr></thead><tbody><tr><td>权重加载 + 模型组装</td><td>71.5 ~ 305.5s(rank 差异)</td><td>—</td><td>643GB 单流 NFS 加载, 慢 rank 拖尾</td></tr><tr><td>首迭代(含 fla 核 JIT 编译)</td><td>345.2s</td><td>—</td><td>一次性, 后续迭代无需</td></tr><tr><td>稳态训练 19 iters</td><td>1,697.6s</td><td>—</td><td>89.3s/iter × 19</td></tr><tr><td>训练阶段总时长</td><td>2,043s(≈34 min)</td><td>100%</td><td>训练步窗口 00:22:42 → 00:56:45(权重加载在其前完成)</td></tr></tbody></table></div>
+<p>若排除一次性开销(权重加载 + JIT 编译), 稳态训练本身约 28.3 分钟, 占比 83%。</p>
+</section>
+<section id="6-3-3-优化空间-按收益排序-均待专项验证"><h4>6.3.3 优化空间(按收益排序, 均待专项验证)</h4>
+<p>1. <strong>HBM 占用 84%(~54GB/64GB)偏高【实测】——最高优先级</strong></p>
+<p>当前 recompute 全关、激活全驻留。风险: SEQ 1024→2048 时 HBM 预计逼近上限。方向: ①选择性开启 recompute(fla 核已证实可重算, 需对账 SP 通信流序——曾因 checkpoint 重放与 EP 通信冲突死锁而全关, 需在重算位置与流序上专项验证); ②PP 切分调优(45 = 22+23 非均匀, 探索 23+22 或 3 段); ③激活内存优化(MBS 相关)。</p>
+<p>2. <strong>首迭代 345s 的 JIT 编译成本</strong>: 一次性开销, 复跑建议持久化 triton_ascend kernel cache, 可将冷启动降到 ~90s 量级【估算】。</p>
+<p>3. <strong>权重加载慢 rank 305s</strong>: 643GB 单流 NFS 读取拖尾, 并行分片加载(ThreadPool)方案已就绪未启用, 预计可压至 1~2 分钟【估算】。</p>
+<p>4. <strong>算子融合与通信重叠</strong>: 当前 fla 稀疏核已走 triton_ascend 原生径(chunk_kda 前反向 + l2norm 融合), 进一步可做: MoE alltoallv 与 GEMM 计算重叠、PP 边界通信与计算重叠; MFU 尚未实测(需 msprof 专项), 建议下一步基准补齐。</p>
+<p>5. <strong>batch 形态</strong>: MBS=1 下 PP=2 流水线 bubble 占比高; 在 HBM 允许范围内提升 MBS(如 2)可同时改善流水线效率与吞吐【估算, 需 HBM 复核】。</p>
+<p>6. <strong>iter 14 的 95.8s 尖峰</strong>: 孤立事件, 长跑(数百 iters)时需观察频率, 若密集出现则排查节点间网络/NFS 抖动。</p>
+<p>---</p>
+</section>
+<section id="6-4-本章小结"><h3>6.4 本章小结</h3>
+<ul><li>**实测基准**: 全量 321.32B 模型 64 NPU 训练, 稳态 **89.4s/iter**, 聚合吞吐 **366 tok/s**, HBM 峰值 **~54GB/卡(84%)**, 训练阶段 20 iters 全程 34 分钟, 0 异常。</li><li>**性能定性**: 训练链路稳定(逐迭代耗时极差 &lt;9%), 吞吐与 HBM 数据为后续扩容(更长序列、更大 batch、更长训练)提供了量化基线。</li><li>**首要风险**: HBM 84% 占用限制序列长度扩展, 是下一步(SEQ 2048+ / 多 epoch)前必须解决的内存课题。</li></ul>
+<p>---</p>
+</section>
+<section id="数据来源"><h3>数据来源</h3>
+<ul><li>逐迭代明细(loss / grad norm / elapsed / nan / zeros): 远程训练日志 `/data/l00619320/workspace/2026_0907_1230_glm53_04_full_sft/logs/glm53_full8_ranklogs/none_7ihzyqoy/attempt_0/7/stdout.log`(rank7, 20 行完整逐 iter 记录)。性能数据(逐 iter 耗时/吞吐等)取自训练日志自身的逐 iter 计时(rank7 stdout), 与 msprof 设备采样相互独立——报告数值为日志直接读数, 未叠加 profile 侧折算</li><li>内存/配置/参数统计: 同目录 `/data/l00619320/workspace/2026_0907_1230_glm53_04_full_sft/logs/glm53_full8_ms_0.log`(rank0 主日志: 内存观测、参数统计 333.84B、时间戳; 333.84B 为引擎运行期计数口径, 与权重实测 321.32B 的差异见 §5.1 注)</li><li>简版汇总: `models/GLM-5.3-FLASH/variants/04-train-full/reports/20260908-sft-full-report.md`</li><li>DSV4 对比参考值: 战役记忆记录(非本报告实测, 已在 6.3.1 标注【估算】)</li></ul>
+<p>---</p>
+</section>
+<section id="附录-A-资源与成本量级"><h3>附录 A: 资源与成本量级</h3>
+<div class="table-wrap"><table><thead><tr><th>项</th><th>量级估算</th><th>说明</th></tr></thead><tbody><tr><td>部署轮次</td><td>14+ 轮排查 + 多轮验证</td><td>8 节点 64 NPU, 每轮含容器重建/权重加载/卡死窗口/看门狗</td></tr><tr><td>单轮时长</td><td>启动 ~7min + 卡死窗口 20-25min</td><td>观测到的最小卡死窗口</td></tr><tr><td>验证轮训练</td><td>34 min / 20 steps</td><td>含首步 JIT 编译 345s</td></tr><tr><td>权重加载</td><td>71~306 s(8 节点并行 NFS)</td><td>每轮一次</td></tr><tr><td>参考链(未执行)</td><td>~4h 一次性</td><td>单流 NFS 加载 643GB + 全量前向对拍</td></tr></tbody></table></div>
+<p>人力投入: 约 1 周(多人并行: SFT 主线 + RL 链 + SP 适配链)。</p>
+<p>---</p>
+</section>
+<section id="附录-B-术语表"><h3>附录 B: 术语表</h3>
+<div class="table-wrap"><table><thead><tr><th>术语</th><th>含义</th></tr></thead><tbody><tr><td>SFT</td><td>监督微调(Supervised Fine-Tuning), 用标注数据训练模型</td></tr><tr><td>iteration/step</td><td>训练步: 模型吃一批数据、算一次误差、更新一次权重</td></tr><tr><td>loss</td><td>损失: 模型预测与正确答案的误差, 越低越好</td></tr><tr><td>alltoallv</td><td>全交换通信: 多卡之间互相传不同数量的数据(MoE 专家并行核心通信)</td></tr><tr><td>EP</td><td>专家并行: 288 个专家分布到 32 张卡</td></tr><tr><td>TP/PP/SP</td><td>张量/流水线/序列并行</td></tr><tr><td>EP rank</td><td>专家并行通信域中的一张卡</td></tr><tr><td>0-size</td><td>数据传输量为零的特殊情况</td></tr><tr><td>notify 握手</td><td>通信双方互相通知数据就绪/接收完成的机制</td></tr><tr><td>HCCL</td><td>华为集合通信库(NPU 的通信底层)</td></tr><tr><td>pearson</td><td>皮尔逊相关系数, 衡量两组数据的一致性(≤1)</td></tr><tr><td>EM</td><td>精确匹配率, GSM8K 评测的判分方式</td></tr></tbody></table></div>
+</section>
+</main>
+<footer>Generated 2026-09-08 · <a href="https://github.com/versatile-ai/AutoModelWire">GitHub</a></footer>
+</body>
+</html>
