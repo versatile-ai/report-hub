@@ -544,6 +544,12 @@
 
 <script>
 const EXPERIMENTS=[
+  {id:"torchtitan-npu-dsv41",name:"torchtitan-npu × DeepSeek V4.1 技术栈调研",subtitle:"PyTorch 官方训练框架的昇腾扩展如何承接 DeepSeek V4.1 —— 软件栈三层主体 · 五处适配修改点 · A3/A5 硬件分档融合栈 · PR #974 A3 稀疏注意力 OOM 修复机制 (query 维分块, max diff=0) · 训练引擎选型参考 (源自 issue #152)",status:"done",startDate:"2026-10-15",lastUpdate:"2026-10-15",
+   tags:["torchtitan","torchtitan-npu","DeepSeek-V4.1","CANN","Ascend","A3","A5","稀疏注意力","OOM","训练引擎选型"],
+   metrics:[{label:"适配修改点",value:"5 处",tone:"info"},{label:"A3 整网回归",value:"10 step · 0 OOM",tone:"good"},{label:"显存水位",value:"49.41 GiB (80.64%)",tone:"info"},{label:"数值等价",value:"max diff = 0",tone:"good"}],
+   reports:[
+   {title:"软件栈与适配修改点 — 调研报告",subtitle:"软件栈分层全景 · DeepSeek V4.1 五处修改点 · A3/A5 分档融合栈 · PR #974 OOM 修复机制图解 (query 维分块 + 逐位等价) · 训练引擎选型参考",file:"torchtitan-npu-dsv41/2026-10-15-survey.html",date:"2026-10-15",type:"survey"}
+   ]},
   {id:"glm53-flash-sft",name:"GLM-5.3-Flash 全量 SFT 训练",subtitle:"321B 模型昇腾 64 卡 SFT 20 步跑通 · loss 9.77→0.083 · 0-size alltoallv notify 握手死锁根因定位与修复 (msprof 点名 + 最小实验复现)",status:"active",startDate:"2026-08-31",lastUpdate:"2026-09-08",
    tags:["GLM-5.3-Flash","321B","SFT","MindSpeed-LLM","fla","MoE","alltoallv","Ascend 910B3","8节点"],
    metrics:[{label:"loss",value:"9.77→0.083 (20步)",tone:"good"},{label:"崩溃",value:"0 (20/20步)",tone:"good"},{label:"稳态耗时",value:"89.4 s/step",tone:"info"},{label:"吞吐",value:"366 tok/s",tone:"info"}],
@@ -626,7 +632,7 @@ const EXPERIMENTS=[
 
 var STATUS_LABEL  = {active:"进行中", done:"已完成", paused:"暂停", archived:"已归档"};
 var STATUS_CLASS  = {active:"b-active", done:"b-done", paused:"b-paused", archived:"b-archived"};
-var TYPE_LABEL    = {stage:"阶段报告", final:"终报告", weekly:"周报", diagnosis:"诊断", design:"设计", retrospective:"复盘"};
+var TYPE_LABEL    = {stage:"阶段报告", final:"终报告", weekly:"周报", diagnosis:"诊断", design:"设计", retrospective:"复盘", survey:"调研"};
 
 function iconSvg(type) {
   var paths = {
@@ -635,7 +641,8 @@ function iconSvg(type) {
     weekly:        "M8 2v2m8-2v2M3 6h18M5 4h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z",
     diagnosis:     "M12 2a10 10 0 100 20 10 10 0 000-20zm0 6v4m0 4h.01",
     design:        "M3 3h7v7H3zm4 4V4m10-1h7v7h-7zm-4 11v-3m-3 3h7v-7h-7z",
-    retrospective: "M21 12a9 9 0 11-6.219-8.56"
+    retrospective: "M21 12a9 9 0 11-6.219-8.56",
+    survey:        "M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"
   };
   var d = paths[type] || paths.stage;
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="' + d + '"></path></svg>';
