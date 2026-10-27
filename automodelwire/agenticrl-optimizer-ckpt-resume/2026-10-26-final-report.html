@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="AgenticRL(Aura)×DeepSeek-V4-Flash 优化器状态断点续训端到端验证:三关判据全部达成——50GiB 优化器状态落盘、自动接管读回、从断点恢复连训 3 步;5 处框架缺陷根因定位与修复,27 轮发射取证。">
+<title>AgenticRL × DeepSeek-V4-Flash — 断点续训验证终报告 (2026-10-26)</title>
+<style>
+  /* ───────────────────────────────────────────────────────────
+     深态 token —— 原样复制自 docs/design-guide.md §2,勿改任何值。
+     报告页统一深色:沉稳,适合长文+数据+代码。accent 紫贯穿全站。
+     ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --accent-hover:#C4B5FD;
+    --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF;
+    --green-bg:rgba(63,185,80,0.12); --yellow-bg:rgba(210,153,34,0.12);
+    --red-bg:rgba(248,81,73,0.12); --info-bg:rgba(121,192,255,0.12);
+    --code-bg:#010409;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.65;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  }
+
+  /* Display 角色:标题、大数字、日期、tag 用等宽,工程控制台质感 */
+  h1,h2,.stat .v,.metric .v,.tl-date,.tag,.mono{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+  }
+
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ── Breadcrumb(每份报告顶部必须有)── */
+  .breadcrumb{
+    max-width:1100px;margin:0 auto;padding:20px 48px 0;
+    font-size:12px;color:var(--tertiary);letter-spacing:0.2px;
+  }
+  .breadcrumb a{color:var(--muted)}
+  .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)}
+  .breadcrumb .current{color:var(--text)}
+
+  /* ── Header ── */
+  header{
+    max-width:1100px;margin:0 auto;padding:28px 48px 32px;
+    border-bottom:1px solid var(--border);
+  }
+  h1{
+    font-size:30px;font-weight:700;letter-spacing:-0.6px;line-height:1.2;
+    margin-bottom:10px;color:var(--text);
+  }
+  .meta{font-size:13px;color:var(--muted);line-height:1.6}
+  .meta b{color:var(--text);font-weight:500}
+
+  /* ── TOC(section ≥ 4 时必备)── */
+  .toc{
+    max-width:1100px;margin:0 auto;padding:24px 48px;
+    border-bottom:1px solid var(--border);
+  }
+  .toc-label{
+    font-size:11px;font-weight:600;letter-spacing:1.2px;color:var(--tertiary);
+    text-transform:uppercase;margin-bottom:10px;
+  }
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toc a{font-size:13px;color:var(--muted)}
+  .toc a:hover{color:var(--accent)}
+
+  /* ── Main container ── */
+  .container{max-width:1100px;margin:0 auto;padding:36px 48px 64px}
+
+  section{margin-bottom:48px}
+  section:last-child{margin-bottom:0}
+  h2{
+    font-size:20px;font-weight:600;letter-spacing:-0.3px;
+    margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  h3{font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+  p{margin-bottom:12px;color:var(--text)}
+  p.muted,.muted{color:var(--muted)}
+  ul,ol{margin:0 0 14px 22px}
+  li{margin-bottom:6px}
+
+  /* ── Metric / Stat 卡片(§3)── */
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;margin-bottom:20px;
+  }
+  .metric,.stat{
+    background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 18px;
+  }
+  .metric .v,.stat .v{
+    font-size:24px;font-weight:700;line-height:1.1;margin-bottom:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  .metric .label,.stat .label{
+    font-size:11px;letter-spacing:0.8px;text-transform:uppercase;color:var(--tertiary);
+  }
+  .v.good,.mv-good{color:var(--green)}
+  .v.warn,.mv-warn{color:var(--yellow)}
+  .v.bad,.mv-bad{color:var(--red)}
+  .v.info,.mv-info{color:var(--info)}
+
+  /* ── Table(§3)── */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:20px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{
+    background:var(--surface-2);color:var(--accent);text-align:left;
+    font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+  }
+  td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)} .info{color:var(--info)}
+
+  /* ── Timeline(§3)── */
+  .timeline{position:relative;padding-left:22px;margin-bottom:20px}
+  .timeline::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-item{position:relative;margin-bottom:18px}
+  .tl-item::before{
+    content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 3px var(--bg);
+  }
+  .tl-item.ok::before{background:var(--green)}
+  .tl-item.warn::before{background:var(--yellow)}
+  .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary);margin-bottom:2px}
+  .tl-body{color:var(--text)}
+
+  /* ── Badge / Tag(§3)── */
+  .badge{
+    display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+    font-weight:600;letter-spacing:0.4px;
+  }
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
+  .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{
+    display:inline-block;padding:3px 9px;border-radius:3px;font-size:11px;
+    color:var(--tertiary);background:var(--surface-2);letter-spacing:0.2px;margin:0 6px 6px 0;
+  }
+
+  /* ── Note(强调块,§3)── */
+  .note{
+    border-left:3px solid var(--accent);background:var(--info-bg);
+    padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:16px;
+  }
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note .note-title{font-weight:600;margin-bottom:4px}
+
+  /* ── Code block(§3)── */
+  pre{
+    background:var(--code-bg);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;overflow-x:auto;margin-bottom:16px;font-size:13px;
+    font-family:'SF Mono','Fira Code',Consolas,monospace;color:var(--text);
+  }
+  code{
+    font-family:'SF Mono','Fira Code',Consolas,monospace;
+    background:var(--surface);padding:2px 6px;border-radius:3px;font-size:0.92em;color:var(--text);
+  }
+  pre code{background:none;padding:0}
+
+  /* ── Footer ── */
+  footer{
+    max-width:1100px;margin:0 auto;padding:24px 48px 40px;
+    border-top:1px solid var(--border);font-size:12px;color:var(--tertiary);
+  }
+  footer a{color:var(--accent)}
+
+  /* ── Responsive ── */
+  @media (max-width:768px){
+    .breadcrumb,header,.toc,.container,footer{padding-left:24px;padding-right:24px}
+    h1{font-size:24px}
+    h2{font-size:18px}
+  }
+
+  /* ── Accessibility(硬要求 §5)── */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{body{background:#fff;color:#111}a{text-decoration:underline}}
+</style>
+</head>
+<body>
+
+<!-- Breadcrumb(必须)—— 修改链接与文案 -->
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#agenticrl-optimizer-ckpt-resume">AgenticRL 优化器断点续训</a><span class="sep">/</span>
+  <span class="current">终报告</span>
+</nav>
+
+<header>
+  <h1>AgenticRL × DeepSeek-V4-Flash — 断点续训端到端验证</h1>
+  <div class="meta">
+    终报告 · 2026-10-23 → 2026-10-26 · 8×Ascend 910B3 单节点 · branch <b>experiments/agenticrl-dsv4-optimizer-ckpt</b> · 报告日期 2026-10-26
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="toc-label">目录</div>
+  <ol>
+    <li><a href="#metrics">结论速览</a></li>
+    <li><a href="#background">背景与任务</a></li>
+    <li><a href="#gates">三关验证结果</a></li>
+    <li><a href="#defects">五处框架缺陷:问题 → 根因 → 修复</a></li>
+    <li><a href="#noncode">非代码问题与处置</a></li>
+    <li><a href="#timeline">验证时间线</a></li>
+    <li><a href="#upstream">上游反馈与遗留</a></li>
+  </ol>
+</nav>
+
+<main class="container">
+
+  <!-- ── 结论速览 ── -->
+  <section id="metrics">
+    <h2>结论速览</h2>
+    <div class="metrics">
+      <div class="metric"><div class="v good">3/3</div><div class="label">三关判据全部达成</div></div>
+      <div class="metric"><div class="v good">50 GiB</div><div class="label">优化器状态落盘</div></div>
+      <div class="metric"><div class="v good">0</div><div class="label">终轮崩溃签名</div></div>
+      <div class="metric"><div class="v info">5</div><div class="label">框架缺陷根因</div></div>
+      <div class="metric"><div class="v info">19</div><div class="label">修复/探针提交</div></div>
+      <div class="metric"><div class="v warn">27</div><div class="label">训练发射轮次</div></div>
+    </div>
+
+    <div class="note ok">
+      <div class="note-title">断点续训端到端跑通</div>
+      训练中途保存学习进度(优化器状态 50 GiB)→ 停止后重新启动 → 自动发现存档并恢复 → 从断点继续训练 3 个新步 → 再次保存并推进断点标记。完整链路在真实 8 卡昇腾集群验证通过,三关判据(事先预注册锁定)全部达成。
+    </div>
+  </section>
+
+  <!-- ── 背景与任务 ── -->
+  <section id="background">
+    <h2>背景与任务</h2>
+    <p><b>任务来源:</b>生产集群上 AgenticRL(Aura)+ verl(昇腾后端)栈保存优化器状态时崩溃,且原始报错信息未保留,要求自行复现并定位真实根因。</p>
+    <p><b>起点:</b>交接文档记录两类崩溃症状(保存校验失败 / 分片元数据校验失败),均未复现,一切结论需以实际运行日志为准。</p>
+    <p><b>验证栈:</b>8 × 昇腾 910B3 单节点 · DeepSeek-V4-Flash 减专家模型(8 层 × 8 专家,真实权重切片,禁随机初始化)· Aura 6.0 + verl 混合训练模式 · 分布式 checkpoint 格式 · 随机 token 模拟生成(方法学登记:验证状态恢复正确性,不主张训练效果)。</p>
+    <p><b>判据纪律:</b>三关判据在发射前预注册写入 Git(commit 690d8691),执行中不修改、不放宽;判据不满足即停手呈报。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>关卡</th><th>判据要点</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td>第一关 · 存得下</td><td>训练全程无崩溃;优化器状态非空落盘 ≥2 GiB;断点标记推进;崩溃签名零命中</td><td class="ok">✅ 通过</td></tr>
+          <tr><td>第二关 · 读得回</td><td>新训练自动发现存档并接管;加载路径通过与保存侧同源的校验;零加载崩溃</td><td class="ok">✅ 通过</td></tr>
+          <tr><td>第三关 · 接着训</td><td>恢复后连续训练 ≥2 个新步;再次保存成功;断点标记持续推进</td><td class="ok">✅ 通过</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 三关验证结果 ── -->
+  <section id="gates">
+    <h2>三关验证结果(实测数据)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>关卡</th><th>验证运行</th><th class="num">实测值</th><th class="num">判据值</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>优化器状态落盘</td><td>保存验证(第 18 轮)</td><td class="num">50 GiB / 26 文件</td><td class="num">≥2 GiB / ≥8 文件</td><td class="ok">✅ 通过</td></tr>
+          <tr><td>断点标记推进</td><td>同上</td><td class="num">迭代号 = 2</td><td class="num">= 2</td><td class="ok">✅ 通过</td></tr>
+          <tr><td>崩溃签名</td><td>同上</td><td class="num">0 命中</td><td class="num">0</td><td class="ok">✅ 通过</td></tr>
+          <tr><td>自动接管存档</td><td>续训验证(第 8 轮)</td><td class="num">自动发现第 3 步存档</td><td class="num">自动接管</td><td class="ok">✅ 通过</td></tr>
+          <tr><td>续训新步数</td><td>同上</td><td class="num">3 步(第 4/5/6 步)</td><td class="num">≥2 步</td><td class="ok">✅ 通过</td></tr>
+          <tr><td>续训后再保存</td><td>同上</td><td class="num">第 6 步落盘 50 GiB,标记 = 6</td><td class="num">成功且标记推进</td><td class="ok">✅ 通过</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <div class="note-title">对照起点</div>
+      验证开始前:优化器保存从未成功过——历史最佳"落盘"是一个 12 KB 的空壳目录。验证结束:50 GiB 真实状态数据稳定落盘,且"存 → 停 → 恢复 → 继训 → 再存"全链路可重复。
+    </div>
+  </section>
+
+  <!-- ── 五处框架缺陷 ── -->
+  <section id="defects">
+    <h2>五处框架缺陷:问题 → 根因 → 修复</h2>
+    <p class="muted">按发现顺序排列。每处根因均深挖到开发者意图层面(设计假设是什么、谁和谁没对齐),不是表面现象。</p>
+
+    <h3>缺陷 1 · 混合精度参数的索引错配(训练框架核心)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><b>现象</b></td><td>保存时报"数据形状与期望不符"(7 种签名)+ 空指针,共 8 卡全崩</td></tr>
+          <tr><td><b>根因</b></td><td>框架为参数建立索引映射时按缓冲迭代顺序编号,构建参数组时却把 fp32 参数排到前面——同一参数组混有两种数值精度时,保存/加载查表<b>全部交叉错配</b>(大参数查到小参数的状态槽)</td></tr>
+          <tr><td><b>为什么存在</b></td><td>框架隐含假设"一个参数组内数值精度同质",该假设未文档化、未校验;本模型的内存优化特性显式把部分参数转成 fp32,打破假设</td></tr>
+          <tr><td><b>修复</b></td><td>参数组按索引映射的编号顺序逐参数收集,保存/加载双侧同修。取证链:预登记四项判据的探针运行 → 全部成立 → 根因证实后才动手修</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>缺陷 2 · 配置组合走出特性设计边界(继承性配置错误)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><b>现象</b></td><td>修好缺陷 1 后,不同实现层仍同族崩溃;探针显示修复的代码"从未被执行"</td></tr>
+          <tr><td><b>根因</b></td><td>配置继承了官方模板的"优化器状态换出内存"省内存特性;官方<b>全部</b>开此特性的模板都同时显式关闭优化器保存——两者组合在官方矩阵中零先例。换出的状态在保存前无人负责恢复</td></tr>
+          <tr><td><b>为什么存在</b></td><td>复制的模板自带旧设定,无人检查两者冲突;省内存特性的设计意图只为"永不保存优化器"的长训场景服务</td></tr>
+          <tr><td><b>修复</b></td><td>关闭省内存模式,对齐官方验证过的组合形态(代价:多占约 5.4 GB 显存/卡,本模型预算内)。三层归因呈报用户裁决后执行</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>缺陷 3 · 部分层才存在的参数与同构存盘格式冲突(芯片扩展)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><b>现象</b></td><td>保存推进到路由表时,校验器报"分片访问次数不齐"(8 个分片只有 3 个有内容)</td></tr>
+          <tr><td><b>根因</b></td><td>模型的哈希路由表只在前 3 层存在,而存盘格式假设"每层同构、每个分片恰好访问一次"——数学上不可能满足。官方权重转换明确保存此表,证明它"该存",是存盘声明方式错了</td></tr>
+          <tr><td><b>为什么存在</b></td><td>加路由表的团队与定存盘格式的团队未对齐;框架本有"非同构层"声明机制但无人启用</td></tr>
+          <tr><td><b>修复</b></td><td>启用框架自带的非同构层声明(框架内另一模型同款,正门修复);并发现<b>加载路径有独立配置通道</b>,双侧同修</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>缺陷 4 · 补丁机制丢失"静态方法"语义(扩展层)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><b>现象</b></td><td>保存推进到"数据从芯片搬入内存"环节,报"参数个数不符(传 3 个,期望 2 个)"</td></tr>
+          <tr><td><b>根因</b></td><td>扩展层用运行时替换机制修改框架函数,替换后的函数丢失"静态方法"属性——调用时悄悄多出对象自身参数。取证探针(打印函数真实源码位置与形参个数)定谳</td></tr>
+          <tr><td><b>为什么存在</b></td><td>替换机制的作者未意识到静态方法属性在替换后会失效;原扩展函数作者写了正确的装饰器但机制不支持</td></tr>
+          <tr><td><b>修复</b></td><td>两版"合理推测"修复(静态方法包装 / 特殊函数对象)均被探针证伪后,改修<b>消费端</b>:通过类而非实例访问函数——任何属性形态下都不会多出参数,机械排除</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>缺陷 5 · 多组件版本演进接缝漂移(4 处同型)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>接缝</th><th>漂移内容</th><th>修复</th></tr></thead>
+        <tbody>
+          <tr><td>5a</td><td>写盘函数签名</td><td>新版底层库给写盘函数加了必填"格式声明"参数,上层框架按旧签名调用少传一参</td><td>两处调用补齐(语义等价:框架写的本就是该格式)</td></tr>
+          <tr><td>5b</td><td>配置快照导出</td><td>配置里混入新版枚举类型,JSON 导出不认识</td><td>标准做法:未知值转可读字符串(仅元数据,无行为影响)</td></tr>
+          <tr><td>5c</td><td>读盘目录页字段</td><td>存档目录页由新版流程写出、不含扩展字段,读盘代码假设必有 → 崩;且该字段缺失时加载<b>数学上</b>无法进行</td><td>等价回退:缺失信息从另一字段取值(逐行对照写入侧代码证明两值同源同值)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note warn">
+      <div class="note-title">共性根因</div>
+      缺陷 2/3/4/5 同型:<b>monkey-patch 叠加架构 + 多团队并行演进,让上游语义在每一层补丁后静默漂移</b>。点修复已解决本次验证;根治需上游把相关行为改为正式接口(已列入上游反馈)。
+    </div>
+  </section>
+
+  <!-- ── 非代码问题 ── -->
+  <section id="noncode">
+    <h2>非代码问题与处置</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>问题</th><th>性质</th><th>处置</th></tr></thead>
+        <tbody>
+          <tr><td>崩溃残留的常驻进程占住资源,下一轮无法启动</td><td class="warn">环境</td><td>按纪律容器内标准清理重启(非强杀)</td></tr>
+          <tr><td>上轮崩溃留下的空壳存档干扰自动恢复</td><td class="warn">环境</td><td>每轮发射前归档清理(判据风险项 R3)</td></tr>
+          <tr><td>续训验证时数据量耗尽:数据集仅够 3 步,恢复到第 3 步后无数据可训</td><td class="info">验证设计</td><td>数据集扩充 4 倍(判据已预登记:数据内容不在验证范围,验证的是状态恢复正确性)</td></tr>
+          <tr><td>连续两次 50 GiB 写盘后,数据加载进程被操作系统内存回收杀掉</td><td class="warn">环境</td><td>系统级内存压力,非代码缺陷;清理后重跑通过</td></tr>
+          <tr><td>配置文件三处"总步数"不一致,恢复后系统判断"任务已完成"干净退出</td><td class="info">配置</td><td>恰好佐证续训进度判断正确(准确读到已到第 3 步 ≥ 旧目标 2);统一三处步数后解决</td></tr>
+          <tr><td>100 KB 修复文件经命令行参数传输超系统上限</td><td class="info">工程</td><td>改标准输入管道传输 + 双端 MD5 核验</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 时间线 ── -->
+  <section id="timeline">
+    <h2>验证时间线</h2>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-date">2026-10-23</div>
+        <div class="tl-body">实验启动:复现栈搭建,首个阻断点暴露(配置契约错位)</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-date">2026-10-24 → 10-25</div>
+        <div class="tl-body">40 轮修复链打通至保存动作;保存面崩溃复现成立(任务书症状 1);混合精度索引错配探针预登记并发射,四项判据全成立——根因证实</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-date">2026-10-25</div>
+        <div class="tl-body">三关判据预注册锁定(发射前写定推送 Git);保存侧修复完成后,路由表校验失败复现(任务书症状 2,首现)</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-date">2026-10-26 上午</div>
+        <div class="tl-body">三层归因裁决:关闭省内存模式对齐官方形态;非同构层声明修复路由表;静态方法语义探针取证三版迭代后定谳消费端修复</div>
+      </div>
+      <div class="tl-item ok">
+        <div class="tl-date">2026-10-26 18:40</div>
+        <div class="tl-body"><b>第一关达成:</b>2 步训练 + 2 次保存全程零异常,优化器状态 50 GiB / 26 文件落盘,断点标记 = 2,崩溃签名零命中</div>
+      </div>
+      <div class="tl-item ok">
+        <div class="tl-date">2026-10-26 19:36</div>
+        <div class="tl-body"><b>第二关达成:</b>续训启动自动发现存档并接管("从第 3 步继续");读回 50 GiB 零异常。加载侧配置通道与元数据缺失两处新墙修复</div>
+      </div>
+      <div class="tl-item ok">
+        <div class="tl-date">2026-10-26 20:0x</div>
+        <div class="tl-body">数据耗尽定位(数据集仅够 3 步)→ 扩充 4 倍;断点续训进度判断正确性反证(系统准确判断"已完成"干净退出)</div>
+      </div>
+      <div class="tl-item ok">
+        <div class="tl-date">2026-10-26 20:5x</div>
+        <div class="tl-body"><b>第三关达成:</b>从第 3 步恢复连训第 4/5/6 步,每步 50 GiB 落盘,断点标记 = 6,Successful 收尾。三关全部通过</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 上游反馈 ── -->
+  <section id="upstream">
+    <h2>上游反馈与遗留</h2>
+    <h3>上游反馈清单(5 项,随报告呈报)</h3>
+    <ol>
+      <li><b>混合精度参数组索引错配</b>——保存/加载/预分配三面同伤;框架假设参数组内精度同质,未文档化也未校验。上游复现条件:任意混合精度参数组 + 分布式优化器 + 分布式 checkpoint。</li>
+      <li><b>部分层参数与同构存盘格式冲突</b>——需要非同构层声明机制,且保存与加载两条配置通道须一致覆盖。</li>
+      <li><b>优化器状态换出特性与保存功能互不感知</b>——换出状态在保存前无人恢复;官方全部相关模板以"不保存优化器"回避此组合。</li>
+      <li><b>运行时替换机制丢失静态方法语义</b>——替换类属性时未保留描述符协议。</li>
+      <li><b>多组件版本演进接缝漂移</b>(写盘签名 / 配置枚举序列化 / 读盘扩展字段 3 处)——建议镜像装配时建立"上层框架 × 底层库"版本契约清单。</li>
+    </ol>
+    <h3>遗留事项</h3>
+    <ul>
+      <li><b>逐字节动量指纹比对(可选深化)</b>:本轮探针取数位置设计不当(读到元数据而非数据本体),已按判据预留条款改用"落盘体积/文件数 + 恢复后训练指标连续性"组合证明;如需逐字节级证明,探针需重设计(读优化器真实状态对象),约 1 轮工作量。</li>
+      <li><b>判据边界重申</b>:本轮随机 token 模拟生成、奖励恒零——验证的是状态恢复正确性(几何一致、进度准确、无损落盘),不主张训练效果语义(判据文档预登记)。</li>
+    </ul>
+    <h3>产物索引</h3>
+    <p class="muted">全部证据文件、探针、修复件入库于实验分支 <code>experiments/agenticrl-dsv4-optimizer-ckpt</code>(远程已同步):<code>repro/patches/</code>(0033–0049 修复与探针,19 提交)、<code>repro/evidence/</code>(逐轮取证)、<code>docs/gates_criteria_20261025.md</code>(预注册判据)、<code>docs/resume_validation_report_20261026.md</code>(Markdown 版报告)。</p>
+  </section>
+
+</main>
+
+<footer>
+  Generated 2026-10-26 · <a href="https://github.com/versatile-ai/automodelwire">GitHub · automodelwire</a>
+</footer>
+
+</body>
+</html>

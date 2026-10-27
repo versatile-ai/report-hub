@@ -627,6 +627,13 @@ const EXPERIMENTS=[
    reports:[
    {title:"30 步验证实验报告",subtitle:"7/7 权重同步成功 (66.7-81.1s/次) · reward +260% · 三通道架构 (NFS/TCP/HTTP) · 并发模型/ZMQ IPC/staleness 背压/字节序 4 技术点 · 24 轮排查因果链 · 图表 (reward 曲线/同步耗时/KL)",file:"verl-npu-grpo-double-cluster/2026-08-11-stage-report.html",date:"2026-08-11",type:"stage"}
    ]
+  },
+  {id:"agenticrl-optimizer-ckpt-resume",name:"AgenticRL 优化器断点续训验证",subtitle:"AgenticRL(Aura)×DeepSeek-V4-Flash 优化器状态断点续训端到端验证 · 三关判据全达成(50GiB 落盘/自动接管/恢复连训 3 步)· 5 处框架缺陷根因定位与修复 · 27 轮发射取证",status:"active",startDate:"2026-10-23",lastUpdate:"2026-10-26",
+   tags:["AgenticRL","Aura","verl","MindSpeed","断点续训","优化器状态","dist-checkpoint","DeepSeek-V4-Flash","Ascend 910B3"],
+   metrics:[{label:"三关判据",value:"3/3 达成",tone:"good"},{label:"状态落盘",value:"50 GiB",tone:"good"},{label:"续训步数",value:"3 步",tone:"good"},{label:"框架缺陷",value:"5 处",tone:"info"},{label:"崩溃签名",value:"0",tone:"good"},{label:"发射轮次",value:"27",tone:"warn"}],
+   reports:[
+   {title:"断点续训验证终报告",subtitle:"三关判据全部达成 · 优化器状态 50GiB 真实落盘(历史最佳 12K 空壳)· 自动接管读回 · 从断点恢复连训 3 步 · 5 处框架缺陷根因(混合精度索引错配/配置组合越界/部分层参数/补丁语义丢失/版本接缝漂移)· 上游反馈 5 项",file:"agenticrl-optimizer-ckpt-resume/2026-10-26-final-report.html",date:"2026-10-26",type:"final"}
+   ]
   }
 ];
 
