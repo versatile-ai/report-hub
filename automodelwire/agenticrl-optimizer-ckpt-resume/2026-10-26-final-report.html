@@ -215,7 +215,7 @@
     <li><a href="#metrics">结论速览</a></li>
     <li><a href="#background">背景与任务</a></li>
     <li><a href="#gates">三关验证结果</a></li>
-    <li><a href="#defects">五处框架缺陷:问题 → 根因 → 修复</a></li>
+    <li><a href="#defects">五处框架缺陷:问题 → 解决思路 → 代码</a></li>
     <li><a href="#noncode">非代码问题与处置</a></li>
     <li><a href="#timeline">验证时间线</a></li>
     <li><a href="#upstream">上游反馈与遗留</a></li>
@@ -285,47 +285,119 @@
 
   <!-- ── 五处框架缺陷 ── -->
   <section id="defects">
-    <h2>五处框架缺陷:问题 → 根因 → 修复</h2>
-    <p class="muted">按发现顺序排列。每处根因均深挖到开发者意图层面(设计假设是什么、谁和谁没对齐),不是表面现象。</p>
+    <h2>五处框架缺陷:问题 → 解决思路 → 代码(git review)</h2>
+    <p class="muted">按发现顺序排列。每处按"现象 → 根因(开发者意图层)→ 解决思路 → 实际代码改动"四段展开;代码以 unified diff(git review 形式)展示,<code>-</code> 删行 / <code>+</code> 增行。diff 中 <code>AMW FIX</code> 注释为本次验证写入。</p>
 
     <h3>缺陷 1 · 混合精度参数的索引错配(训练框架核心)</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>维度</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td><b>现象</b></td><td>保存时报"数据形状与期望不符"(7 种签名)+ 空指针,共 8 卡全崩</td></tr>
-          <tr><td><b>根因</b></td><td>框架为参数建立索引映射时按缓冲迭代顺序编号,构建参数组时却把 fp32 参数排到前面——同一参数组混有两种数值精度时,保存/加载查表<b>全部交叉错配</b>(大参数查到小参数的状态槽)</td></tr>
-          <tr><td><b>为什么存在</b></td><td>框架隐含假设"一个参数组内数值精度同质",该假设未文档化、未校验;本模型的内存优化特性显式把部分参数转成 fp32,打破假设</td></tr>
-          <tr><td><b>修复</b></td><td>参数组按索引映射的编号顺序逐参数收集,保存/加载双侧同修。取证链:预登记四项判据的探针运行 → 全部成立 → 根因证实后才动手修</td></tr>
+          <tr><td><b>现象</b></td><td>保存时报"数据形状与期望不符"(7 种签名)+ 空指针,8 卡全崩。典型签名:<code>65536 vs 273295792, optimizer.state.exp_avg.output_layer.weight</code>——大参数查到了小参数的状态槽</td></tr>
+          <tr><td><b>根因</b></td><td>框架为参数建立索引映射时按<b>缓冲迭代顺序</b>编号(混合精度下 bf16 缓冲在前),构建参数组时却把 fp32 参数排到前面——同一参数组混两种精度时,保存/加载查表<b>全部交叉错配</b></td></tr>
+          <tr><td><b>为什么存在</b></td><td>框架隐含假设"一个参数组内数值精度同质",未文档化、未校验;本模型的内存优化特性显式把部分参数转 fp32,打破假设</td></tr>
+          <tr><td><b>修复迭代</b></td><td>6 版收敛。中间踩三个坑:类型筛选重排恰好复刻上游 bug / 追加残留全量参数 / 对 NPU 张量用 list.index 触发逐元素比较崩溃——最终 zip + 身份配对定型,预登记四判据探针全成立后定谳</td></tr>
         </tbody>
       </table>
     </div>
+    <p><b>解决思路:</b>让参数组的排列顺序与索引映射的编号顺序严格一致——按映射编号时的遍历序逐参数走一遍,每个参数取它自己的分片(fp32 参数取自身视图,bf16 参数取其 fp32 派生分片),整体替换优化器参数组列表。不引入任何新语义,只消除顺序错位。</p>
+    <p class="muted">代码:<code>megatron/core/optimizer/distrib_optimizer.py</code>(提交 <code>9900730c</code>)</p>
+    <pre><code>--- a/megatron/core/optimizer/distrib_optimizer.py
++++ b/megatron/core/optimizer/distrib_optimizer.py (AMW FIX 0033a-r6)
+             # Update optimizer's params.
+-            # 上游原实现: fp32 分片在前、bf16 派生分片在后 —— 与索引映射
+-            # 的编号顺序(缓冲序, bf16 在前)相反, 混合 dtype 组查表全错配
+-            if not config.use_precision_aware_optimizer:
+-                group_range["orig_group"]["params"] = [
+-                    *shard_fp32_params_this_group,
+-                    *shard_fp32_from_float16_params_this_group,
+-                ]
+-            else:
+-                group_range["orig_group"]["params"] = [
+-                    *shard_fp32_params_this_group,
+-                    *shard_float16_params_this_group,
+-                ]
++            # 按 group_range["params"] 的遍历序(= 索引映射编号序)逐参数
++            # 收集对应分片, 产出序恒等于映射序。
++            # 注意: 必须用 zip + is 身份配对, 不能用 list.index() ——
++            # torch 张量的 __eq__ 是逐元素比较, list.index 会广播比较
++            # 整个张量 (r5 崩溃: "size of tensor a (4) must match b (24)")
++            _amw_new_params = []
++            for _walk_param in group_range["params"]:
++                if _walk_param.type() == 'torch.cuda.FloatTensor':
++                    _amw_new_params.append(next(
++                        _shard for _mp, _shard in zip(
++                            model_fp32_params_this_group,
++                            shard_fp32_params_this_group,
++                        ) if _mp is _walk_param
++                    ))
++                else:
++                    _amw_new_params.append(next(
++                        _shard for _mp, _shard in zip(
++                            model_float16_params_this_group,
++                            shard_fp32_from_float16_params_this_group,
++                        ) if _mp is _walk_param
++                    ))
++            group_range["orig_group"]["params"] = _amw_new_params</code></pre>
 
     <h3>缺陷 2 · 配置组合走出特性设计边界(继承性配置错误)</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>维度</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td><b>现象</b></td><td>修好缺陷 1 后,不同实现层仍同族崩溃;探针显示修复的代码"从未被执行"</td></tr>
-          <tr><td><b>根因</b></td><td>配置继承了官方模板的"优化器状态换出内存"省内存特性;官方<b>全部</b>开此特性的模板都同时显式关闭优化器保存——两者组合在官方矩阵中零先例。换出的状态在保存前无人负责恢复</td></tr>
-          <tr><td><b>为什么存在</b></td><td>复制的模板自带旧设定,无人检查两者冲突;省内存特性的设计意图只为"永不保存优化器"的长训场景服务</td></tr>
-          <tr><td><b>修复</b></td><td>关闭省内存模式,对齐官方验证过的组合形态(代价:多占约 5.4 GB 显存/卡,本模型预算内)。三层归因呈报用户裁决后执行</td></tr>
+          <tr><td><b>现象</b></td><td>修好缺陷 1 后,不同实现层仍同族崩溃;取证探针显示修复的代码"从未被执行"(构造期插桩零输出)</td></tr>
+          <tr><td><b>根因(双层)</b></td><td>① 真正运行的优化器类不是被修的基类——省内存特性在运行时把优化器类<b>替换</b>为子类,子类覆写参数组构建方法且保留同样的重排 bug;② 更深一层:官方<b>所有</b>开省内存特性的模板都同时显式关闭优化器保存,该组合零先例,换出状态在保存前无人恢复</td></tr>
+          <tr><td><b>为什么存在</b></td><td>复制的配置模板自带旧设定,无人检查"省内存开 + 保存优化器开"互相冲突;省内存特性设计意图只为"永不保存优化器"的长训场景服务</td></tr>
+          <tr><td><b>修复迭代</b></td><td>先修子类(r4)仍崩 → 三层归因呈报用户裁决</td></tr>
         </tbody>
       </table>
     </div>
+    <p><b>解决思路:</b>三层归因呈报用户裁决(改子类 vs 关特性),选择<b>关闭省内存模式</b>——对齐官方验证过的组合形态(官方矩阵中该组合零先例;姊妹实验 50GiB 保存成功同形态),代价是多占约 5.4 GB 显存/卡(本模型预算内);子类修复件恢复原状,基类修复保留(非省内存路径正是它生效的地方)。此裁决同时消除了"换出状态未恢复"这一设计缺口。</p>
+    <p class="muted">代码:配置层一处(提交 <code>07b00ee2</code>)</p>
+    <pre><code>--- a/configs/train/verl_train_async_t64_dsv4_8e_optckpt.yaml
++++ b/configs/train/verl_train_async_t64_dsv4_8e_optckpt.yaml (路径 B 裁决)
+         moe_shared_expert_overlap: true
+-        swap_optimizer: true    # 省内存特性: 与"保存优化器状态"组合在
+-                                # 官方矩阵零先例, 且其运行时类替换使
+-                                # 基类修复失效
++        swap_optimizer: False   # 对齐官方验证过的组合形态</code></pre>
 
     <h3>缺陷 3 · 部分层才存在的参数与同构存盘格式冲突(芯片扩展)</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>维度</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td><b>现象</b></td><td>保存推进到路由表时,校验器报"分片访问次数不齐"(8 个分片只有 3 个有内容)</td></tr>
-          <tr><td><b>根因</b></td><td>模型的哈希路由表只在前 3 层存在,而存盘格式假设"每层同构、每个分片恰好访问一次"——数学上不可能满足。官方权重转换明确保存此表,证明它"该存",是存盘声明方式错了</td></tr>
-          <tr><td><b>为什么存在</b></td><td>加路由表的团队与定存盘格式的团队未对齐;框架本有"非同构层"声明机制但无人启用</td></tr>
-          <tr><td><b>修复</b></td><td>启用框架自带的非同构层声明(框架内另一模型同款,正门修复);并发现<b>加载路径有独立配置通道</b>,双侧同修</td></tr>
+          <tr><td><b>现象</b></td><td>保存推进到路由表时,校验器报"分片访问次数不齐":8 个分片,访问计数 <code>[1,1,1,0,0,0,0,0]</code>——第 4-8 分片零访问(任务书第二类症状首现)</td></tr>
+          <tr><td><b>根因</b></td><td>模型的哈希路由表只在前 3 层存在,存盘格式却假设"每层同构、每个分片恰好访问一次"——数学上不可能满足。官方权重转换明确保存此表,证明它"该存",是存盘<b>声明方式</b>错了</td></tr>
+          <tr><td><b>为什么存在</b></td><td>加路由表的团队与定存盘格式的团队未对齐;框架本有"非同构层"声明机制(另一模型同款在用)但无人为路由表启用</td></tr>
+          <tr><td><b>额外发现</b></td><td><b>加载路径有独立的配置通道</b>(旧版分支硬编码字典),绕过了保存侧修复——保存/加载须双侧同修</td></tr>
         </tbody>
       </table>
     </div>
+    <p><b>解决思路:</b>不绕过校验、不裁剪数据——启用框架自带的"非同构层"声明(官方另一模型同款正门机制):每个有路由表的层获得独立键名,校验天然通过;保存与加载两侧同一元数据路径,声明保持一致。</p>
+    <p class="muted">代码:<code>verl/utils/checkpoint/megatron_checkpoint_manager.py</code>(提交 <code>1fc07ee7</code> 保存侧 + <code>7cf73577</code> 加载侧)</p>
+    <pre><code>--- a/verl/utils/checkpoint/megatron_checkpoint_manager.py (保存侧)
++++ b/verl/utils/checkpoint/megatron_checkpoint_manager.py (AMW FIX 0036)
+         metadata: dict = {}
+
++        # 哈希路由表只在前 n_hash_layers 层存在。同构布局下 3 层共享
++        # 同一键且各声明一个分片位, 校验器要求 8 分片各恰访问 1 次
++        # —— 数学上不可满足 (实测 [1,1,1,0,0,0,0,0])。
++        # 声明非同构层 (框架官方机制, retro 模型同款): 各层独立键,
++        # 校验天然通过。保存与加载走同一 generate_state_dict 路径。
++        metadata["non_homogeneous_layers"] = True
++
+         if not mcore_ge_014:
+
+--- a/verl/utils/checkpoint/megatron_checkpoint_manager.py (加载侧)
++++ b/verl/utils/checkpoint/megatron_checkpoint_manager.py (AMW FIX 0046)
+             if self.use_distributed_optimizer:
+                 # 加载路径走此硬编码分支 (旧版判断), 绕过保存侧的
+                 # _build_sharded_state_dict_metadata —— 须同语义覆盖
+                 sharded_sd_metadata = {
+                     "distrib_optim_sharding_type": "fully_sharded_model_space",
++                    "non_homogeneous_layers": True,
+                 }</code></pre>
 
     <h3>缺陷 4 · 补丁机制丢失"静态方法"语义(扩展层)</h3>
     <div class="table-wrap">
@@ -333,24 +405,82 @@
         <thead><tr><th>维度</th><th>内容</th></tr></thead>
         <tbody>
           <tr><td><b>现象</b></td><td>保存推进到"数据从芯片搬入内存"环节,报"参数个数不符(传 3 个,期望 2 个)"</td></tr>
-          <tr><td><b>根因</b></td><td>扩展层用运行时替换机制修改框架函数,替换后的函数丢失"静态方法"属性——调用时悄悄多出对象自身参数。取证探针(打印函数真实源码位置与形参个数)定谳</td></tr>
-          <tr><td><b>为什么存在</b></td><td>替换机制的作者未意识到静态方法属性在替换后会失效;原扩展函数作者写了正确的装饰器但机制不支持</td></tr>
-          <tr><td><b>修复</b></td><td>两版"合理推测"修复(静态方法包装 / 特殊函数对象)均被探针证伪后,改修<b>消费端</b>:通过类而非实例访问函数——任何属性形态下都不会多出参数,机械排除</td></tr>
+          <tr><td><b>根因</b></td><td>扩展层用运行时替换机制修改框架的"静态方法"(无对象参数),替换后的普通函数作为类属性时,语言层自动绑定对象自身——调用端按原契约固定传 2 参,实际函数收到 3 参。取证探针打印函数真实源码位置(文件:行号)与形参个数定谳</td></tr>
+          <tr><td><b>为什么存在</b></td><td>替换机制的作者未意识到静态方法属性在替换后失效(描述符协议);替换函数的原作者写了正确装饰器但机制不传递它</td></tr>
+          <tr><td><b>修复迭代</b></td><td>两版"合理推测"修复(重新包静态方法 / 换特殊函数对象)均被探针证伪——替换后属性形态不受传入方式影响。方法论:推测连续失败即转探针取证,不打地鼠</td></tr>
         </tbody>
       </table>
     </div>
+    <p><b>解决思路:</b>不在替换机制里纠缠(其属性形态不受控制),改修<b>消费端</b>——通过类而非通过实例访问函数:类访问在任何属性形态(普通函数 / 静态方法)下都不会自动绑定对象自身,机械排除"多一个参数"的可能。</p>
+    <p class="muted">代码:<code>megatron/core/dist_checkpointing/strategies/filesystem_async.py</code>(提交 <code>673c2196</code>,一行)</p>
+    <pre><code>--- a/megatron/core/dist_checkpointing/strategies/filesystem_async.py
++++ b/megatron/core/dist_checkpointing/strategies/filesystem_async.py (AMW FIX 0043)
+         return (
+             partial(self.write_preloaded_data_multiproc, transform_list),
+-            # self.preload_tensors: 实例访问 —— 当补丁层把类属性重绑为
+-            # 普通函数时, 语言层描述符自动绑定 self, partial(bound,...)()
+-            # 变 3 参 → TypeError
+-            partial(self.preload_tensors, self.write_buckets, True),
++            # type(self).preload_tensors: 类访问 —— 任何属性形态
++            # (普通函数 / 静态方法) 都不绑定 self, 机械排除 3 参
++            partial(type(self).preload_tensors, self.write_buckets, True),
+             [torch.distributed.get_rank(), self.write_buckets, self.results_queue],
+         )</code></pre>
 
     <h3>缺陷 5 · 多组件版本演进接缝漂移(4 处同型)</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>接缝</th><th>漂移内容</th><th>修复</th></tr></thead>
+        <thead><tr><th>#</th><th>接缝</th><th>漂移内容</th><th>修复提交</th></tr></thead>
         <tbody>
-          <tr><td>5a</td><td>写盘函数签名</td><td>新版底层库给写盘函数加了必填"格式声明"参数,上层框架按旧签名调用少传一参</td><td>两处调用补齐(语义等价:框架写的本就是该格式)</td></tr>
-          <tr><td>5b</td><td>配置快照导出</td><td>配置里混入新版枚举类型,JSON 导出不认识</td><td>标准做法:未知值转可读字符串(仅元数据,无行为影响)</td></tr>
-          <tr><td>5c</td><td>读盘目录页字段</td><td>存档目录页由新版流程写出、不含扩展字段,读盘代码假设必有 → 崩;且该字段缺失时加载<b>数学上</b>无法进行</td><td>等价回退:缺失信息从另一字段取值(逐行对照写入侧代码证明两值同源同值)</td></tr>
+          <tr><td>5a</td><td>写盘函数签名</td><td>新版底层库给写盘函数加必填"格式声明"参数,上层框架按旧签名调用少传一参</td><td class="mono">4d9f6101 + 88f9ee01</td></tr>
+          <tr><td>5b</td><td>配置快照导出</td><td>配置混入新版枚举类型,JSON 导出不认识</td><td class="mono">36995717</td></tr>
+          <tr><td>5c</td><td>读盘目录页字段</td><td>存档目录页缺扩展字段;且该字段缺失时 N-D 展平张量加载<b>数学上</b>无法进行(容错路线 2 版走到头)</td><td class="mono">e5285b99 / 57223829 / 2d133b6b</td></tr>
         </tbody>
       </table>
     </div>
+    <p><b>5a 解决思路:</b>补齐参数——框架写的本就是该格式,显式声明即语义等价。</p>
+    <pre><code>--- a/megatron/core/dist_checkpointing/strategies/filesystem_async.py
++++ b/megatron/core/dist_checkpointing/strategies/filesystem_async.py (AMW FIX 0044)
++from torch.distributed.checkpoint.filesystem import (
++    DEFAULT_SUFFIX, _StoragePrefix, _write_item, SerializationFormat,
++)
+             with open(file_name, "wb") as stream:
+                 for write_item, data in bytes_data:
+                     local_results.append(
+-                        _write_item(*transform_list, stream, data, write_item, storage_key)
++                        # 新版底层库增加必填 serialization_format 形参;
++                        # 框架写盘即 torch.save 流, TORCH_SAVE 语义等价
++                        _write_item(*transform_list, stream, data, write_item,
++                                    storage_key, SerializationFormat.TORCH_SAVE)
+                     )</code></pre>
+    <p><b>5b 解决思路:</b>配置快照是纯元数据——用标准做法让未知类型转可读字符串,零行为影响。</p>
+    <pre><code>--- a/verl/utils/checkpoint/megatron_checkpoint_manager.py
++++ b/verl/utils/checkpoint/megatron_checkpoint_manager.py (AMW FIX 0045)
+                 with open(transformer_config_path, "w") as f:
+-                    json.dump(transformer_config_dict, f, indent=2)
++                    # 芯片扩展把枚举对象塞进配置 (如模型类型枚举);
++                    # default=str 使枚举渲染为可读字符串 —— 仅元数据
++                    json.dump(transformer_config_dict, f, indent=2, default=str)</code></pre>
+    <p><b>5c 解决思路:</b>三段递进。先容错(字段缺失不崩)→ 发现该字段缺失时加载<b>数学上</b>必须知道"张量展平前的全局形状" → 逐行对照写入侧代码证明:缺失字段的值与目录页另一字段<b>同源同值</b>(写入侧记录的正是全局形状,而目录页的"张量尺寸"字段保存的就是它)→ 用后者等价回退。</p>
+    <pre><code>--- a/megatron/core/dist_checkpointing/strategies/torch.py
++++ b/megatron/core/dist_checkpointing/strategies/torch.py (AMW FIX 0049)
+-            ckpt_global_shape = ckpt_metadata.mcore_data[sh_ten.key][
+-                'nd_reformulated_orig_global_shape'
+-            ]
++            # 存档目录页由新版写盘流程生成, 无扩展字段; 但写入侧本会
++            # 记录的 nd_reformulated_orig_global_shape = 张量全局形状
++            # (写入侧 282 行), 而目录页 state_dict_metadata[key].size
++            # 保存的正是该值 —— 同源同值, 等价回退:
++            _mcore_data = getattr(ckpt_metadata, 'mcore_data', None)
++            if _mcore_data is not None:
++                ckpt_global_shape = _mcore_data[sh_ten.key][
++                    'nd_reformulated_orig_global_shape'
++                ]
++            else:
++                ckpt_global_shape = ckpt_metadata.state_dict_metadata[
++                    sh_ten.key
++                ].size</code></pre>
+
     <div class="note warn">
       <div class="note-title">共性根因</div>
       缺陷 2/3/4/5 同型:<b>monkey-patch 叠加架构 + 多团队并行演进,让上游语义在每一层补丁后静默漂移</b>。点修复已解决本次验证;根治需上游把相关行为改为正式接口(已列入上游反馈)。
