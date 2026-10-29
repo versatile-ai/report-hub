@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DeepSeek-V4.1-Flash 推理栈换用 vLLM 0.30 官方镜像 + DP4×TP8×EP32 共址部署：G0–G8 全 PASS，32K 8 并发×25 分钟零崩溃，v0.27 的 aclnnMul 确定性缺陷未复现">
+<title>DeepSeek-V4.1-Flash × vLLM 0.30 推理换栈 — 阶段报告 (2026-10-29)</title>
+<style>
+  :root {
+    /* 浅态 token(design-guide §2 浅态列, 原值; 本页按用户指令以纸质质感呈现报告内容) */
+    --bg:#F9F9F6; --surface:#FFFFFF; --surface-2:#F3F3F0; --border:#E6E6E2;
+    --text:#18181B; --muted:#71717A; --tertiary:#6B7280;
+    --accent:#6D28D9; --accent-hover:#5B21B6;
+    --green:#059669; --yellow:#D97706; --red:#DC2626; --info:#2563EB;
+    --green-bg:rgba(5,150,105,0.10); --yellow-bg:rgba(217,119,6,0.10);
+    --red-bg:rgba(220,38,38,0.10); --info-bg:rgba(37,99,235,0.10);
+    --ink:#23201B; --paper-line:rgba(35,32,27,0.08);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  /* 纸面: 米白底 + 双层极淡纤维纹理(内联 SVG, 无外部资源) */
+  body{
+    background-color:var(--bg);
+    background-image:
+      url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.14 0 0 0 0 0.12 0 0 0 0 0.10 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E"),
+      radial-gradient(ellipse 120% 60% at 50% 0%, rgba(255,255,255,0.85), rgba(244,241,232,0.35) 60%, rgba(0,0,0,0) 100%);
+    color:var(--ink);
+    font-family:'Songti SC','Noto Serif SC','Source Han Serif SC',Georgia,'Times New Roman',serif;
+    font-size:15px;line-height:1.9;
+    -webkit-font-smoothing:antialiased;
+  }
+  .container{max-width:1000px;margin:0 auto;padding:40px 48px 72px}
+
+  /* 字体三角色: 标题=衬线正文体(纸面阅读感), 数据/日期/标签=等宽(工程签名) */
+  h1,h2{font-family:'Songti SC','Noto Serif SC','Source Han Serif SC',Georgia,serif;font-weight:700;letter-spacing:.01em}
+  h1{font-size:30px;line-height:1.35;margin-bottom:10px}
+  h2{font-size:20px;margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--paper-line)}
+  .mono,.stat .v,.metric .v,.tl-date,.tag,code,th .u{font-family:'SF Mono','Fira Code',Consolas,monospace}
+
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(109,40,217,.25)}
+  a:hover{color:var(--accent-hover);border-bottom-color:var(--accent-hover)}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+  /* Breadcrumb */
+  .breadcrumb{font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:12px;color:var(--tertiary);
+    padding:20px 48px 0;max-width:1000px;margin:0 auto}
+  .breadcrumb a{color:var(--muted);border-bottom:none}
+  .breadcrumb a:hover{color:var(--accent)}
+  .breadcrumb .sep{margin:0 6px;opacity:.55}
+
+  header{padding:18px 0 26px;border-bottom:2px solid var(--paper-line);margin-bottom:8px}
+  .meta{font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:12px;color:var(--tertiary);letter-spacing:.02em}
+  .meta .dot{margin:0 8px;opacity:.5}
+
+  /* TOC */
+  .toc{background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:16px 22px;margin:22px 0 34px;box-shadow:0 1px 0 rgba(35,32,27,.04)}
+  .toc-title{font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--tertiary);margin-bottom:8px}
+  .toc ol{margin-left:18px}
+  .toc li{margin:3px 0}
+  .toc a{border-bottom:none;color:var(--text)}
+  .toc a:hover{color:var(--accent)}
+
+  section{margin:0 0 40px}
+  p{margin:0 0 12px}
+  ul,ol{margin:0 0 12px 22px}
+  li{margin:3px 0}
+
+  /* Metric 卡 */
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  .metric{background:var(--surface);border:1px solid var(--border);border-radius:6px;
+    padding:14px 16px;box-shadow:0 1px 0 rgba(35,32,27,.04)}
+  .metric .v{font-size:22px;font-weight:600;line-height:1.25}
+  .metric .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--tertiary);margin-top:5px}
+  .v.good{color:var(--green)} .v.warn{color:var(--yellow)} .v.bad{color:var(--red)} .v.info{color:var(--info)}
+
+  /* Table */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px}
+  th{background:var(--surface-2);color:var(--accent);text-transform:uppercase;font-size:11px;
+    letter-spacing:.1em;text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);
+    font-family:'SF Mono','Fira Code',Consolas,monospace;font-weight:600}
+  td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;
+    font-family:'SF Mono','Fira Code',Consolas,monospace}
+  .ok{color:var(--green);font-weight:600}
+  .warn{color:var(--yellow);font-weight:600}
+  .bad{color:var(--red);font-weight:600}
+
+  /* Note */
+  .note{border-left:3px solid var(--info);background:var(--info-bg);padding:12px 16px;
+    border-radius:0 4px 4px 0;margin:14px 0}
+  .note.ok{border-left-color:var(--green);background:var(--green-bg)}
+  .note.warn{border-left-color:var(--yellow);background:var(--yellow-bg)}
+  .note.bad{border-left-color:var(--red);background:var(--red-bg)}
+  .note b{font-weight:700}
+
+  .badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+    font-family:'SF Mono','Fira Code',Consolas,monospace;font-weight:600;letter-spacing:.04em}
+  .badge.ok{background:var(--green-bg);color:var(--green)}
+  .badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+  .badge.bad{background:var(--red-bg);color:var(--red)}
+  .badge.info{background:var(--info-bg);color:var(--info)}
+  .tag{display:inline-block;font-size:11px;color:var(--tertiary);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:3px;padding:1px 7px;margin:2px 4px 2px 0}
+
+  code{background:var(--surface-2);border:1px solid var(--border);border-radius:3px;
+    padding:1px 5px;font-size:12.5px}
+  pre{background:#FBFAF6;border:1px solid var(--border);border-radius:6px;padding:14px 16px;
+    overflow-x:auto;margin:12px 0;font-size:12.5px;line-height:1.7}
+  pre code{background:none;border:none;padding:0}
+
+  /* Timeline */
+  .timeline{border-left:2px solid var(--border);margin-left:6px;padding-left:18px}
+  .tl-item{position:relative;margin-bottom:14px}
+  .tl-item::before{content:'';position:absolute;left:-25px;top:8px;width:10px;height:10px;
+    border-radius:50%;background:var(--accent)}
+  .tl-item.ok::before{background:var(--green)} .tl-item.bad::before{background:var(--red)}
+  .tl-date{font-size:12px;color:var(--tertiary)}
+
+  footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--paper-line);
+    font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:11.5px;color:var(--tertiary)}
+
+  @media (max-width:720px){
+    .container{padding:28px 22px 56px}
+    .breadcrumb{padding:16px 22px 0}
+    h1{font-size:24px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{
+    body{background:#fff;background-image:none;color:#111}
+    .toc{display:none}
+    a{color:#111;border-bottom:none}
+    .metric,.tbl-wrap,.toc{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+
+<nav class="breadcrumb">
+  <a href="../../index.html">versatile-ai</a><span class="sep">/</span>
+  <a href="../index.html">AutoModelWire</a><span class="sep">/</span>
+  <a href="../index.html#dsv41-flash-vllm030-infer">DeepSeek-V4.1-Flash × vLLM 0.30 推理换栈</a><span class="sep">/</span>
+  <span>阶段报告</span>
+</nav>
+
+<div class="container">
+<header>
+  <h1>DeepSeek-V4.1-Flash 推理换栈 vLLM 0.30 — DP4×TP8×EP32 全量权重 + Engram + 视觉</h1>
+  <div class="meta">阶段报告<span class="dot">·</span>2026-10-29<span class="dot">·</span>Ascend 910B3 × 4 节点(32 NPU)<span class="dot">·</span>分支 feature/deepseek-v41-flash-with-torchtitan</div>
+</header>
+
+<nav class="toc">
+  <div class="toc-title">目录</div>
+  <ol>
+    <li><a href="#verdict">结论摘要</a></li>
+    <li><a href="#layout">部署形态与资源实测</a></li>
+    <li><a href="#gates">门禁矩阵(G0–G8)</a></li>
+    <li><a href="#perf">性能实测</a></li>
+    <li><a href="#soak">32K 持续压测(缺陷对照)</a></li>
+    <li><a href="#vision">视觉层</a></li>
+    <li><a href="#limits">口径、偏差与遗留</a></li>
+    <li><a href="#evidence">证据与复现</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="verdict">
+  <h2>结论摘要</h2>
+  <div class="metrics">
+    <div class="metric"><div class="v good">8/8</div><div class="k">门禁 G0–G8</div></div>
+    <div class="metric"><div class="v good">2060 s</div><div class="k">冷启动耗时</div></div>
+    <div class="metric"><div class="v good">1512</div><div class="k">32K 压测请求数</div></div>
+    <div class="metric"><div class="v good">0</div><div class="k">崩溃/缺陷签名</div></div>
+    <div class="metric"><div class="v info">59.8 GiB</div><div class="k">HBM 峰值 / 卡(门 60.8)</div></div>
+    <div class="metric"><div class="v info">38.6 ms</div><div class="k">TPOT 基线(25.9 tok/s)</div></div>
+  </div>
+  <div class="note ok" style="margin-top:16px">
+    <b>核心结论。</b>DeepSeek-V4.1-Flash 全量 384 专家 BF16 权重在 <b>vLLM 社区 v0.30.0rc2 官方镜像 +
+    DP4×TP8×EP32 多节点共址形态</b>下完成端到端验证:Engram(394 GB BF16 表 host offload)与视觉层
+    同时开启。v0.27.1 线上 32K decode 的确定性向量核缺陷(<code>EE9999 / 507035 / aclnnMul</code>)
+    在 25 分钟 8×32K 持续负载下<b>未复现</b>——换栈缓解路径成立。
+  </div>
+</section>
+
+<section id="layout">
+  <h2>部署形态与资源实测</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:26%">维度</th><th>实测</th><th style="width:32%">说明 / 对照</th></tr>
+    <tr><td>镜像</td><td><code>quay.io/ascend/vllm-ascend:v0.30.0rc2</code><br><span class="mono" style="font-size:12px">digest sha256:4d683043…4e823</span></td><td>4 节点逐节点校验,与既有全能力先例(19 号)钉死值一致;零 overlay</td></tr>
+    <tr><td>栈版本</td><td class="mono">vLLM 0.30.0 · vllm-ascend 0.30.0rc2 · CANN 9.1.0 · 驱动 25.5.1</td><td>运行时自证(<code>vllm.__version__</code>)</td></tr>
+    <tr><td>拓扑</td><td class="mono">DP4 × TP8 × EP32,每节点 1 个 local DP rank,仅 head 暴露 API</td><td>官方 A2 多节点共址形态(§5.5)</td></tr>
+    <tr><td>权重</td><td>官方完整 BF16:46 主分片 + 2 Engram 分片(合计 1.53 TB / 48,496 键)</td><td>含 259 vision + 4 aligner + 8 engram 键;只读 R4</td></tr>
+    <tr><td>每卡权重</td><td class="mono num">37.33 GiB</td><td>预算算术 37.7 GiB,误差 &lt;1%</td></tr>
+    <tr><td>KV cache</td><td class="mono num">12.91 GiB / 卡</td><td>GPU 利用率 0.90,gpu-mem 参数自动取余</td></tr>
+    <tr><td>HBM 峰值</td><td class="mono num">59.8 GiB / 卡(61,210 / 65,536 MB)</td><td class="ok">门 60.8 GiB,余量 ~1 GiB</td></tr>
+    <tr><td>Engram 位置</td><td>host pinned 内存(CPU),394 GB / 节点</td><td>引擎默认 <code>cpu_offload=True</code>;放 HBM 不可行(每 rank ~49 GB &gt; 64 GB)</td></tr>
+    <tr><td>serve 参数</td><td class="mono">max_model_len 122880 · block 128 · max_num_seqs 8 · batched 4096</td><td>Engram/视觉同时开启</td></tr>
+    <tr><td>启动 / 装载</td><td class="mono num">2060 s</td><td>1.53 TB 冷读 + 394 GB host 表装载</td></tr>
+  </table></div>
+
+  <div class="note" style="margin-top:14px">
+    <b>TP 上限的结构性约束。</b>0.30 引擎在权重后处理阶段要求
+    <code>n_local_groups = o_groups ÷ tp_size &gt; 0</code>(本模型 <code>o_groups=8</code>),
+    故 TP&gt;8 时商为 0,必崩(<code>shape '[0, 1024, -1]'</code>);这正是此前 TP32 换栈尝试
+    失败的确切根因。同时 Engram 要求 TP 组不跨节点、且 <code>engram_n_heads=8</code> 须被
+    TP 整除——<b>TP8 恰好每 rank 1 个头</b>,与官方形态互为印证。
+  </div>
+</section>
+
+<section id="gates">
+  <h2>门禁矩阵(G0–G8)</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:12%">门</th><th style="width:30%">判据</th><th>结果</th></tr>
+    <tr><td>G0 部署</td><td>4 节点镜像 digest 一致,DP rank = 4</td><td><span class="badge ok">PASS</span> digest 全等;DP0–DP3 四引擎</td></tr>
+    <tr><td>G1 就绪</td><td><code>/health</code> 200,≤ 5400 s</td><td><span class="badge ok">PASS</span> 2060 s</td></tr>
+    <tr><td>G2 装载</td><td>权重 + Engram + vision 键面消纳,缺键 0</td><td><span class="badge ok">PASS</span> 46+2 分片、8 个 engram head 分片、259 vision 键全消纳</td></tr>
+    <tr><td>G3 功能</td><td>logprobs 有限;chat 正常(官方模板)</td><td><span class="badge ok">PASS</span> content + reasoning 正常;跨引擎逐字节确定性另见 §7</td></tr>
+    <tr><td>G4 HBM</td><td>峰值 ≤ 60.8 GiB / 卡</td><td><span class="badge ok">PASS</span> 59.8 GiB</td></tr>
+    <tr><td>G5 长上下文</td><td>4K / 32K / 64K needle 命中</td><td><span class="badge ok">PASS 3/3</span> 实际 prompt token 偏差 ≤ 0.2%</td></tr>
+    <tr><td>G6 性能</td><td>TTFT / TPOT / 吞吐落盘</td><td><span class="badge ok">PASS</span> 见 §4</td></tr>
+    <tr><td>G7 视觉</td><td>图像输入相关 + 纯文本回归</td><td><span class="badge ok">PASS</span> 红/绿纯色图 2/2 命中</td></tr>
+    <tr><td>G8 持续压测</td><td>8 并发 × 32K ≥ 20 min 无缺陷签名</td><td><span class="badge ok">PASS</span> 25 min / 189 轮 / 1512 请求,签名 0</td></tr>
+  </table></div>
+</section>
+
+<section id="perf">
+  <h2>性能实测</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:20%">档位</th><th class="num" style="width:14%">prompt tokens</th><th class="num" style="width:16%">TTFT</th><th class="num" style="width:14%">TPOT</th><th>备注</th></tr>
+    <tr><td>短 prompt 稳态</td><td class="num">~380</td><td class="num">0.394 s</td><td class="num">38.6 ms</td><td>25.9 tok/s;与既有全能力先例性能优先模式(37.9 ms)持平</td></tr>
+    <tr><td>4K</td><td class="num">4,094</td><td class="num">7.64 s(冷 shape 首请求)</td><td class="num">44.6 ms</td><td>同 shape 二次为秒级;冷 shape = 一次性图编译</td></tr>
+    <tr><td><b>32K</b></td><td class="num">32,700</td><td class="num"><b>0.583 s</b></td><td class="num"><b>42.5 ms</b></td><td>热 shape 稳态(流式)</td></tr>
+    <tr><td><b>64K</b></td><td class="num">65,393</td><td class="num"><b>26.8 s</b></td><td class="num"><b>42.0 ms</b></td><td>TTFT 主项 = prefill(≈2.4K tok/s);decode 无长度退化</td></tr>
+    <tr><td>并发 4 × 64K</td><td class="num">65,393 ×4</td><td class="num">—</td><td class="num">—</td><td>4/4 needle 命中;墙钟 25.8 s;吞吐 11.3 tok/s(输出上限 128,以 prefill 为主)</td></tr>
+  </table></div>
+  <div class="note warn" style="margin-top:14px">
+    <b>读数口径。</b>TTFT 受“冷 shape 一次性编译”影响显著(首请求可达 7–8 s,同 shape 复测回到亚秒级),
+    表中长上下文档均取稳态;TPOT 在 4K→64K 基本恒定(42–45 ms),说明 decode 路径不存在随长度的劣化。
+    并发吞吐受输出 token 上限(≤128)约束,不代表长输出场景吞吐——decode 侧应看 TPOT。
+  </div>
+</section>
+
+<section id="soak">
+  <h2>32K 持续压测(缺陷对照)</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:26%">项</th><th>数值</th></tr>
+    <tr><td>工况</td><td>8 路并发 32K prompt 连续往返(needle 判据),25 分钟</td></tr>
+    <tr><td>轮次 / 请求数</td><td class="mono num">189 轮 / 1,512 请求</td></tr>
+    <tr><td>每轮命中</td><td class="mono num">8/8(全轮次)</td></tr>
+    <tr><td>失败 / 服务中断</td><td class="mono num"><span class="ok">0 / 0</span>(<code>/health</code> 全程 200)</td></tr>
+    <tr><td>缺陷签名扫描(4 节点)</td><td class="mono"><span class="ok">EE9999=0 · 507035=0 · aclnnMul=0 · devmm page fault=0</span></td></tr>
+    <tr><td>0.27 基线对照</td><td>同签名崩溃分别在发射后 11 min / 16 min(两个不同节点复现,排除个体硬件)</td></tr>
+  </table></div>
+  <div class="note ok" style="margin-top:14px">
+    <b>判定。</b>v0.27.1 线在 32K decode 的确定性向量核异常,在 v0.30.0rc2 上以同级负载
+    (观察窗 25 min,覆盖 0.27 崩溃时点 11–16 min)未复现——换栈缓解路径成立。
+    局限:实际 RL rollout 的混合 chunked-prefill 批形态未 1:1 复刻,本压测为 serve 级最接近工况。
+  </div>
+</section>
+
+<section id="vision">
+  <h2>视觉层</h2>
+  <p>权重含 259 vision + 4 aligner 键;0.30 栈内置多模态包装类与图像占位符处理器
+  (<code>&lt;｜deepseek_image｜&gt;</code>, id 129264)。以程序生成的纯色 PNG 免依赖实测:</p>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:22%">用例</th><th style="width:26%">输入</th><th style="width:26%">输出</th><th>判定</th></tr>
+    <tr><td>纯红图</td><td>data-URI PNG</td><td class="mono">"red"</td><td><span class="badge ok">命中</span></td></tr>
+    <tr><td>纯绿图</td><td>data-URI PNG</td><td class="mono">"green"</td><td><span class="badge ok">命中</span></td></tr>
+    <tr><td>纯文本回归</td><td>"Say OK."</td><td class="mono">"OK"</td><td><span class="badge ok">通过</span></td></tr>
+  </table></div>
+</section>
+
+<section id="limits">
+  <h2>口径、偏差与遗留</h2>
+  <ol>
+    <li><b>确定性口径。</b>DP4 形态下 head 节点多个 API server(SO_REUSEPORT)把请求分派到不同 DP 引擎,
+      同一 prompt 贪心复测非逐字节一致(既有全能力先例首轮同款已归因);按引擎判确定性需
+      multi-port 模式(local DP ≥ 2,本形态为 1)。本报告判据 = 功能正确性 + needle 命中。</li>
+    <li><b>chat 模板注入。</b>官方权重目录 <code>tokenizer_config.json</code> 不含 chat 模板(实测);
+      部署侧生成模板副本并以 <code>--tokenizer</code> 覆盖,权重目录零写入。</li>
+    <li><b>跨版本不可横比。</b>0.27 基线 = 纯 BF16、无 Engram、旧模板;本形态多 394 GB host
+      Engram 表与官方模板系统头,TTFT/TPOT 数字含形态差。</li>
+    <li><b>RL 同步链未接。</b>0.27 线 reload 热更为旧 API 面,0.30 不兼容;若 0.30 转为 RL rollout
+      面,需重做权重热更新扩展(独立线)。</li>
+    <li><b>视觉无 OCR/细粒度能力评测。</b>本轮仅验证链路可用与颜色语义,不含图像理解质量评测。</li>
+  </ol>
+</section>
+
+<section id="evidence">
+  <h2>证据与复现</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:32%">项</th><th>位置</th></tr>
+    <tr><td>部署面(单一入口)</td><td><code>scripts/dp-serve/deploy.sh</code>(plan = 干态;无参 = 同步 → 发射 → 四出口 → 探针)</td></tr>
+    <tr><td>场景/公共配置</td><td><code>scripts/dp-serve/config.env</code>(拓扑/Engram/门禁阈值)+ <code>scripts/common/config.env</code>(节点/镜像 digest/路径)</td></tr>
+    <tr><td>发射证据</td><td>共享盘 <code>&lt;sfs-root&gt;/logs/</code> 四节点 serve 日志;本地 <code>results/evidence/&lt;tag&gt;/</code>(env 校验/启动耗时/HBM 采样)</td></tr>
+    <tr><td>探针产物</td><td><code>results/</code>:probe / chat / perf / ctx(4K·32K·64K)· mm / soak 轮次 JSON</td></tr>
+    <tr><td>复现命令</td><td><code>bash scripts/dp-serve/deploy.sh plan</code> → <code>bash scripts/dp-serve/deploy.sh</code> → <code>bash scripts/dp-serve/soak-32k.sh &lt;out&gt; 1500</code></td></tr>
+  </table></div>
+  <div class="note" style="margin-top:14px">
+    <b>口径说明。</b>本页数值全部来自 2026-10-29 单轮发射的落盘证据;集群节点以
+    <code>&lt;node-1..4&gt;</code> 代称,共享盘前缀已脱敏。栈组件版本、镜像 digest 与权重指纹
+    登记在同变体 <code>image/version.txt</code>。
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Generated 2026-10-29 · versatile-ai / AutoModelWire · 本页自包含(内联 CSS,无外部资源)
+</footer>
+</div>
+</body>
+</html>
