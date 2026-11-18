@@ -1,0 +1,177 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720"><rect width="1280" height="720" fill="#FBFAF7"/>
+<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#77776F"/></marker><marker id="arn" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#274C66"/></marker><marker id="arb" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8C3F30"/></marker><marker id="arg" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2C5E45"/></marker></defs>
+<text x="48" y="34" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#77776F" letter-spacing="0.04em">DeepSeek-V4.1-Flash · 昇腾 910B 适配技术汇报</text>
+<text x="1232" y="34" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="10.5" fill="#77776F" text-anchor="end">2026-11-18</text>
+<line x1="48" y1="46" x2="1232" y2="46" stroke="#D9D7D0" stroke-width="1"/>
+<text x="48" y="76" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="21" fill="#1D1D1B" font-weight="600">四个核心难点：为什么会卡住，怎么定位，怎么修复</text>
+<text x="48" y="98" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#454540">每行一条因果链；图中标注关键机制，右侧为破局动作与实测结果</text>
+<rect x="48" y="112" width="1184" height="138" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="64" y="126" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="71.5" y="137" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">1</text>
+<text x="88" y="138" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="13" fill="#1D1D1B" font-weight="600">上下文并行 × 32K</text>
+<text x="64" y="160" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">32K 激活单卡放不下；</text>
+<text x="64" y="172" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">框架接缝未切分、两个算子</text>
+<text x="64" y="185" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">对可见 token 理解不同。</text>
+<text x="64" y="208" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#2C5E45" font-weight="600" letter-spacing="0.04em">结果</text>
+<text x="64" y="226" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="12" fill="#2C5E45" font-weight="600">0.9973+</text>
+<text x="64" y="240" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">32K 三步 · 24 步零崩溃</text>
+<line x1="238" y1="122" x2="238" y2="240" stroke="#D9D7D0" stroke-width="1"/>
+<line x1="1000" y1="122" x2="1000" y2="240" stroke="#D9D7D0" stroke-width="1"/>
+<text x="256" y="136" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#77776F" font-weight="600">为什么必须切</text>
+<rect x="256" y="144" width="112" height="8" rx="1" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<text x="312" y="151" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="8" fill="#454540" text-anchor="middle">32K</text>
+<line x1="312" y1="153" x2="312" y2="162" stroke="#454540" stroke-width="1.2" marker-end="url(#arn)"/>
+<rect x="256" y="164" width="5" height="8" rx="0" fill="#274C66" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="263" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="270" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="277" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="284" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="291" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="298" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="305" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="312" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="319" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="326" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="333" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="340" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="347" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="354" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="361" y="164" width="5" height="8" rx="0" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<text x="256" y="186" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.3" fill="#77776F">CP=32：每卡 1K</text>
+<text x="256" y="200" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.3" fill="#454540">否则 32K 激活单卡放不下</text>
+<text x="256" y="224" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.0" fill="#77776F">这是可算出的显存账，</text>
+<text x="256" y="236" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.0" fill="#77776F">不是调参问题。</text>
+<text x="410" y="136" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#8C3F30" font-weight="600">① 框架接缝：没有切分</text>
+<rect x="410" y="144" width="168" height="15" rx="1" fill="#FFFFFF" stroke="#8C3F30" stroke-width="1"/>
+<text x="418" y="155" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.2" fill="#8C3F30">q/k：全长 4864</text>
+<rect x="410" y="162" width="168" height="15" rx="1" fill="#FFFFFF" stroke="#274C66" stroke-width="1"/>
+<text x="418" y="173" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.2" fill="#274C66">positions：本卡 304</text>
+<text x="410" y="191" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.4" fill="#8C3F30">→ RoPE 尺寸冲突</text>
+<text x="410" y="206" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#77776F">verl 接缝提前返回，</text>
+<text x="410" y="217" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#77776F">未调用 CP 切分。</text>
+<text x="610" y="136" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#8C3F30" font-weight="600">② 算子视野冲突</text>
+<rect x="610" y="144" width="130" height="9" rx="1" fill="#FFFFFF" stroke="#8C3F30" stroke-width="1"/>
+<text x="744" y="152" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#454540">indexer 整行 top-k</text>
+<text x="744" y="163" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#8C3F30">忽略可见范围（冲突源）</text>
+<rect x="610" y="170" width="88" height="9" rx="1" fill="#FFFFFF" stroke="#274C66" stroke-width="1"/>
+<text x="704" y="179" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#274C66">metadata 按 seqused 收窄</text>
+<text x="610" y="196" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#77776F">单卡 seqused 256/512：</text>
+<text x="610" y="208" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#8C3F30">metadata 变、indexer 不变</text>
+<text x="610" y="222" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#77776F">非有限梯度只打 cp_rank 0</text>
+<text x="610" y="234" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.1" fill="#77776F">（偶数卡视野差最大）</text>
+<text x="850" y="136" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#77776F" font-weight="600">定位 → 修复</text>
+<text x="850" y="154" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">非有限只打一半卡</text>
+<text x="850" y="168" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">旧布局已被上游作废</text>
+<text x="850" y="182" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">→ 升级 doc_chunk</text>
+<text x="850" y="196" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">＋逆置换/对齐补丁</text>
+<text x="850" y="210" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">→ CP=32 全绿</text>
+<text x="850" y="224" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">32K 全链 0.9973+</text>
+<text x="1014" y="136" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#77776F" font-weight="600">为什么不是调 CP 参数</text>
+<text x="1014" y="156" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.4" fill="#454540">只切分不解决两处契约：</text>
+<text x="1014" y="170" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.4" fill="#454540">框架接缝 + 算子视野。</text>
+<text x="1014" y="184" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.4" fill="#454540">调 CP 大小、重算、换节点，</text>
+<text x="1014" y="198" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.4" fill="#454540">都会在同一位置失败。</text>
+<text x="1014" y="212" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.4" fill="#454540">旧布局补丁无法回灌上游。</text>
+<text x="1014" y="228" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.3" fill="#77776F">32K 推理换 0.30：</text>
+<text x="1014" y="240" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.3" fill="#77776F">1512 请求零崩溃</text>
+<rect x="48" y="258" width="1184" height="138" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="64" y="272" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="71.5" y="283" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">2</text>
+<text x="88" y="284" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="13" fill="#1D1D1B" font-weight="600">CANN 算子包</text>
+<text x="64" y="306" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">32K 需要 CP；V4.1 融合算子</text>
+<text x="64" y="318" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">要求 cmp_ratio=2，</text>
+<text x="64" y="331" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">内置 9.2 只接受 4。</text>
+<text x="64" y="354" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#2C5E45" font-weight="600" letter-spacing="0.04em">结果</text>
+<text x="64" y="372" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="12" fill="#2C5E45" font-weight="600">静默缺陷清零</text>
+<text x="64" y="386" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">CP=32 稳定运行</text>
+<line x1="238" y1="268" x2="238" y2="386" stroke="#D9D7D0" stroke-width="1"/>
+<line x1="1000" y1="268" x2="1000" y2="386" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="256" y="280" width="132" height="50" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<text x="266" y="296" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#1D1D1B" font-weight="600">内置 9.2 算子</text>
+<text x="266" y="312" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30">cmp_ratio 只接受 4</text>
+<text x="266" y="324" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30">CP 启动失败</text>
+<line x1="388" y1="305" x2="416" y2="305" stroke="#274C66" stroke-width="1.2" marker-end="url(#arn)"/>
+<text x="402" y="296" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8" fill="#274C66" text-anchor="middle">必须换</text>
+<rect x="420" y="276" width="186" height="62" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<text x="430" y="292" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#1D1D1B" font-weight="600">9.3 包构建清单</text>
+<text x="430" y="308" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">3 个算子 ✓    metadata  ✗</text>
+<text x="430" y="322" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30">metadata 是独立目录，漏编</text>
+<text x="430" y="335" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30">包缺符号</text>
+<line x1="606" y1="305" x2="636" y2="305" stroke="#8C3F30" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arb)"/>
+<rect x="640" y="276" width="194" height="62" rx="1" fill="#FFFFFF" stroke="#8C3F30" stroke-width="1"/>
+<text x="650" y="292" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#8C3F30" font-weight="600">加载器：缺符号 → 静默回落</text>
+<text x="650" y="308" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">继续用内置 9.2，零报错</text>
+<text x="650" y="322" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30">仍报 cmp_ratio must be 4</text>
+<text x="650" y="335" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">换包成功 ≠ 行为生效</text>
+<text x="256" y="354" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">定位：符号对账（导出 vs 构建清单）→ 发现缺 1 个算子</text>
+<text x="256" y="368" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">另：metadata 缓冲常量 2048 vs 1024 不一致</text>
+<text x="256" y="382" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">修复：补齐 4 算子 + 单文件尺寸垫片（不重复装包）</text>
+<text x="1014" y="282" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#77776F" font-weight="600">为什么日志查不出</text>
+<text x="1014" y="302" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">缺符号时加载器自动回落到</text>
+<text x="1014" y="317" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">内置库；没有加载错误，只剩</text>
+<text x="1014" y="332" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">旧版行为错误。验收必须用</text>
+<text x="1014" y="347" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">行为验证，而不是看日志。</text>
+<text x="1014" y="370" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">旧版拒绝的取值能通过</text>
+<text x="1014" y="383" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">才算换包生效</text>
+<rect x="48" y="404" width="1184" height="138" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="64" y="418" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="71.5" y="429" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">3</text>
+<text x="88" y="430" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="13" fill="#1D1D1B" font-weight="600">HSDP 新并行</text>
+<text x="64" y="452" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">开源路径只处理 Shard；</text>
+<text x="64" y="464" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">Replicate 轴从未执行，</text>
+<text x="64" y="477" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">首次出现即崩溃。</text>
+<text x="64" y="500" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#2C5E45" font-weight="600" letter-spacing="0.04em">结果</text>
+<text x="64" y="518" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="12" fill="#2C5E45" font-weight="600">0.999551</text>
+<text x="64" y="532" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">七判据全过 · HBM 41GiB</text>
+<line x1="238" y1="414" x2="238" y2="532" stroke="#D9D7D0" stroke-width="1"/>
+<line x1="1000" y1="414" x2="1000" y2="532" stroke="#D9D7D0" stroke-width="1"/>
+<text x="256" y="426" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#77776F" font-weight="600">开源代码只对 Shard 轴取 .dim</text>
+<rect x="256" y="434" width="158" height="38" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<text x="266" y="450" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9" fill="#1D1D1B">Shard(dim=0)</text>
+<text x="266" y="464" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#2C5E45">placements[0].dim = 0  ✓</text>
+<rect x="430" y="434" width="158" height="38" rx="1" fill="#FFFFFF" stroke="#8C3F30" stroke-width="1"/>
+<text x="440" y="450" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9" fill="#1D1D1B">Replicate()</text>
+<text x="440" y="464" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30">没有 .dim 属性  ✗</text>
+<text x="256" y="486" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30">torchtitan models/utils.py:130 直接访问 placement.dim → AttributeError</text>
+<text x="256" y="500" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">历史实验复制数都是 1，这条 Replicate 路径从未执行过</text>
+<line x1="596" y1="453" x2="624" y2="453" stroke="#274C66" stroke-width="1.2" marker-end="url(#arn)"/>
+<rect x="628" y="426" width="206" height="50" rx="1" fill="#FFFFFF" stroke="#274C66" stroke-width="1"/>
+<text x="638" y="442" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#274C66" font-weight="600">补 2 行守卫（P1-c 补丁 0017）</text>
+<text x="638" y="457" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.3" fill="#454540">Replicate：整栈持有，不做行切分</text>
+<text x="638" y="470" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.3" fill="#454540">Shard：仍按 dim 切分</text>
+<text x="256" y="518" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#2C5E45">结果：装载 → 前向 → 反向 → 优化器步 全链首次走通</text>
+<text x="1014" y="428" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#77776F" font-weight="600">关键判断</text>
+<text x="1014" y="448" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">不是 OOM 调参，而是开源</text>
+<text x="1014" y="462" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">训练路径缺少 HSDP 的</text>
+<text x="1014" y="476" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">Replicate 分支。</text>
+<text x="1014" y="490" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">期间 58.97GiB OOM 是另一件事：</text>
+<text x="1014" y="504" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">config 仍声明 384 专家。</text>
+<text x="1014" y="530" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.3" fill="#77776F">修配置后才进入真正首跑</text>
+<rect x="48" y="550" width="1184" height="138" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="64" y="564" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="71.5" y="575" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">4</text>
+<text x="88" y="576" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="13" fill="#1D1D1B" font-weight="600">大文件导出短写</text>
+<text x="64" y="598" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">单次超大写入只写回一部分；</text>
+<text x="64" y="610" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">返回值没检查，尾部留成零。</text>
+<text x="64" y="646" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#2C5E45" font-weight="600" letter-spacing="0.04em">结果</text>
+<text x="64" y="664" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="12" fill="#2C5E45" font-weight="600">0.999654</text>
+<text x="64" y="678" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#77776F">7.68 亿行全表校验</text>
+<line x1="238" y1="560" x2="238" y2="678" stroke="#D9D7D0" stroke-width="1"/>
+<line x1="1000" y1="560" x2="1000" y2="678" stroke="#D9D7D0" stroke-width="1"/>
+<text x="256" y="572" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540" font-weight="600">单次写 3GiB</text>
+<rect x="330" y="564" width="38" height="14" rx="1" fill="#2C5E45"/>
+<rect x="368" y="564" width="220" height="14" rx="1" fill="#F2F1EC" stroke="#D9D7D0" stroke-width="1"/>
+<line x1="368" y1="560" x2="368" y2="584" stroke="#8C3F30" stroke-width="1.2" stroke-dasharray="3 2"/>
+<text x="330" y="592" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8" fill="#2C5E45">已写 2GiB</text>
+<text x="368" y="592" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8" fill="#8C3F30">未写 → 预分配零值（3.8 亿行全零）</text>
+<text x="256" y="606" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#8C3F30" font-weight="600">Linux 单次写硬上限  MAX_RW_COUNT = 0x7FFFF000 = 2,147,479,552 B</text>
+<text x="256" y="620" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">请求 3GiB → 内核只写 2,147,479,552 B，正常返回、不报错</text>
+<text x="256" y="634" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">调用方未检查返回值 → 未写区保持预分配零值</text>
+<text x="256" y="652" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">定位：8,558 个常规键逐位干净 → 只剩 2 张 Engram 表</text>
+<text x="256" y="665" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#454540">边界 4,194,296 行 × 512B = 2,147,479,552B = 0x7FFFF000</text>
+<text x="256" y="678" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#77776F">单次 3GiB 写测试复现同值；双向补回/清零定罪</text>
+<text x="1014" y="574" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9" fill="#77776F" font-weight="600">修复</text>
+<text x="1014" y="594" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">64MiB 分块，循环调用</text>
+<text x="1014" y="609" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">直到写满；返回值 ≤0 立即</text>
+<text x="1014" y="624" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">抛错，禁止静默残缺；</text>
+<text x="1014" y="639" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.8" fill="#454540">大分片改流式读写。</text>
+<text x="1014" y="662" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#2C5E45">验收：49/49 分块逐位一致</text>
+<text x="1014" y="675" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="8.5" fill="#2C5E45">训练 4 步均值 0.999654</text>
+<line x1="48" y1="696" x2="1232" y2="696" stroke="#D9D7D0" stroke-width="1"/>
+<text x="48" y="712" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9.5" fill="#77776F">来源：CP 探针与升级裁决报告、算子验收报告、HSDP 执行账本与显存报告、导出归因与修复验收报告</text></svg>
