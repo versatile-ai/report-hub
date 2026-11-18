@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720"><rect width="1280" height="720" fill="#FBFAF7"/>
+<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#77776F"/></marker><marker id="arn" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#274C66"/></marker><marker id="arb" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8C3F30"/></marker><marker id="arg" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2C5E45"/></marker></defs>
+<text x="48" y="34" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#77776F" letter-spacing="0.04em">DeepSeek-V4.1-Flash · 昇腾 910B 适配技术汇报</text>
+<text x="1232" y="34" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="10.5" fill="#77776F" text-anchor="end">2026-11-18</text>
+<line x1="48" y1="46" x2="1232" y2="46" stroke="#D9D7D0" stroke-width="1"/>
+<text x="48" y="80" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="24" fill="#1D1D1B" font-weight="600">全量模型强化学习适配：四项关键技术攻关已闭环</text>
+<text x="48" y="104" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1D1D1B" font-weight="600">核心判断：难点不在模型和算力，而在训练框架、算子包与文件系统的三处契约边界；每处都用可复现实验定位后修复。</text>
+<text x="48" y="150" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="20" fill="#1D1D1B" font-weight="600">0.43 → 0.64</text>
+<text x="48" y="174" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#454540">全量 GRPO · MATH 考卷 pass@1</text>
+<text x="48" y="194" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#77776F">30 步，零崩溃，8 小时 16 分</text>
+<line x1="428" y1="124" x2="428" y2="204" stroke="#D9D7D0" stroke-width="1"/>
+<text x="448" y="150" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="20" fill="#1D1D1B" font-weight="600">0.9973 以上</text>
+<text x="448" y="174" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#454540">全量 32K 训练 · 训推一致性</text>
+<text x="448" y="194" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#77776F">连续 24 步零崩溃，22 步过 0.995 门</text>
+<line x1="828" y1="124" x2="828" y2="204" stroke="#D9D7D0" stroke-width="1"/>
+<text x="848" y="150" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="20" fill="#1D1D1B" font-weight="600">0.999551</text>
+<text x="848" y="174" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#454540">HSDP 4K 首通 · 最低一致性</text>
+<text x="848" y="194" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#77776F">复制 2 × CP 2 × 专家并行 32，七判据全过</text>
+<text x="48" y="234" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="13" fill="#1D1D1B" font-weight="600">RL 系统结构与攻关位置</text>
+<line x1="210" y1="230" x2="1232" y2="230" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="48" y="252" width="372" height="196" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<text x="66" y="278" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="14" fill="#1D1D1B" font-weight="600">训练集群</text>
+<text x="128" y="278" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#77776F">16 节点 × 8 卡 · torchtitan-npu 训练核 + verl 编排</text>
+<line x1="66" y1="290" x2="402" y2="290" stroke="#D9D7D0" stroke-width="1"/>
+<rect x="66" y="300" width="102" height="20" rx="1" fill="#F2F1EC"/>
+<text x="73" y="314" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10" fill="#454540">384 专家 / EP128</text>
+<rect x="176" y="300" width="57" height="20" rx="1" fill="#F2F1EC"/>
+<text x="183" y="314" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10" fill="#454540">32K 序列</text>
+<rect x="240" y="300" width="95" height="20" rx="1" fill="#F2F1EC"/>
+<text x="247" y="314" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10" fill="#454540">CANN 9.3 算子层</text>
+<rect x="66" y="336" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="73.5" y="347" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">1</text>
+<text x="90" y="348" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1D1D1B">上下文并行 × 32K</text>
+<text x="402" y="348" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#454540" text-anchor="end">0.9973 以上 · 24 步零崩溃</text>
+<rect x="66" y="362" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="73.5" y="373" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">2</text>
+<text x="90" y="374" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1D1D1B">CANN 算子栈验收</text>
+<text x="402" y="374" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#454540" text-anchor="end">静默缺陷清零</text>
+<rect x="66" y="388" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="73.5" y="399" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">3</text>
+<text x="90" y="400" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1D1D1B">HSDP × CP&gt;1 × 减专家</text>
+<text x="402" y="400" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#454540" text-anchor="end">0.999551 · 七判据全过</text>
+<rect x="716" y="252" width="356" height="196" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<text x="734" y="278" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="14" fill="#1D1D1B" font-weight="600">推理集群</text>
+<text x="796" y="278" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#77776F">4 节点 × 8 卡 · vLLM-Ascend 0.30</text>
+<line x1="734" y1="290" x2="1054" y2="290" stroke="#D9D7D0" stroke-width="1"/>
+<text x="734" y="318" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#454540">部署：数据并行 4 × 张量并行 8 × 专家并行 32</text>
+<text x="734" y="350" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#454540">32K 长上下文 · 原生热重载 · 单步热重载约 47 秒</text>
+<text x="734" y="374" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#454540">30 步 GRPO 零崩溃 · 8 小时 16 分</text>
+<text x="734" y="418" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9.5" fill="#77776F">注：一致性为同一批 rollout token 上的概率相关系数</text>
+<line x1="420" y1="330" x2="708" y2="330" stroke="#454540" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="568" y="318" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#454540" font-weight="600" text-anchor="middle">每步权重同步</text>
+<text x="568" y="350" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10" fill="#77776F" text-anchor="middle">HF safetensors 直写 → 原生热重载</text>
+<rect x="434" y="372" width="15" height="15" rx="1" fill="#1D1D1B" stroke="#1D1D1B" stroke-width="1"/><text x="441.5" y="383" font-family="'SF Mono','Fira Code',Consolas,monospace" font-size="9.5" fill="#FFFFFF" text-anchor="middle">4</text>
+<text x="456" y="384" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1D1D1B">大文件导出短写</text>
+<text x="456" y="400" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10" fill="#454540">7.68 亿行校验 · 0.999654</text>
+<line x1="1072" y1="330" x2="1128" y2="330" stroke="#454540" stroke-width="1.4" marker-end="url(#ar)"/>
+<rect x="1132" y="306" width="100" height="48" rx="1" fill="#FFFFFF" stroke="#D9D7D0" stroke-width="1"/>
+<text x="1182" y="326" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#1D1D1B" font-weight="600" text-anchor="middle">在线评测</text>
+<text x="1182" y="342" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9.5" fill="#77776F" text-anchor="middle">100 题 MATH 考卷</text>
+<path d="M 894 448 L 894 500 L 234 500 L 234 448" fill="none" stroke="#274C66" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#arn)"/>
+<text x="568" y="494" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10" fill="#274C66" text-anchor="middle">rollout 采样 / 奖励 / 数据回流</text>
+<rect x="48" y="536" width="1184" height="34" rx="1" fill="#F2F1EC"/>
+<rect x="48" y="536" width="3" height="34" fill="#1D1D1B"/>
+<text x="66" y="557" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1D1D1B">方法：实验证据先定位真实根因，再针对性解决；判据预注册且执行后不放宽，结论可复核、方法可复用。</text>
+<line x1="48" y1="588" x2="1232" y2="588" stroke="#D9D7D0" stroke-width="1"/>
+<text x="48" y="610" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="10.5" fill="#8C3F30" font-weight="600" letter-spacing="0.04em">尚未闭环</text>
+<text x="110" y="610" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="11" fill="#454540">长训中策略退化伴随的双引擎逐 token 概率分歧：直接统计原因已定位，算子级根因仍在固定输入判别实验中。此项不计入已闭环成果。</text>
+<text x="48" y="640" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9.5" fill="#77776F">术语：CP 上下文并行，把长序列切分到多卡；HSDP 混合分片数据并行，数据并行复制 2 份；EP 专家并行；Engram 模型的稀疏记忆表。</text>
+<text x="48" y="660" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9.5" fill="#77776F">范围：全量 384 专家（1.14TB）· 32K 长上下文 · HSDP 新并行形态；判据预注册，执行后未放宽。</text>
+<text x="48" y="706" font-family="-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="9.5" fill="#77776F">来源：automodelwire 变体验证报告与预注册判据 · 昇腾 910B3 / Atlas A2</text></svg>

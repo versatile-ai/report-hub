@@ -544,10 +544,11 @@
 
 <script>
 const EXPERIMENTS=[
-  {id:"torchtitan-npu-dsv41",name:"torchtitan-npu × DeepSeek V4.1 技术栈调研",subtitle:"PyTorch 官方训练框架的昇腾扩展如何承接 DeepSeek V4.1 —— 软件栈三层主体 · 五处适配修改点 · A3/A5 硬件分档融合栈 · PR #974 A3 稀疏注意力 OOM 修复机制 (query 维分块, max diff=0) · 训练引擎选型参考 (源自 issue #152)",status:"done",startDate:"2026-10-15",lastUpdate:"2026-10-15",
-   tags:["torchtitan","torchtitan-npu","DeepSeek-V4.1","CANN","Ascend","A3","A5","稀疏注意力","OOM","训练引擎选型"],
-   metrics:[{label:"适配修改点",value:"5 处",tone:"info"},{label:"A3 整网回归",value:"10 step · 0 OOM",tone:"good"},{label:"显存水位",value:"49.41 GiB (80.64%)",tone:"info"},{label:"数值等价",value:"max diff = 0",tone:"good"}],
+  {id:"torchtitan-npu-dsv41",name:"torchtitan-npu × DeepSeek V4.1 适配",subtitle:"从四节点 64 专家 SFT 到全量 384 专家 GRPO、32K 长上下文与 HSDP 的完整回溯 —— 时间线 · 有效无环图 · 分布式框架契约 · 权重同步完整性 · Engram 短写修复 · 长训数值分歧未决项",status:"active",startDate:"2026-10-15",lastUpdate:"2026-11-18",
+   tags:["torchtitan","torchtitan-npu","DeepSeek-V4.1","CANN","Ascend","verl","GRPO","HSDP","Engram","适配回溯"],
+   metrics:[{label:"全量 GRPO",value:"30 步 · MATH 0.43→0.64",tone:"good"},{label:"全量长上下文",value:"32K · Pearson ≥0.997",tone:"good"},{label:"HSDP 4K",value:"三步最低 0.999551",tone:"good"},{label:"Engram 导出修复",value:"Pearson 均值 0.999654",tone:"good"}],
    reports:[
+   {title:"完整适配回溯 — 时间线 + 有效无环图",subtitle:"torchtitan-npu 起步至全量 GRPO、长上下文与 HSDP · 六类瓶颈根因与有效解法 · 18 节点因果 DAG · 24 份证据索引 · Engram 短写已验收 · 长训双引擎分歧仍待固定输入判别",file:"torchtitan-npu-dsv41/2026-11-18-adaptation-retrospective.html",date:"2026-11-18",type:"retrospective"},
    {title:"软件栈与适配修改点 — 调研报告",subtitle:"软件栈分层全景 · DeepSeek V4.1 五处修改点 · A3/A5 分档融合栈 · PR #974 OOM 修复机制图解 (query 维分块 + 逐位等价) · 训练引擎选型参考",file:"torchtitan-npu-dsv41/2026-10-15-survey.html",date:"2026-10-15",type:"survey"}
    ]},
   {id:"glm53-flash-sft",name:"GLM-5.3-Flash 全量 SFT 训练",subtitle:"321B 模型昇腾 64 卡 SFT 20 步跑通 · loss 9.77→0.083 · 0-size alltoallv notify 握手死锁根因定位与修复 (msprof 点名 + 最小实验复现)",status:"active",startDate:"2026-08-31",lastUpdate:"2026-09-08",
@@ -633,6 +634,13 @@ const EXPERIMENTS=[
    metrics:[{label:"三关判据",value:"3/3 达成",tone:"good"},{label:"状态落盘",value:"50 GiB",tone:"good"},{label:"续训步数",value:"3 步",tone:"good"},{label:"框架缺陷",value:"5 处",tone:"info"},{label:"崩溃签名",value:"0",tone:"good"},{label:"发射轮次",value:"27",tone:"warn"}],
    reports:[
    {title:"断点续训验证终报告",subtitle:"三关判据全部达成 · 优化器状态 50GiB 真实落盘(历史最佳 12K 空壳)· 自动接管读回 · 从断点恢复连训 3 步 · 5 处框架缺陷根因(混合精度索引错配/配置组合越界/部分层参数/补丁语义丢失/版本接缝漂移)· 上游反馈 5 项",file:"agenticrl-optimizer-ckpt-resume/2026-10-26-final-report.html",date:"2026-10-26",type:"final"}
+   ]
+  },
+  {id:"dsv41-flash-vllm030-infer",name:"DeepSeek-V4.1-Flash × vLLM 0.30 推理换栈",subtitle:"全量 384 专家 BF16 × vLLM 0.30.0rc2 官方镜像 DP4×TP8×EP32 多节点共址 · Engram 394GB host offload + 视觉层开启 · G0–G8 全 PASS · 32K 8 并发×25min 1512 请求零崩溃(v0.27 aclnnMul 确定性缺陷未复现)",status:"active",startDate:"2026-10-29",lastUpdate:"2026-10-29",
+   tags:["vLLM 0.30","vllm-ascend","DeepSeek-V4.1-Flash","DP4×TP8","EP32","Engram","多模态","Ascend 910B3","4节点 32卡","32K 长上下文"],
+   metrics:[{label:"门禁",value:"G0–G8 全 PASS",tone:"good"},{label:"冷启动",value:"2060 s",tone:"good"},{label:"HBM 峰值",value:"59.8 GiB/卡",tone:"good"},{label:"TPOT",value:"38.6 ms",tone:"good"},{label:"32K 压测",value:"1512 请求 · 0 崩溃",tone:"good"}],
+   reports:[
+   {title:"推理换栈验证 — 阶段报告",subtitle:"vLLM 0.30 官方镜像 + DP4×TP8×EP32 + 全量 BF16 + Engram + 视觉 · 门禁 G0–G8 · 4K/32K/64K needle 与 TTFT/TPOT · 32K 8 并发×25 分钟零缺陷签名 · TP≤8 结构性约束与口径登记",file:"dsv41-flash-vllm030-infer/2026-10-29-stage-report.html",date:"2026-10-29",type:"stage"}
    ]
   }
 ];

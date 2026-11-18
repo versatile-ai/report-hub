@@ -1,0 +1,272 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DeepSeek-V4.1-Flash 从 torchtitan-npu 四节点 SFT 到全量 GRPO、长上下文与 HSDP 的完整适配回溯：时间线、瓶颈根因、有效修复、验证证据与未决问题。">
+<title>DeepSeek-V4.1-Flash 完整适配回溯 — torchtitan-npu 至 HSDP（2026-11-18）</title><style>
+
+:root{--bg:#0D1117;--surface:#161B22;--surface-2:#1C2230;--border:#30363D;--text:#E6EDF3;--muted:#8B949E;--tertiary:#8B949E;--accent:#A78BFA;--accent-hover:#C4B5FD;--green:#3FB950;--yellow:#D29922;--red:#F85149;--info:#79C0FF;--code-bg:#010409;--cat-fix:#3987e5;--cat-problem:#d95926;--cat-result:#199e70}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth;scroll-padding-top:20px;overflow-x:clip}body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.75;padding:24px 24px 64px;overflow-x:clip}@media(min-width:760px){body{padding:40px 48px 72px}}.container{max-width:1180px;margin:auto}h1,h2,.stat .v,.tl-date,.tag,.mono{font-family:'SF Mono','Fira Code',Consolas,monospace}a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-hover);text-decoration:underline}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.breadcrumb{font:12px 'SF Mono',Consolas,monospace;color:var(--tertiary);margin-bottom:28px;overflow-wrap:anywhere;word-break:break-word}.breadcrumb a{color:var(--muted)}header h1{font-size:29px;line-height:1.4;font-weight:600;margin-bottom:12px;overflow-wrap:anywhere}header .meta{color:var(--muted);font-size:13px;overflow-wrap:anywhere}.toc{border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:14px 20px;margin:24px 0}.toc-title{font:11px 'SF Mono',monospace;letter-spacing:.12em;color:var(--muted);margin-bottom:8px}.toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:7px 22px}main,section,article,.issue,.hero,.stat,.figcard{min-width:0}p,li,h3,h4{overflow-wrap:break-word}.toc a{font-size:13px}.hero{border-left:3px solid var(--accent);padding:16px 20px;background:rgba(167,139,250,.07);margin:26px 0 18px}.hero p{margin:.4em 0}.hero strong{color:var(--accent-hover)}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:20px 0}.stat{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px 18px}.stat .v{font-size:22px;font-weight:600;line-height:1.4;color:var(--green)}.stat.warn .v{color:var(--yellow)}.stat .l{font-size:11px;letter-spacing:.06em;color:var(--muted);margin-top:6px}.stat .s{font-size:12px;color:var(--muted);margin-top:5px}section{margin-top:48px}h2{font-size:20px;font-weight:600;padding-bottom:9px;border-bottom:1px solid var(--border);margin-bottom:10px}.sec-intro{color:var(--muted);max-width:70em;margin:10px 0 20px}.note{border-left:3px solid var(--info);background:rgba(121,192,255,.07);padding:13px 18px;margin:16px 0}.note.warn{border-color:var(--yellow);background:rgba(210,153,34,.08)}.note.bad{border-color:var(--red);background:rgba(248,81,73,.07)}.note.ok{border-color:var(--green);background:rgba(63,185,80,.07)}.note strong{color:var(--text)}.timeline{position:relative;margin-left:8px;padding-left:28px;border-left:2px solid var(--border);min-width:0}.phase{position:relative;padding:4px 0 30px;min-width:0}.phase::before{content:'';position:absolute;left:-35px;top:13px;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px var(--bg)}.phase.warn::before{background:var(--yellow)}.tl-date{color:var(--accent);font-size:12px;letter-spacing:.02em}.phase h3{font-size:18px;line-height:1.5;margin:5px 0 8px}.phase .lead{color:var(--muted);margin:8px 0 14px}.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:3px;vertical-align:2px;margin-left:8px;white-space:nowrap}.badge.ok{color:var(--green);background:rgba(63,185,80,.12)}.badge.warn{color:var(--yellow);background:rgba(210,153,34,.12)}.issue{border:1px solid var(--border);border-radius:6px;background:var(--surface);padding:15px 18px;margin:10px 0}.issue h4{font-size:14px;color:var(--info);margin-bottom:5px}.issue p{margin:5px 0}.issue p b{color:var(--text)}.refs{display:inline-flex;gap:4px;margin-left:5px;white-space:nowrap}.refs a{font:10px 'SF Mono',monospace;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:0 4px;background:var(--surface-2)}.figcard{border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:16px;margin-top:16px}.figscroll{overflow-x:auto}.figscroll svg{display:block;width:100%;min-width:1260px;height:auto}figcaption{font-size:12px;color:var(--muted);margin-top:12px}.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin:10px 0}.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}.dag-head{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:var(--text)}.dag-date{font:11px 'SF Mono',monospace;fill:var(--accent)}.dag-lane{font:12px -apple-system,'PingFang SC',sans-serif;fill:var(--muted)}.dag-kind{font:10px 'SF Mono',monospace;fill:var(--muted)}.dag-title{font:600 12.5px -apple-system,'PingFang SC',sans-serif;fill:var(--text)}.dag-text{font:11px -apple-system,'PingFang SC',sans-serif;fill:var(--muted)}.dag-node{cursor:default}.dag-node rect{stroke-width:1.3}.dag-node:focus rect{stroke:var(--accent-hover);stroke-width:3}.dag-edge{stroke:var(--muted);stroke-width:1.3;fill:none;opacity:.75}.dag-support{stroke:var(--accent);stroke-dasharray:4 4;opacity:.65}.tblwrap{overflow-x:auto;margin:16px 0}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}thead th{background:var(--surface-2);color:var(--accent);font-size:11px;letter-spacing:.06em}td:first-child{color:var(--muted)}.ok{color:var(--green)}.warn{color:var(--yellow)}.bad{color:var(--red)}.info{color:var(--info)}code{font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:.91em;background:var(--surface-2);border:1px solid var(--border);border-radius:3px;padding:0 4px;overflow-wrap:anywhere}.source-list{list-style:none}.source-list li{padding:14px 0;border-bottom:1px solid var(--border)}.source-list .sid{font:11px 'SF Mono',monospace;color:var(--accent);display:inline-block;min-width:38px}.source-list p{color:var(--muted);font-size:12px;margin:3px 0 0 42px;overflow-wrap:anywhere}.source-list a{overflow-wrap:anywhere;word-break:break-word}.foot{margin-top:50px;padding-top:18px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}details{border:1px solid var(--border);border-radius:6px;background:var(--surface);padding:12px 16px;margin:12px 0}summary{cursor:pointer;color:var(--accent)}ul.compact{padding-left:20px}ul.compact li{margin:6px 0}.print-note{font-size:12px;color:var(--muted)}@media(max-width:640px){body{padding:20px 16px 50px}header h1{font-size:23px}.phase h3{font-size:16px}.badge{display:inline-block;margin:6px 0 0}.timeline{padding-left:22px}.phase::before{left:-29px}.stats{grid-template-columns:1fr}.figscroll svg{min-width:1180px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}@media print{body{background:#fff;color:#111;padding:0}a{color:#222}.stat,.issue,.figcard,.toc,details{break-inside:avoid;background:#fff;border-color:#bbb}.sec-intro,.phase .lead,.stat .l,.stat .s,figcaption,.source-list p,.foot{color:#444}.phase{break-inside:avoid}.figscroll{overflow:visible}.figscroll svg{min-width:0}h2{break-after:avoid}}
+
+</style></head><body><div class="container" id="top">
+<nav class="breadcrumb"><a href="../../index.html">versatile-ai</a> / <a href="../index.html">AutoModelWire</a> / <a href="../index.html#torchtitan-npu-dsv41">torchtitan-npu × DeepSeek V4.1</a> / <span>完整适配回溯</span></nav>
+<header><h1>DeepSeek-V4.1-Flash 完整适配回溯<br>从 torchtitan-npu 到全量 GRPO 与 HSDP</h1><div class="meta">覆盖 2026-10-15 → 2026-11-18 · Ascend 910B3 / Atlas A2 · 依据仓库报告、验证记录与 Git 历史 · 报告生成日 2026-11-18</div></header>
+<nav class="toc"><div class="toc-title">目录</div><ol><li><a href="#summary">结论与范围</a></li><li><a href="#timeline">完整时间线</a></li><li><a href="#dag">有效无环图</a></li><li><a href="#families">六类瓶颈与解法</a></li><li><a href="#evidence">量化里程碑</a></li><li><a href="#open">遗留问题</a></li><li><a href="#sources">证据索引</a></li></ol></nav>
+<main><section id="summary"><h2>结论与范围</h2><div class="hero"><p><strong>适配已经从四节点 64 专家 SFT 推进到全量 384 专家 GRPO、32K 长上下文和 HSDP 减专家 4K 链路；但不是“全部问题已解决”。</strong></p><p>主要工程难点依次从真实权重与算力约束，转移到 verl/FSDP 分布式契约、训推权重协议、CANN 算子与上下文并行、HSDP 复制轴显存，最后集中到长训中的权重同步完整性和双引擎数值分歧。</p></div>
+<div class="stats"><div class="stat"><div class="v">30 步</div><div class="l">全量 384 专家 GRPO</div><div class="s">16 训练 + 4 推理节点；MATH pass@1 0.43→0.64</div></div><div class="stat"><div class="v">32K</div><div class="l">全量长上下文 RL</div><div class="s">三步 Pearson 0.99732–0.99768</div></div><div class="stat"><div class="v">0.999551</div><div class="l">HSDP 4K 三步最低 Pearson</div><div class="s">数据并行复制 2 × 分片 16 × 上下文并行 2 × 专家并行 32；七判据全过</div></div><div class="stat warn"><div class="v">0.999654</div><div class="l">Engram 导出修复验收均值</div><div class="s">导出已修复；长训机制归因仍未完成</div></div></div>
+<div class="note warn"><strong>时间边界：</strong>从 torchtitan-npu 引擎选型调研开始，不把此前 MindSpeed-LLM 的适配细节混入主线。2026-10-22 前早期 verl+MindSpeed 的 11 步运行只作为路线修正背景，不能充当 torchtitan RL 成功证据。</div>
+<div class="note"><strong>指标口径：</strong>除特别说明外，本报告的 Pearson 指同一批 rollout token 上，训练侧重算概率与推理侧记录概率的 Pearson 相关系数；它不是所有实验都相同的“全词表 logprob 一致性”。不同模型规模、响应长度、算法和并行配置的数据不直接横向排名。</div>
+<p class="sec-intro">“完整”在本报告中指覆盖主要路线分叉、瓶颈族、有效修复、被推翻的中间结论和当前未决项，不复制数百次启动脚本的逐条错误日志。每个结论可用下方 S 编号追溯到原始报告。</p></section>
+<section id="timeline"><h2>完整时间线：困难、根因与解决方式</h2><p class="sec-intro">按实际路线演进排序。每节先回答本阶段要证明什么，再按“现象 → 根因 → 动作 → 结果”组织；状态标签只描述该阶段，不覆盖后续新证据。</p><div class="timeline">
+<article class="phase warn" id="sft"><div class="tl-date">2026-10-15 → 10-20</div><h3>从现成引擎开始：四节点 SFT 先证明“能训练”，再证明“能复现”<span class="badge warn">首步复现；逐步位级复现不成立</span></h3><p class="lead">本章回答：torchtitan-npu 作为训练引擎的起点是否可靠，为什么不能把一次成功直接当成适配完成。 <span class="refs"><a href="#ref-S0" title="查看证据 S0">S0</a> <a href="#ref-S1" title="查看证据 S1">S1</a></span></p>
+<div class="issue"><h4>算力与权重规模</h4><p><b>现象与根因：</b>四节点 32×910B3 无法同时容纳 384 专家与 Engram 宿主表。采用官方 384 专家权重的真实前 64 专家截断，EP32、真实视觉 SFT 数据和引擎公开配置插件；禁止随机初始化。</p><p><b>处理与结果：</b>四节点 64 专家 SFT 完成五步，首步 loss=6.71309，HBM=37.12 GiB，引擎 749 个文件零改动。</p></div>
+<div class="issue"><h4>复现假设错误</h4><p><b>现象与根因：</b>预注册要求五步 loss 逐点误差 ≤1e-4，但反向归约存在约 2e-5 相对非确定性，top-6 路由边界翻转将其放大到 1e-2 量级 loss 差。</p><p><b>处理与结果：</b>首步与配置逐位复现，五步逐点门保留 FAIL。结论改为区分“功能复现”和“位级轨迹复现”，没有用重跑刷值或事后放宽判据。</p></div>
+</article>
+<article class="phase ok" id="bridge"><div class="tl-date">2026-10-21</div><h3>SFT 接入 RL：先让权重、数据和推理服务可消费<span class="badge ok">SFT→RL 权重装配闭合</span></h3><p class="lead">本章回答：torchtitan 的 SFT 产物怎样成为 verl/推理服务真正可用的初始权重。 <span class="refs"><a href="#ref-S2" title="查看证据 S2">S2</a></span></p>
+<div class="issue"><h4>权重键面污染与导出配置</h4><p><b>现象与根因：</b>权重分片含 46,408 个遗留量化 scale 键，原生导出还受 load-only、float32 默认值和 tokenizer 资产约束。</p><p><b>处理与结果：</b>清除 scale 残留，以引擎公开 HF 导出能力生成 bf16 权重，强制 index=physical=8,864 键，补 chat template、tokenizer 和 config。</p></div>
+<div class="issue"><h4>训练有效性证明</h4><p><b>现象与根因：</b>只装载权重不能证明训练有效，gate.bias 未变化也需要显式解释。</p><p><b>处理与结果：</b>四节点五步 SFT 的 loss 从 8.26029 降至 7.74767；采样参数有位变化，HF 导出与 RL 初始视图装配通过。</p></div>
+</article>
+<article class="phase warn" id="integration"><div class="tl-date">2026-10-22 → 10-26</div><h3>第一次 RL 集成：难点从模型算子转移到分布式框架契约<span class="badge warn">引擎分项通过；端到端接入未闭合</span></h3><p class="lead">本章回答：为什么“torchtitan 能 SFT”并不等于“verl 能直接用它做 RL”。 <span class="refs"><a href="#ref-S3" title="查看证据 S3">S3</a> <a href="#ref-S4" title="查看证据 S4">S4</a> <a href="#ref-S5" title="查看证据 S5">S5</a></span></p>
+<div class="issue"><h4>权重布局错误</h4><p><b>现象与根因：</b>专家 TP 合并误命中与列块切分使一次导出膨胀到约 706GB，推理重载出现 2304/9216 形状冲突。</p><p><b>处理与结果：</b>修正专家命名与布局，经 CPU 逐位测试后，导出回到约 197GB；推理逐键重载与权重身份核验通过。</p></div>
+<div class="issue"><h4>FSDP/SPMD 网格身份与注解</h4><p><b>现象与根因：</b>双 Trainer、尺寸 1 的 CP 轴和 FSDP 存储校验对网格对象身份、注解持久化要求不一致，出现“已注解但仍不完整”的假修复。</p><p><b>处理与结果：</b>显式交接训练核网格，actor/ref 分上下文，逐步通过仅 actor 引擎、actor+冻结参考前向、真实 GRPO 训练步和双引擎构造四项验证；尺寸 1 轴契约问题不再用补注解硬闯。完整端到端 RL 仍受 HF config、rollout 注册与依赖闭包阻塞，未宣告完成。</p></div>
+<div class="issue"><h4>运行环境与设备访问</h4><p><b>现象与根因：</b>只读引擎树仍有 logs/outputs 写点；符号链接目标超出容器挂载；非特权容器遭 UDA 设备占用拒绝。</p><p><b>处理与结果：</b>写点迁移到独立工作目录、只读补挂 /data/model，按用户裁决以 --privileged 作为集群绕行。原生一步 SFT 等价验证 14/14 通过，但特权模式和集群根治被记录为运维债。</p></div>
+</article>
+<article class="phase ok" id="mainline"><div class="tl-date">2026-10-26 → 10-29</div><h3>主线重建：减少私有补丁，先完成 64 专家 RL，再恢复 Engram<span class="badge ok">64 专家端到端与一致性通过</span></h3><p class="lead">本章回答：怎样把早期大量集成补丁收敛为可维护的 verl 主线原生栈。 <span class="refs"><a href="#ref-S6" title="查看证据 S6">S6</a> <a href="#ref-S7" title="查看证据 S7">S7</a> <a href="#ref-S8" title="查看证据 S8">S8</a> <a href="#ref-S9" title="查看证据 S9">S9</a> <a href="#ref-S10" title="查看证据 S10">S10</a></span></p>
+<div class="issue"><h4>推理依赖与训练栈解耦</h4><p><b>现象与根因：</b>训练镜像没有 vLLM，但 verl 默认 rollout 注册会强制导入；依赖闭包和自定义训练入口持续扩大。</p><p><b>处理与结果：</b>改用 verl 主线与 torchtitan 训练核，外置 serve 注册、rollout 客户端、checkpoint manager 和 HF config 独立注入；先 KL-off，后续升级另行验证。</p></div>
+<div class="issue"><h4>同步协议与专家导出死锁</h4><p><b>现象与根因：</b>主线 get_per_tensor_param 对专家栈的 full_tensor 路径死锁；早期 serve 消息队列还会让 worker 读取不同步号。</p><p><b>处理与结果：</b>dense 走 full_tensor，专家走显式 EP all_gather；唯一步号、原子提交与重建服务清掉旧消息。8,518 键、约 197GB、重载差值 0，随后完整 GRPO 通过。</p></div>
+<div class="issue"><h4>短训一致性与 Engram</h4><p><b>现象与根因：</b>一致性需要在同一批采样 token 上比较，而非仅看 loss。Engram 还引入 F8_E8M0 元数据、开关反转和独立行级更新通道。</p><p><b>处理与结果：</b>64 专家六步 token 概率 Pearson=0.998820→0.997347，均≥0.995。补 F8_E8M0 映射、修正开关、接通 Engram 行级 delta 与 gate 六键，随后三步 Pearson 0.99904–0.99929。</p></div>
+<div class="issue"><h4>Engram 的宿主内存墙</h4><p><b>现象与根因：</b>两节点 EP16 时 SparseAdam 为全表预分配稠密矩量，节点约需 1.18TB 主机内存；减到 32 专家也无效，因为表行数与专家数无关。</p><p><b>处理与结果：</b>采用四节点 EP32 分摊宿主表与优化器状态；两节点降专家方案被算术与实跑共同否决。</p></div>
+</article>
+<article class="phase ok" id="full"><div class="tl-date">2026-10-28 → 10-29</div><h3>全量 384 专家：从减专家机制验证走向真实模型规模<span class="badge ok">30 步全量 GRPO 完成</span></h3><p class="lead">本章回答：全量 BF16 模型能否进行真实端到端 RL，而不只是小规模链路冒烟。 <span class="refs"><a href="#ref-S11" title="查看证据 S11">S11</a></span></p>
+<div class="issue"><h4>全量权重与通信规模</h4><p><b>现象与根因：</b>384 专家 BF16 需要更大专家分片规模，推理还受到 TP>8 分组和旧版长上下文算子约束。</p><p><b>处理与结果：</b>训练采用 16 节点 EP128，推理采用四节点；移除 Engram 复杂度，继承主线训练与 safetensors 权重链。</p></div>
+<div class="issue"><h4>真实训练成效</h4><p><b>现象与根因：</b>仅有有限 loss 不能回答模型能力是否提升。</p><p><b>处理与结果：</b>30 步 GRPO 零崩溃、耗时 8h16m；100 题 MATH 考卷 pass@1 从 0.43 到 0.64。奖励后段回落如实保留，不外推为持续收敛。</p></div>
+<div class="issue"><h4>32K 旧推理栈崩溃</h4><p><b>现象与根因：</b>vllm-ascend 0.27.1 在 32K decode 两次跨节点复现 EE9999/aclnnMul/507035。</p><p><b>处理与结果：</b>该配置未通过，转算子/CANN 缺陷线；不把失败隐藏在全量训练成功里。</p></div>
+</article>
+<article class="phase ok" id="context"><div class="tl-date">2026-10-29 → 11-05</div><h3>推理换栈与长上下文：原生重载替代私有热更，CP 契约逐层补齐<span class="badge ok">全量 32K 链路通过；长期训练仍有边界</span></h3><p class="lead">本章回答：0.30 推理升级、上下文并行和权重格式如何一起解决旧栈崩溃与长序列显存问题。 <span class="refs"><a href="#ref-S12" title="查看证据 S12">S12</a> <a href="#ref-S13" title="查看证据 S13">S13</a> <a href="#ref-S14" title="查看证据 S14">S14</a> <a href="#ref-S15" title="查看证据 S15">S15</a> <a href="#ref-S16" title="查看证据 S16">S16</a> <a href="#ref-S17" title="查看证据 S17">S17</a></span></p>
+<div class="issue"><h4>热更协议与文件格式不兼容</h4><p><b>现象与根因：</b>0.27 私有扩展不能原样迁移；0.30 原生 reload_weights 只接受 HF 目录，早期 npy 和挂载缺失会被误当仓库名。</p><p><b>处理与结果：</b>训练侧直接流式写 HF safetensors/index，推理用原生 reload_weights。连续 30 次重载全绿，热态 p50=47.3s，HBM 漂移 0。HTTP 200 不再单独视为成功，必须抽样读回参数。</p></div>
+<div class="issue"><h4>CANN 算子包与运行时注册</h4><p><b>现象与根因：</b>自建 9.3 包漏 sparse_flash_mla_metadata，静默回落到只接受 cmp_ratio=4 的旧实现；metadata 尺寸还有 1024/2048 不一致，JIT 共享缓存出现 ESTALE。</p><p><b>处理与结果：</b>补全四算子、对齐 metadata 尺寸、JIT 改节点本地预热；以 cmp_ratio=1/2/4 行为验证实际生效包。</p></div>
+<div class="issue"><h4>算子“存在”不等于“已注册”</h4><p><b>现象与根因：</b>CP 训练首前向缺 torch.ops 符号，根因是训练进程没有 import cann_ops_transformer，不是镜像缺包。</p><p><b>处理与结果：</b>CP>1 进程用 sitecustomize 预载同一包并断言四算子；编译缓存与导入注册分开验收，避免重复 DEF 注册。</p></div>
+<div class="issue"><h4>CP 布局与逐文档对齐</h4><p><b>现象与根因：</b>旧布局下 RoPE 全长张量与本地 positions 长度不一致，verl 还绕过原生 dataloader 的 per-doc 对齐。</p><p><b>处理与结果：</b>升级 torchtitan-npu master，采用 doc_chunk，补 verl 逆置换 gather、全局 positions 与逐文档 padding。CP=1 回归 Pearson=0.998213，CP=2 引擎探针通过。</p></div>
+<div class="issue"><h4>长上下文训练结果</h4><p><b>现象与根因：</b>CP=32 将 32K 序列分摊到各 rank，解决全量长序列的激活压力。</p><p><b>处理与结果：</b>全量 32K DAPO 三步 Pearson=0.99739/0.99732/0.99768。后续 24 步无崩溃，22/24 步≥0.995；响应长度塌缩、两次低于门和同步耗时被保留为风险。</p></div>
+</article>
+<article class="phase ok" id="hsdp"><div class="tl-date">2026-11-06 → 11-10</div><h3>HSDP 减专家：复制轴首次真正执行，配置错误和新型显存墙相继暴露<span class="badge ok">HSDP 4K 端到端通过；长上下文受限</span></h3><p class="lead">本章回答：数据并行复制数从 1 变为 2 后，哪些过去从未运行的路径会暴露。 <span class="refs"><a href="#ref-S18" title="查看证据 S18">S18</a> <a href="#ref-S19" title="查看证据 S19">S19</a></span></p>
+<div class="issue"><h4>Replicate 与材质化假根因</h4><p><b>现象与根因：</b>HSDP 专家栈先遇 placement.dim 属性错误；随后三轮 OOM 看似与 EP/重算/优化器换出无关，一度怀疑 to_empty 整栈材质化。</p><p><b>处理与结果：</b>补 Replicate placement 守卫，并用 CPU 机制探针证伪整栈材质化假说。逐参数取证最终发现 config 仍声明 384 专家而权重只有 64 个；物化 config 并改为 64 后，装载/前向/反向通过。</p></div>
+<div class="issue"><h4>HSDP 专属归约缓冲</h4><p><b>现象与根因：</b>复制=2 首次执行 Engram 跨副本稀疏梯度归约，NPU 中转与 HCCL 直连驱动申请约 401MiB；expandable_segments 不能回收这部分。</p><p><b>处理与结果：</b>扩为八节点 数据并行复制 2 × 分片 16 × 上下文并行 2 × 专家并行 32，并在 4K 档释放激活空间。三步 GRPO 七判据全过，Pearson=0.999803/0.999551/0.999671，HBM 峰值 41.04GiB。</p></div>
+<div class="issue"><h4>16K/32K 不是同一堵墙</h4><p><b>现象与根因：</b>32K/16K 主要死在 MoE 专家中间激活；8K 已过反向却死在优化器步 Engram 归约。</p><p><b>处理与结果：</b>不能统称“显存不足”后盲目加 EP。4K 是当前八节点减专家已验证档；归约 CPU 化补丁作为后续长上下文方案，未写成已验证事实。</p></div>
+</article>
+<article class="phase ok" id="audit"><div class="tl-date">2026-11-10 → 11-12</div><h3>长训一致性衰减：逐类权重审计取代“重载成功”的表面判据<span class="badge ok">两类静默漏传已修复并值级核验</span></h3><p class="lead">本章回答：HTTP 200、版本推进和覆盖率字段为何仍不能证明训推权重相同。 <span class="refs"><a href="#ref-S20" title="查看证据 S20">S20</a></span></p>
+<div class="issue"><h4>Attention Sink 静默丢弃</h4><p><b>现象与根因：</b>serve 的 weight_loader 没有承接 attn_sink，且已被标为消费，普通缺键清单不可见；长训 Pearson 斜率约 -3.16e-4/步。</p><p><b>处理与结果：</b>引入上游 attn_sink loader 修复，read_param 与 dump 逐位核验一致。</p></div>
+<div class="issue"><h4>MoE 路由偏置漏导出</h4><p><b>现象与根因：</b>训练侧 aux-loss-free 负载均衡 hook 每步更新 e_score_correction_bias，旧导出规则却将对应 gate.bias 当运行态键丢弃。</p><p><b>处理与结果：</b>40 层偏置以 fp32 纳入导出，解除鉴别性冻结。补键后早期衰减斜率显著塌缩，推理值与检查点逐位相符。</p></div>
+<div class="issue"><h4>Engram 与派生键口径</h4><p><b>现象与根因：</b>Engram 表不走主权重，运行态 fp32 副本也不在训练核；coverage_ok=False 来自旧扩展协议字段缺失。</p><p><b>处理与结果：</b>建立七类权重审计：主权重、专家、Attention Sink、路由偏置、Engram、派生键和延迟加载键分别判读，不再用一个 coverage 布尔值覆盖所有语义。</p></div>
+</article>
+<article class="phase ok" id="export"><div class="tl-date">2026-11-13 → 11-17</div><h3>导出往返落差：从“训练漂移”修正为大文件短写<span class="badge ok">根因双向定罪；代码修复待次日报验</span></h3><p class="lead">本章回答：为什么同一检查点直接续训一致，而经 HuggingFace 导出冷启动就下降。 <span class="refs"><a href="#ref-S21" title="查看证据 S21">S21</a></span></p>
+<div class="issue"><h4>多种候选根因混杂</h4><p><b>现象与根因：</b>历史解释涉及路由偏置精度、视觉/MTP 键、推理服务老化、短响应和训练漂移，单变量结论多次被新证据修正。</p><p><b>处理与结果：</b>同权重 DCP 续训与 HF 冷启动配对；审计 8,558 个非 Engram 键后，把异常收窄到两张 Engram 大表。</p></div>
+<div class="issue"><h4>大表尾部清零</h4><p><b>现象与根因：</b>两张 Engram 表都仅前 4,194,296 行有效，约 2.147GB 后为零；只补回两表可恢复健康，单独清零又可复现故障。</p><p><b>处理与结果：</b>双向实验证明它是导出往返落差的主因。继续定位到 PyTorch HF 合并函数的 os.pwrite 短写未续写，而不是原始权重损坏。</p></div>
+</article>
+<article class="phase warn" id="current"><div class="tl-date">2026-11-18</div><h3>当前状态：导出缺陷已验收修复；长训引擎分歧进入固定输入判别<span class="badge warn">局部闭合；机制研究仍在进行</span></h3><p class="lead">本章回答：截至今天哪些可以交付为事实，哪些还不能宣称已经解决。 <span class="refs"><a href="#ref-S22" title="查看证据 S22">S22</a> <a href="#ref-S23" title="查看证据 S23">S23</a></span></p>
+<div class="issue"><h4>Engram 短写修复</h4><p><b>现象与根因：</b>os.pwrite 单次 3GiB 请求实际只写 2,147,479,552 字节，预留区域保持零值。</p><p><b>处理与结果：</b>按 64MiB 分块并循环写满、异常快速失败、大分片流式读写。两表约 7.68 亿行全表校验通过，真实 GRPO 第 2–5 步 Pearson 均值 0.999654，超过预注册 0.9990。</p></div>
+<div class="issue"><h4>长训衰减的直接统计量</h4><p><b>现象与根因：</b>DAPO 退化时各概率层内部双引擎差值均增长，不能只归因于低概率 token 占比或响应变短。</p><p><b>处理与结果：</b>目前结论限定为“DAPO 策略退化伴随双引擎逐 token 分歧放大”。具体算子、权重通道、输入内容和运行期调度贡献尚未分离。</p></div>
+<div class="issue"><h4>观测链自身的陷阱</h4><p><b>现象与根因：</b>温度 1.4 时 serve 返回温度前 raw_logprobs，训练侧使用温度后对数概率；该轮不能作为同口径引擎判别。</p><p><b>处理与结果：</b>下一步固定权重、固定 prompt/token、温度 1.0、零更新，对健康/塌缩权重分别重复回放并改变并发；预注册已完成，报告不把后续实现提交当作实验结果。</p></div>
+</article>
+</div></section>
+<section id="dag"><h2>有效无环图：适配能力与问题的单向演进</h2><p class="sec-intro">本章回答：哪些修复真正形成了后续可复用能力，哪些只是阶段绕行，哪些问题仍保持开放。节点按时间从左向右，边只指向更晚阶段；无回边，拓扑序已用脚本验证。最后一列汇总 11 月 10 日至 18 日的三个独立子阶段：漏传审计、Engram 导出修复、固定输入判别，不表示这些工作发生在同一天。</p>
+<div class="legend"><span><i class="swatch" style="background:var(--cat-problem)"></i>问题 / 瓶颈</span><span><i class="swatch" style="background:var(--cat-fix)"></i>有效修复</span><span><i class="swatch" style="background:var(--cat-result)"></i>验证结果</span><span><i class="swatch" style="background:var(--yellow)"></i>仍未闭合</span><span>虚线 = 已验证能力传递；实线 = 同主题演进</span></div>
+<figure class="figcard"><div class="figscroll">
+<svg viewBox="0 0 1990 900" role="img" aria-labelledby="dag-title dag-desc">
+<title id="dag-title">DeepSeek-V4.1 从 torchtitan-npu 开始的适配因果无环图</title>
+<desc id="dag-desc">六列按时间从左向右排列，四行分别为训练引擎、权重环境、长上下文和同步一致性。实线表示同主题演进，虚线表示已验证能力传递到下一阶段。所有边都指向更晚阶段，没有回边。</desc>
+<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#8B949E"/></marker><marker id="arrow-accent" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#A78BFA"/></marker></defs>
+<text x="150" y="24" class="dag-date">10-15 → 10-20</text><text x="150" y="46" class="dag-head">SFT 与真实权重</text>
+<text x="460" y="24" class="dag-date">10-22 → 10-26</text><text x="460" y="46" class="dag-head">首次 RL 集成</text>
+<text x="770" y="24" class="dag-date">10-26 → 10-29</text><text x="770" y="46" class="dag-head">主线与全量</text>
+<text x="1080" y="24" class="dag-date">10-29 → 11-05</text><text x="1080" y="46" class="dag-head">换栈与长上下文</text>
+<text x="1390" y="24" class="dag-date">11-06 → 11-10</text><text x="1390" y="46" class="dag-head">HSDP 减专家</text>
+<text x="1700" y="24" class="dag-date">11-10 → 11-18</text><text x="1700" y="46" class="dag-head">同步审计与未决项</text>
+<text x="0" y="154" class="dag-lane">训练引擎 / RL</text>
+<text x="0" y="354" class="dag-lane">权重 / 环境</text>
+<text x="0" y="554" class="dag-lane">显存 / 长上下文</text>
+<text x="0" y="754" class="dag-lane">同步 / 一致性</text>
+<path d="M 429 158.0 L 451 158.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 739 158.0 L 761 158.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1049 158.0 L 1071 158.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1359 158.0 L 1381 158.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1669 158.0 L 1691 158.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 429 358.0 L 451 358.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 739 358.0 L 761 358.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1049 358.0 L 1071 358.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1359 358.0 L 1381 358.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1669 358.0 L 1691 358.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 429 558.0 L 451 558.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 739 558.0 L 761 558.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1049 558.0 L 1071 558.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1359 558.0 L 1381 558.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 1669 558.0 L 1691 558.0" class="dag-edge" marker-end="url(#arrow)"/>
+<path d="M 429 558.0 L 448 558.0 L 448 656 L 436 656 L 436 283 L 451 283" class="dag-edge dag-support" marker-end="url(#arrow-accent)"/>
+<path d="M 739 558.0 L 758 558.0 L 758 656 L 746 656 L 746 83 L 761 83" class="dag-edge dag-support" marker-end="url(#arrow-accent)"/>
+<path d="M 1049 558.0 L 1068 558.0 L 1068 656 L 1056 656 L 1056 83 L 1071 83" class="dag-edge dag-support" marker-end="url(#arrow-accent)"/>
+<path d="M 1359 558.0 L 1378 558.0 L 1378 656 L 1366 656 L 1366 83 L 1381 83" class="dag-edge dag-support" marker-end="url(#arrow-accent)"/>
+<path d="M 1669 558.0 L 1688 558.0 L 1688 656 L 1676 656 L 1676 83 L 1691 83" class="dag-edge dag-support" marker-end="url(#arrow-accent)"/>
+<g class="dag-node" tabindex="0" aria-label="真实 64 专家权重 + EP32。 四节点 SFT 五步。 首步 loss 6.71309"><title>真实 64 专家权重 + EP32；四节点 SFT 五步；首步 loss 6.71309。证据：S1</title>
+<rect x="150" y="92" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-result)"/>
+<text x="164" y="114" class="dag-kind">✓ 验证结果</text>
+<text x="164" y="141" class="dag-title">真实 64 专家权重 + EP32</text>
+<text x="164" y="168" class="dag-text">四节点 SFT 五步</text><text x="164" y="191" class="dag-text">首步 loss 6.71309</text>
+<text x="164" y="212" class="dag-kind">证据 S1</text></g>
+<g class="dag-node" tabindex="0" aria-label="五步位级轨迹不可复现。 归约微扰 × top-6 路由翻转。 保留 FAIL，不放宽判据"><title>五步位级轨迹不可复现；归约微扰 × top-6 路由翻转；保留 FAIL，不放宽判据。证据：S1</title>
+<rect x="150" y="292" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-problem)"/>
+<text x="164" y="314" class="dag-kind">! 问题 / 瓶颈</text>
+<text x="164" y="341" class="dag-title">五步位级轨迹不可复现</text>
+<text x="164" y="368" class="dag-text">归约微扰 × top-6 路由翻转</text><text x="164" y="391" class="dag-text">保留 FAIL，不放宽判据</text>
+<text x="164" y="412" class="dag-kind">证据 S1</text></g>
+<g class="dag-node" tabindex="0" aria-label="HF 导出 + 清洁键面。 8,864 键 / bf16 / tokenizer。 SFT→RL 装配通过"><title>HF 导出 + 清洁键面；8,864 键 / bf16 / tokenizer；SFT→RL 装配通过。证据：S2</title>
+<rect x="150" y="492" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-fix)"/>
+<text x="164" y="514" class="dag-kind">→ 有效修复</text>
+<text x="164" y="541" class="dag-title">HF 导出 + 清洁键面</text>
+<text x="164" y="568" class="dag-text">8,864 键 / bf16 / tokenizer</text><text x="164" y="591" class="dag-text">SFT→RL 装配通过</text>
+<text x="164" y="612" class="dag-kind">证据 S2</text></g>
+<g class="dag-node" tabindex="0" aria-label="FSDP / SPMD 契约冲突。 网格身份与尺寸 1 轴注解。 双 Trainer / verl 接入受阻"><title>FSDP / SPMD 契约冲突；网格身份与尺寸 1 轴注解；双 Trainer / verl 接入受阻。证据：S3, S4</title>
+<rect x="460" y="92" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-problem)"/>
+<text x="474" y="114" class="dag-kind">! 问题 / 瓶颈</text>
+<text x="474" y="141" class="dag-title">FSDP / SPMD 契约冲突</text>
+<text x="474" y="168" class="dag-text">网格身份与尺寸 1 轴注解</text><text x="474" y="191" class="dag-text">双 Trainer / verl 接入受阻</text>
+<text x="474" y="212" class="dag-kind">证据 S3 / S4</text></g>
+<g class="dag-node" tabindex="0" aria-label="专家 EP 聚合 + 原子提交。 修复布局：706GB→约197GB。 8,518 键可逐位重载"><title>专家 EP 聚合 + 原子提交；修复布局：706GB→约197GB；8,518 键可逐位重载。证据：S6, S7</title>
+<rect x="460" y="292" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-fix)"/>
+<text x="474" y="314" class="dag-kind">→ 有效修复</text>
+<text x="474" y="341" class="dag-title">专家 EP 聚合 + 原子提交</text>
+<text x="474" y="368" class="dag-text">修复布局：706GB→约197GB</text><text x="474" y="391" class="dag-text">8,518 键可逐位重载</text>
+<text x="474" y="412" class="dag-kind">证据 S6 / S7</text></g>
+<g class="dag-node" tabindex="0" aria-label="引擎分项通过。 actor/ref/训练步/双引擎构造。 完整 RL 未完成，转主线重建"><title>引擎分项通过；actor/ref/训练步/双引擎构造；完整 RL 未完成，转主线重建。证据：S4</title>
+<rect x="460" y="492" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-result)"/>
+<text x="474" y="514" class="dag-kind">✓ 验证结果</text>
+<text x="474" y="541" class="dag-title">引擎分项通过</text>
+<text x="474" y="568" class="dag-text">actor/ref/训练步/双引擎构造</text><text x="474" y="591" class="dag-text">完整 RL 未完成，转主线重建</text>
+<text x="474" y="612" class="dag-kind">证据 S4</text></g>
+<g class="dag-node" tabindex="0" aria-label="verl 主线 + 外置 serve。 训练不加载 vLLM。 注册/rollout/检查点解耦"><title>verl 主线 + 外置 serve；训练不加载 vLLM；注册/rollout/检查点解耦。证据：S7</title>
+<rect x="770" y="92" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-fix)"/>
+<text x="784" y="114" class="dag-kind">→ 有效修复</text>
+<text x="784" y="141" class="dag-title">verl 主线 + 外置 serve</text>
+<text x="784" y="168" class="dag-text">训练不加载 vLLM</text><text x="784" y="191" class="dag-text">注册/rollout/检查点解耦</text>
+<text x="784" y="212" class="dag-kind">证据 S7</text></g>
+<g class="dag-node" tabindex="0" aria-label="64 专家 RL 闭环。 六步 Pearson 最低 0.997347。 Engram 三步 0.99904–0.99929"><title>64 专家 RL 闭环；六步 Pearson 最低 0.997347；Engram 三步 0.99904–0.99929。证据：S8, S9</title>
+<rect x="770" y="292" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-result)"/>
+<text x="784" y="314" class="dag-kind">✓ 验证结果</text>
+<text x="784" y="341" class="dag-title">64 专家 RL 闭环</text>
+<text x="784" y="368" class="dag-text">六步 Pearson 最低 0.997347</text><text x="784" y="391" class="dag-text">Engram 三步 0.99904–0.99929</text>
+<text x="784" y="412" class="dag-kind">证据 S8 / S9</text></g>
+<g class="dag-node" tabindex="0" aria-label="全量 384 专家 GRPO。 16 训练 + 4 推理节点。 30 步；MATH 0.43→0.64"><title>全量 384 专家 GRPO；16 训练 + 4 推理节点；30 步；MATH 0.43→0.64。证据：S11</title>
+<rect x="770" y="492" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-result)"/>
+<text x="784" y="514" class="dag-kind">✓ 验证结果</text>
+<text x="784" y="541" class="dag-title">全量 384 专家 GRPO</text>
+<text x="784" y="568" class="dag-text">16 训练 + 4 推理节点</text><text x="784" y="591" class="dag-text">30 步；MATH 0.43→0.64</text>
+<text x="784" y="612" class="dag-kind">证据 S11</text></g>
+<g class="dag-node" tabindex="0" aria-label="vLLM 0.30 + 原生重载。 HF safetensors 替代私有协议。 30 次重载；32K 长上下文"><title>vLLM 0.30 + 原生重载；HF safetensors 替代私有协议；30 次重载；32K 长上下文。证据：S12, S13</title>
+<rect x="1080" y="92" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-fix)"/>
+<text x="1094" y="114" class="dag-kind">→ 有效修复</text>
+<text x="1094" y="141" class="dag-title">vLLM 0.30 + 原生重载</text>
+<text x="1094" y="168" class="dag-text">HF safetensors 替代私有协议</text><text x="1094" y="191" class="dag-text">30 次重载；32K 长上下文</text>
+<text x="1094" y="212" class="dag-kind">证据 S12 / S13</text></g>
+<g class="dag-node" tabindex="0" aria-label="CANN / CP 契约补齐。 四算子 + 本地 JIT + 导入预载。 doc_chunk + 对齐 + 逆置换"><title>CANN / CP 契约补齐；四算子 + 本地 JIT + 导入预载；doc_chunk + 对齐 + 逆置换。证据：S14, S15, S16</title>
+<rect x="1080" y="292" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-fix)"/>
+<text x="1094" y="314" class="dag-kind">→ 有效修复</text>
+<text x="1094" y="341" class="dag-title">CANN / CP 契约补齐</text>
+<text x="1094" y="368" class="dag-text">四算子 + 本地 JIT + 导入预载</text><text x="1094" y="391" class="dag-text">doc_chunk + 对齐 + 逆置换</text>
+<text x="1094" y="412" class="dag-kind">证据 S14 / S15 / S16</text></g>
+<g class="dag-node" tabindex="0" aria-label="全量 32K DAPO。 三步 0.99732–0.99768。 24 步无崩溃；22/24≥0.995"><title>全量 32K DAPO；三步 0.99732–0.99768；24 步无崩溃；22/24≥0.995。证据：S17</title>
+<rect x="1080" y="492" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-result)"/>
+<text x="1094" y="514" class="dag-kind">✓ 验证结果</text>
+<text x="1094" y="541" class="dag-title">全量 32K DAPO</text>
+<text x="1094" y="568" class="dag-text">三步 0.99732–0.99768</text><text x="1094" y="591" class="dag-text">24 步无崩溃；22/24≥0.995</text>
+<text x="1094" y="612" class="dag-kind">证据 S17</text></g>
+<g class="dag-node" tabindex="0" aria-label="HSDP 复制轴新路径。 Replicate 守卫；配置误写 384 专家。 先修配置，再讨论框架缺陷"><title>HSDP 复制轴新路径；Replicate 守卫；配置误写 384 专家；先修配置，再讨论框架缺陷。证据：S18</title>
+<rect x="1390" y="92" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-problem)"/>
+<text x="1404" y="114" class="dag-kind">! 问题 / 瓶颈</text>
+<text x="1404" y="141" class="dag-title">HSDP 复制轴新路径</text>
+<text x="1404" y="168" class="dag-text">Replicate 守卫；配置误写 384 专家</text><text x="1404" y="191" class="dag-text">先修配置，再讨论框架缺陷</text>
+<text x="1404" y="212" class="dag-kind">证据 S18</text></g>
+<g class="dag-node" tabindex="0" aria-label="16K/32K MoE 激活墙。 8K 另有 401MiB 归约缺口。 扩八节点 EP32；4K 已验证"><title>16K/32K MoE 激活墙；8K 另有 401MiB 归约缺口；扩八节点 EP32；4K 已验证。证据：S19</title>
+<rect x="1390" y="292" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-problem)"/>
+<text x="1404" y="314" class="dag-kind">! 问题 / 瓶颈</text>
+<text x="1404" y="341" class="dag-title">16K/32K MoE 激活墙</text>
+<text x="1404" y="368" class="dag-text">8K 另有 401MiB 归约缺口</text><text x="1404" y="391" class="dag-text">扩八节点 EP32；4K 已验证</text>
+<text x="1404" y="412" class="dag-kind">证据 S19</text></g>
+<g class="dag-node" tabindex="0" aria-label="HSDP 4K 全链通过。 三步 Pearson 最低 0.999551。 HBM 41.04GiB；七判据全过"><title>HSDP 4K 全链通过；三步 Pearson 最低 0.999551；HBM 41.04GiB；七判据全过。证据：S18</title>
+<rect x="1390" y="492" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-result)"/>
+<text x="1404" y="514" class="dag-kind">✓ 验证结果</text>
+<text x="1404" y="541" class="dag-title">HSDP 4K 全链通过</text>
+<text x="1404" y="568" class="dag-text">三步 Pearson 最低 0.999551</text><text x="1404" y="591" class="dag-text">HBM 41.04GiB；七判据全过</text>
+<text x="1404" y="612" class="dag-kind">证据 S18</text></g>
+<g class="dag-node" tabindex="0" aria-label="静默漏传逐项补齐。 Attention Sink loader + 40 层路由偏置。 值级核验，不信覆盖率单字段"><title>静默漏传逐项补齐；Attention Sink loader + 40 层路由偏置；值级核验，不信覆盖率单字段。证据：S20</title>
+<rect x="1700" y="92" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-fix)"/>
+<text x="1714" y="114" class="dag-kind">→ 有效修复</text>
+<text x="1714" y="141" class="dag-title">静默漏传逐项补齐</text>
+<text x="1714" y="168" class="dag-text">Attention Sink loader + 40 层路由偏置</text><text x="1714" y="191" class="dag-text">值级核验，不信覆盖率单字段</text>
+<text x="1714" y="212" class="dag-kind">证据 S20</text></g>
+<g class="dag-node" tabindex="0" aria-label="Engram 短写循环续写。 64MiB 分块 + 流式合并。 全表校验；Pearson 均值 0.999654"><title>Engram 短写循环续写；64MiB 分块 + 流式合并；全表校验；Pearson 均值 0.999654。证据：S21, S22</title>
+<rect x="1700" y="292" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--cat-fix)"/>
+<text x="1714" y="314" class="dag-kind">→ 有效修复</text>
+<text x="1714" y="341" class="dag-title">Engram 短写循环续写</text>
+<text x="1714" y="368" class="dag-text">64MiB 分块 + 流式合并</text><text x="1714" y="391" class="dag-text">全表校验；Pearson 均值 0.999654</text>
+<text x="1714" y="412" class="dag-kind">证据 S21 / S22</text></g>
+<g class="dag-node" tabindex="0" aria-label="长训双引擎分歧未闭合。 DAPO 退化；各概率层差值放大。 固定 token 回放已预注册"><title>长训双引擎分歧未闭合；DAPO 退化；各概率层差值放大；固定 token 回放已预注册。证据：S22, S23</title>
+<rect x="1700" y="492" width="274" height="132" rx="6" fill="var(--surface-2)" stroke="var(--yellow)"/>
+<text x="1714" y="514" class="dag-kind">… 仍未闭合</text>
+<text x="1714" y="541" class="dag-title">长训双引擎分歧未闭合</text>
+<text x="1714" y="568" class="dag-text">DAPO 退化；各概率层差值放大</text><text x="1714" y="591" class="dag-text">固定 token 回放已预注册</text>
+<text x="1714" y="612" class="dag-kind">证据 S22 / S23</text></g>
+<text x="150" y="850" class="dag-text">读图：同主题实线向右；紫色虚线表示已验证能力进入下一阶段。图中只画有证据支撑的依赖，不把“时间相邻”自动解释为“根因已解决”。</text>
+</svg>
+</div><figcaption>图 1 · 适配因果 DAG。节点文字是全部信息的摘要，完整根因和边界见时间线与证据索引；聚焦节点可读取同样内容，不依赖颜色或悬停才能获得结论。</figcaption></figure>
+<details><summary>查看无环图的机器校验口径</summary><p>共 18 个节点、26 条有向边。校验要求每条边的时间列严格递增，随后执行 Kahn 拓扑排序；18/18 节点均可排序，故无环。校验产物在生成阶段的 <code>/tmp/amw_dsv41_dag_check.json</code>，报告运行时不依赖该文件。</p></details></section>
+<section id="families"><h2>六类瓶颈：哪些解决方法真正有效</h2><p class="sec-intro">本章回答：跨阶段反复出现的问题，应当用什么工程方法避免重犯。这里不把同一修复在不同阶段重复计数。</p>
+<div class="tblwrap"><table><thead><tr><th>瓶颈族</th><th>根因模式</th><th>已验证的有效方法</th><th>不能再用作证据的表象</th></tr></thead><tbody>
+<tr><td>分布式框架契约</td><td>FSDP/SPMD 网格身份、尺寸 1 轴注解、双 Trainer 状态不一致。</td><td>先读消费链契约，显式交接网格；actor/ref 分上下文；小探针验证真实执行分支。</td><td>“能 import”“模型构造成功”“补注解日志出现”。</td></tr>
+<tr><td>权重格式与布局</td><td>专家命名/切分、量化 scale、HF 元数据、serve loader 各自演化。</td><td>键面单源、专家 EP 聚合、原子提交、逐位审计、直写 HF safetensors。</td><td>目录存在、HTTP 200、manifest 键数正确。</td></tr>
+<tr><td>环境与运行时</td><td>只读树写点、符号链接越界、torch 版本互斥、UDA、NFS JIT 竞争。</td><td>双环境/外置 serve；挂载目标闭包检查；本地 JIT；算子 import 预载。</td><td>容器 Up、镜像含文件、缓存目录非空。</td></tr>
+<tr><td>显存与宿主内存</td><td>权重、激活、优化器矩量、通信缓冲属于不同账本；复制轴激活新路径。</td><td>先算 EP/CP/节点几何，再实测；区分 MoE 激活与 Engram 归约；4K 可验证边界不冒称 32K。</td><td>只读 allocated-at-death；只调 EP/重算；把减专家当成减少 Engram 表。</td></tr>
+<tr><td>长训同步完整性</td><td>Attention Sink 被 loader 静默跳过、路由偏置被导出规则丢弃、Engram 大文件短写。</td><td>按七类权重审计；read_param 值级读回；全表分块校验；短写循环续写。</td><td>coverage_ok、weight_version、reload 返回 200。</td></tr>
+<tr><td>数值判读与归因</td><td>归约非确定性、路由翻转、token 构成、温度口径与真实引擎分歧混杂。</td><td>预注册判据；同权重/同 token 配对；单变量反向复现；冻结输入双引擎回放。</td><td>loss 有限、reward 上升、Pearson 单步过线、响应长度单变量解释。</td></tr>
+</tbody></table></div></section>
+<section id="evidence"><h2>量化里程碑：不同阶段不能混成一个“通过率”</h2><p class="sec-intro">本章回答：目前有哪些可复核的能力证据。每个数字都绑定模型规模、算法和测量口径。</p>
+<div class="tblwrap"><table><thead><tr><th>日期</th><th>能力</th><th>实测结果</th><th>解释边界</th><th>证据</th></tr></thead><tbody>
+<tr><td>10-20</td><td>64 专家 SFT</td><td>首步 loss 6.71309；HBM 37.12GiB</td><td>配置/首步复现；五步逐点位级门 FAIL 保留</td><td><span class="refs"><a href="#ref-S1" title="查看证据 S1">S1</a></span></td></tr>
+<tr><td>10-27</td><td>64 专家 GRPO</td><td>六步 Pearson 0.998820→0.997347</td><td>主线外置 serve；不是全词表口径</td><td><span class="refs"><a href="#ref-S8" title="查看证据 S8">S8</a></span></td></tr>
+<tr><td>10-29</td><td>全量 384 专家 GRPO</td><td>30 步零崩溃；MATH 0.43→0.64；8h16m</td><td>一次 30 步评测，不代表长期持续收敛</td><td><span class="refs"><a href="#ref-S11" title="查看证据 S11">S11</a></span></td></tr>
+<tr><td>10-29 / 10-30</td><td>0.30 原生重载</td><td>30/30；p50 47.3s；HBM 漂移 0</td><td>热缓存服务重载，不等于训练端总同步耗时</td><td><span class="refs"><a href="#ref-S12" title="查看证据 S12">S12</a></span></td></tr>
+<tr><td>11-04</td><td>全量 32K DAPO</td><td>三步 Pearson 0.99739/0.99732/0.99768</td><td>链路验证通过；reward 趋势当时未建立</td><td><span class="refs"><a href="#ref-S17" title="查看证据 S17">S17</a></span></td></tr>
+<tr><td>11-04 → 11-05</td><td>全量长训</td><td>24 步无崩溃；22/24 步≥0.995；HBM 39.57–39.68GiB</td><td>用户停止于 24/60；长度塌缩与两次破门未消除</td><td><span class="refs"><a href="#ref-S17" title="查看证据 S17">S17</a></span></td></tr>
+<tr><td>11-10</td><td>HSDP 64 专家 4K</td><td>三步 Pearson 0.999803/0.999551/0.999671；HBM 41.04GiB</td><td>八节点 EP32；不外推到同拓扑 16K/32K</td><td><span class="refs"><a href="#ref-S18" title="查看证据 S18">S18</a> <a href="#ref-S19" title="查看证据 S19">S19</a></span></td></tr>
+<tr><td>11-17 → 11-18</td><td>Engram 导出修复</td><td>两表约 7.68 亿行全表校验；四步均值 0.999654</td><td>修复导出往返落差，不等于修复长训全部衰减</td><td><span class="refs"><a href="#ref-S22" title="查看证据 S22">S22</a></span></td></tr>
+</tbody></table></div></section>
+<section id="open"><h2>遗留问题：现在还不能声称什么</h2><p class="sec-intro">本章回答：下一位接手者应该把验证预算花在哪里，而不是重跑已经闭合的链路。</p>
+<div class="issue"><h4>1 · 长训双引擎逐 token 分歧：未闭合</h4><p>DAPO 退化中各概率层内部的训练/推理差值均上升。尚不能定位到具体算子、权重通道或推理运行期状态；温度 1.4 的旧实验还存在观测口径差，不能用于归因。</p><p><b>已规划的判别：</b>固定权重和固定 token，健康/塌缩两臂，各做并发 1 重放与并发 8 重放，零参数更新。预注册已落盘；最新回放代码提交不等于实验已完成。 <span class="refs"><a href="#ref-S22" title="查看证据 S22">S22</a> <a href="#ref-S23" title="查看证据 S23">S23</a></span></p></div>
+<div class="issue"><h4>2 · HSDP 16K/32K 与 Engram 归约 CPU 化：方案存在，验收未统一闭合</h4><p>4K 已验证，16K/32K 的 MoE 激活墙和 8K 的约 401MiB 跨副本归约缺口是不同问题。归约中转 CPU 化是已提出的框架补丁方案；报告不把它写成已部署并通过长上下文验收。</p></div>
+<div class="issue"><h4>3 · 集群与框架上游债</h4><p>早期 --privileged 是设备访问绕行而非集群根治；FSDP/SPMD 尺寸 1 轴契约、Engram 短写、Attention Sink loader 等需要按各自上游状态跟踪。仓库补丁存在不代表上游已合入。</p></div>
+<div class="issue"><h4>4 · 训练效果不能只看链路</h4><p>全量 24 步运行出现响应长度塌缩、两次 Pearson 低于 0.995 和奖励噪声；HSDP 历史运行也经历策略退化。本报告是适配回溯，不把一次 pass@1 提升当作所有配置上的能力保证。</p></div>
+<div class="note"><strong>可复用的最终经验：</strong>先固定真实权重和运行环境，再逐层验证引擎契约；权重同步必须证明“值已生效”，数值一致性必须绑定同一批 token 和同一温度定义；长训结论必须能经受逐类权重审计和固定输入反证。</div></section>
+<section id="sources"><h2>证据索引与版本说明</h2><p class="sec-intro">以下来源是本报告的直接依据。20 个远端文档已通过 GitHub 内容 API 逐一核对存在性；S21–S23 是已核实的本地工作区记录，远端尚无同路径快照，因此只给本地路径、不做失效超链接。报告运行时不依赖网络，证据路径供在本地仓库继续追溯。</p><ol class="source-list">
+<li id="ref-S0"><span class="sid">S0</span><a href="2026-10-15-survey.html">引擎选型调研：软件栈、五处修改点与稀疏注意力 OOM 修复</a><p>前期引擎选型调研</p></li>
+<li id="ref-S1"><span class="sid">S1</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/15-torchtitan-sft/README.md">四节点 64 专家 SFT 复现：首步复现与五步轨迹非确定性</a><p>15 README §1–§8</p></li>
+<li id="ref-S2"><span class="sid">S2</span><a href="https://github.com/versatile-ai/automodelwire/blob/feature%2Fdeepseek-v41-flash-with-torchtitan/models/DeepSeek-V4.1-Flash/variants/17-moe64-rl/notes/20261021-e1e2-result.md">SFT 产物与 HF 权重装配：训练产物接入 RL 的键面与真实性门</a><p>17 E1/E2 结果</p></li>
+<li id="ref-S3"><span class="sid">S3</span><a href="https://github.com/versatile-ai/automodelwire/blob/feature%2Fdeepseek-v41-flash-with-torchtitan/models/DeepSeek-V4.1-Flash/variants/17-moe64-rl/results/evidence/torchtitan-engine/roundd_v64/VERDICT-run_20261023_v64.md">FSDP/SPMD 上游契约错配：尺寸 1 轴注解无法持久化</a><p>VERDICT §0–§5</p></li>
+<li id="ref-S4"><span class="sid">S4</span><a href="https://github.com/versatile-ai/automodelwire/blob/feature%2Fdeepseek-v41-flash-with-torchtitan/models/DeepSeek-V4.1-Flash/variants/17-moe64-rl/notes/20261026-verl-spmd-types-progress-and-next-steps.md">原生训练与 verl 双引擎集成：E1′/E2/E3/E5 通过与 E6 未完成</a><p>进展对账 §1–§7</p></li>
+<li id="ref-S5"><span class="sid">S5</span><a href="https://github.com/versatile-ai/automodelwire/blob/feature%2Fdeepseek-v41-flash-with-torchtitan/models/DeepSeek-V4.1-Flash/variants/17-moe64-rl/notes/20261024-b-4node-ledger.md">执行环境与集群故障：只读挂载、符号链接、UDA 设备占用</a><p>执行账本 §0–§3</p></li>
+<li id="ref-S6"><span class="sid">S6</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/21-verl-mainline-rl/reports/20261027-v2-terminal-report.md">verl 主线单引擎与权重同步：8,518 键、逐位重载与版本推进</a><p>V2 终态报告 §1–§4</p></li>
+<li id="ref-S7"><span class="sid">S7</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/21-verl-mainline-rl/reports/20261027-v3-terminal-report.md">verl 主线 GRPO：外置推理服务、奖励、训练、导出与热更新</a><p>V3 终态报告 §1–§5</p></li>
+<li id="ref-S8"><span class="sid">S8</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/21-verl-mainline-rl/reports/20261027-v4-terminal-report.md">64 专家连续一致性：六步 token 概率 Pearson 均大于 0.995</a><p>V4 终态报告 §1–§6</p></li>
+<li id="ref-S9"><span class="sid">S9</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/21-verl-mainline-rl/notes/20261029-8830-key-baseline-run-report.md">Engram 双侧更新与视觉键面：三步 GRPO、行级增量和 8,830 键</a><p>8830 键面报告 §1–§6</p></li>
+<li id="ref-S10"><span class="sid">S10</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/21-verl-mainline-rl/notes/20261028-s6-engram-v3-grpo-report.md">Engram 主机内存与 NPU 网络硬约束</a><p>S6 报告 §2、§9</p></li>
+<li id="ref-S11"><span class="sid">S11</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/23-verl-mainline-rl-full/README.md">全量 384 专家 30 步 GRPO：16 训练 + 4 推理节点与 32K 旧栈缺陷</a><p>23 README §已验证结论</p></li>
+<li id="ref-S12"><span class="sid">S12</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/25-verl-mainline-rl-full-vllm030/reports/20261029-030-infer-station-and-reload.md">vLLM 0.30 原生重载与长上下文推理</a><p>0.30 热更报告 §0–§4</p></li>
+<li id="ref-S13"><span class="sid">S13</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/25-verl-mainline-rl-full-vllm030/reports/20261030-hf-safetensors-writer.md">训练侧直写 HF safetensors 与真实落表校验</a><p>HF 写侧报告 §1–§8</p></li>
+<li id="ref-S14"><span class="sid">S14</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/25-verl-mainline-rl-full-vllm030/reports/20261030-ops930-vendor-and-cp-probes.md">CANN 9.3 vendor 算子、metadata 尺寸、JIT 与 CP 契约</a><p>9.3 算子报告 §0–§6</p></li>
+<li id="ref-S15"><span class="sid">S15</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/25-verl-mainline-rl-full-vllm030/reports/20261031-cp1-regression-cp2-probe-verdict.md">torchtitan-npu master 升级：doc_chunk 布局、逐文档对齐与逆置换</a><p>CP 回归与探针 §1–§7</p></li>
+<li id="ref-S16"><span class="sid">S16</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/25-verl-mainline-rl-full-vllm030/reports/20261031-metadata-op-preload.md">CANN 自定义算子的导入注册与 JIT 预热分离</a><p>预载报告 §1–§6</p></li>
+<li id="ref-S17"><span class="sid">S17</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/25-verl-mainline-rl-full-vllm030/reports/20261105-60step-dapo-run24-archive.md">全量长训存档与 24 步结果；32K 三步记录另见 20261104-60step-32k-dapo-overnight.md</a><p>24 步存档 §1–§5</p></li>
+<li id="ref-S18"><span class="sid">S18</span><a href="https://github.com/versatile-ai/automodelwire/blob/feature%2Fdeepseek-v41-flash-with-torchtitan/models/DeepSeek-V4.1-Flash/variants/27-hsdp-reduced-expert-rl/notes/20261106-v0-execution-ledger.md">HSDP 执行账本：Replicate、64 专家配置、网格与内存根因</a><p>执行账本 S1–S3</p></li>
+<li id="ref-S19"><span class="sid">S19</span><a href="https://github.com/versatile-ai/automodelwire/blob/feature%2Fdeepseek-v41-flash-with-torchtitan/models/DeepSeek-V4.1-Flash/variants/27-hsdp-reduced-expert-rl/reports/20261110-hsdp-memory-report.html">HSDP 4K/8K/16K/32K 显存构成与上下文边界</a><p>显存报告 §1–§6</p></li>
+<li id="ref-S20"><span class="sid">S20</span><a href="https://github.com/versatile-ai/automodelwire/blob/main/models/DeepSeek-V4.1-Flash/variants/27-hsdp-reduced-expert-rl/reports/20261111-weight-consistency-report.md">Attention Sink 与路由偏置等七类权重同步审计</a><p>同步审计 §0–§7</p></li>
+<li id="ref-S21"><span class="sid">S21</span>Engram 导出尾部清零的双向定罪与修复前归因（本地分支证据）<p>本地路径 .worktree/feature/deepseek-v41-flash-with-torchtitan/ 下同路径；远端分支快照尚未包含该文件</p></li>
+<li id="ref-S22"><span class="sid">S22</span>Engram 短写修复、分层概率分歧与温度观测口径（本地分支证据，commit 7d72188d）<p>本地路径 .worktree/feature/deepseek-v41-flash-with-torchtitan/ 下同路径；S21–S23 对应的本地报告尚未出现在远端分支快照</p></li>
+<li id="ref-S23"><span class="sid">S23</span>固定输入双引擎判别：冻结权重、token 与温度的实验设计（本地分支证据，commit c48efe0e）<p>本地路径 .worktree/feature/deepseek-v41-flash-with-torchtitan/ 下同路径；S21–S23 对应的本地报告尚未出现在远端分支快照</p></li>
+</ol><details><summary>术语与阅读约定</summary><ul class="compact"><li><b>torchtitan-npu：</b>PyTorch torchtitan 的昇腾扩展，包含 DeepSeek-V4.1 模型实现和 NPU 后端适配；不是只指上游 GPU 版 torchtitan。</li><li><b>EP / CP / HSDP：</b>分别为专家并行、上下文并行、混合分片数据并行。本报告 HSDP 实例含数据并行 replicate=2。</li><li><b>Engram：</b>模型中的宿主侧稀疏记忆表及其配套参数；主权重、Engram 行级增量和量化 scale 是不同同步通道。</li><li><b>GRPO / DAPO：</b>强化学习算法配置。二者结果、长度分布和一致性趋势不直接互相替代。</li><li><b>变体编号：</b>正文尽量用“日期 + 技术形态”描述；证据路径中的 15/17/21/23/25/27 是仓库工作区编号，不是内部暗号或效果评分。</li></ul></details></section>
+</main><div class="foot">报告生成于 2026-11-18 · 自包含 HTML，无外部 CSS/JS/图片依赖 · 图 1 的三类角色色在深色报告表面通过全对色觉与对比度校验 · 配套汇报稿：<a href="20261118-dsv41-leadership-deck/slide-1-overview.svg">第 1 页</a> · <a href="20261118-dsv41-leadership-deck/slide-2-details.svg">第 2 页</a> · <a href="../index.html#torchtitan-npu-dsv41">返回报告目录</a></div>
+</div></body></html>
