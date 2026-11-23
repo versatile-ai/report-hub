@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CP 原理:权重 vs 数据、平时 vs 算时 — 图 + 短句</title>
+<style>
+  :root{--ink:#1d2733;--ink2:#4a5768;--line:#d8dee8;--bg:#fff;--soft:#f4f6fa;--accent:#2f5d9e;
+    --w:#b04a4a;--d:#1f6b3a;--c:#2f5d9e;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:15px;line-height:1.7}
+  .page{max-width:980px;margin:0 auto;padding:36px 26px 56px}
+  header{border-bottom:3px solid var(--accent);padding-bottom:14px;margin-bottom:10px}
+  .kicker{color:var(--accent);font-weight:600;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase}
+  h1{font-size:22px;line-height:1.45;margin:8px 0 4px}
+  .meta{color:var(--ink2);font-size:13px}
+  h2{font-size:18px;margin:32px 0 4px}
+  .q{color:var(--accent);font-weight:700;font-size:16px;margin:14px 0 4px}
+  .a{color:var(--ink);margin:2px 0 8px}
+  .a b{color:var(--accent)}
+  .fig{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px 10px 4px;margin:12px 0}
+  .fig figcaption{font-size:13px;color:var(--ink2);padding:6px 12px 8px}
+  .take{border-left:4px solid var(--accent);background:#eaf0f8;padding:12px 18px;border-radius:0 8px 8px 0;margin:18px 0}
+  .take b{color:var(--accent)}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+  footer{border-top:1px solid var(--line);margin-top:30px;padding-top:12px;color:var(--ink2);font-size:13px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">CP 原理 · 图 + 短句</div>
+  <h1>权重存多少?图像存多少?Token 存多少?</h1>
+  <div class="meta">核心:分清"平时存"和"算的时候",再分清"权重"和"数据" —— 矛盾就消失了</div>
+</header>
+
+<!-- ================= 图 1: 权重时间轴 ================= -->
+<h2>问题 1:视觉塔权重,每卡到底存多少?</h2>
+<p class="q">答:平时只存 1/16 碎片;算某一层时临时拼成完整权重来算,算完释放回碎片。</p>
+<p class="a">所以"存碎片"和"能算整图"都对 —— <b>碎片是常态存储,完整是计算瞬间</b>。看下面这条时间轴:</p>
+
+<div class="fig">
+<svg viewBox="0 0 960 340" width="100%" role="img" aria-label="权重生命周期时间轴">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .c{fill:#fff;stroke:#b04a4a;stroke-width:1.6}
+    .sh{fill:#f3d9d9;stroke:#b04a4a;stroke-width:1.2}
+    .full{fill:#dfe9f5;stroke:#2f5d9e;stroke-width:1.6}
+    .ar{stroke:#4a5768;stroke-width:1.8;fill:none;marker-end:url(#a1)}
+    .tag{font:600 11px -apple-system,'PingFang SC',sans-serif;fill:#fff}
+  </style>
+  <defs><marker id="a1" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4a5768"/></marker></defs>
+
+  <!-- 阶段 1: 平时 -->
+  <rect x="30" y="30" width="270" height="250" rx="10" fill="#fff" stroke="#c9d2e0"/>
+  <rect x="30" y="30" width="270" height="30" rx="10" fill="#6b7a8d"/>
+  <rect x="30" y="46" width="270" height="14" fill="#6b7a8d"/>
+  <text class="tag" x="46" y="50">平时(稳态)</text>
+  <!-- 一张卡,里面只有一小块权重 -->
+  <rect class="c" x="70" y="80" width="150" height="120" rx="8"/>
+  <text class="n" x="80" y="98">这张卡</text>
+  <rect class="sh" x="86" y="106" width="60" height="40" rx="4"/>
+  <text class="n" x="86" y="130" font-size="10">1/16</text>
+  <text class="n" x="86" y="164" fill="#b04a4a">只有一小块权重</text>
+  <text class="h" x="70" y="226">只存 1/16 碎片</text>
+  <text class="n" x="70" y="246">其余 15 份在别的卡上</text>
+  <text class="n" x="70" y="264">(合起来才是完整权重)</text>
+
+  <line class="ar" x1="304" y1="150" x2="340" y2="150"/>
+  <text class="n" x="308" y="140">算这层</text>
+
+  <!-- 阶段 2: 算时 -->
+  <rect x="344" y="30" width="270" height="250" rx="10" fill="#fff" stroke="#b04a4a" stroke-width="2"/>
+  <rect x="344" y="30" width="270" height="30" rx="10" fill="#b04a4a"/>
+  <rect x="344" y="46" width="270" height="14" fill="#b04a4a"/>
+  <text class="tag" x="360" y="50">算这一层时(前向)</text>
+  <!-- 16 个小碎片飞来拼成一大块 -->
+  <g>
+    <rect class="sh" x="360" y="80" width="22" height="16"/><rect class="sh" x="384" y="80" width="22" height="16"/><rect class="sh" x="408" y="80" width="22" height="16"/><rect class="sh" x="432" y="80" width="22" height="16"/>
+    <rect class="sh" x="360" y="98" width="22" height="16"/><rect class="sh" x="384" y="98" width="22" height="16"/><rect class="sh" x="408" y="98" width="22" height="16"/><rect class="sh" x="432" y="98" width="22" height="16"/>
+  </g>
+  <text class="n" x="360" y="130" font-size="10">从 16 卡各取一份(all-gather)</text>
+  <line class="ar" x1="460" y1="120" x2="460" y2="150"/>
+  <rect class="full" x="380" y="154" width="160" height="60" rx="6"/>
+  <text class="h" x="392" y="180" fill="#2f5d9e">完整权重</text>
+  <text class="n" x="392" y="198">(临时拼成)</text>
+  <text class="h" x="380" y="240">本卡暂时拿到全量</text>
+  <text class="n" x="380" y="260">用它算这一层的前向</text>
+
+  <line class="ar" x1="618" y1="150" x2="654" y2="150"/>
+  <text class="n" x="622" y="140">算完</text>
+
+  <!-- 阶段 3: 释放 -->
+  <rect x="658" y="30" width="270" height="250" rx="10" fill="#fff" stroke="#c9d2e0"/>
+  <rect x="658" y="30" width="270" height="30" rx="10" fill="#6b7a8d"/>
+  <rect x="658" y="46" width="270" height="14" fill="#6b7a8d"/>
+  <text class="tag" x="674" y="50">算完这层后</text>
+  <rect class="c" x="698" y="80" width="150" height="120" rx="8"/>
+  <text class="n" x="708" y="98">这张卡</text>
+  <rect class="sh" x="714" y="106" width="60" height="40" rx="4"/>
+  <text class="n" x="714" y="130" font-size="10">1/16</text>
+  <text class="n" x="714" y="164" fill="#b04a4a">又回到一小块</text>
+  <text class="h" x="698" y="226">释放,回到 1/16</text>
+  <text class="n" x="698" y="246">完整权重不留在显存</text>
+  <text class="n" x="698" y="264">下一层再重新拼</text>
+
+  <!-- 底部结论 -->
+  <text class="h" x="30" y="316" fill="#2f5d9e">40 层就重复 40 次"拼全 → 算 → 释放"。这套机制叫 FSDP(数据并行分片),和 CP 无关。</text>
+</svg>
+<figcaption><b>图 1 · 权重的一生。</b>完整权重只在"算那一层的一瞬间"存在。省显存省在"平时不常驻全量"。</figcaption>
+</div>
+
+<p class="a"><b>那"丢失的细节"是什么?</b>没有丢。权重一个参数都不少,只是<b>分散</b>在 16 张卡上,算的时候再聚回来。像一本书撕成 16 份分给 16 个人,谁要读某一章,大家把那一章的碎片先凑齐给他,读完再还回去 —— <b>书一直是完整的,只是不一直摊在同一个人桌上。</b></p>
+
+<!-- ================= 图 2: 图像复制 vs token 切分 ================= -->
+<h2>问题 2:"整图算" —— 图像数据是每卡一份,还是切开了?</h2>
+<p class="q">答:每卡都存一整份图像。图像数据被复制,不是被切分。</p>
+<p class="a">"整图算"说的是<b>图数据完整</b>,不是权重完整。视觉塔没有"文本 token 序列"这条轴可切,它的输入是一整张图的像素块,所以每卡都拿同一张完整的图各算各的塔。对照看:</p>
+
+<div class="fig">
+<svg viewBox="0 0 960 300" width="100%" role="img" aria-label="图像复制 vs token 切分对照">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .im{fill:#f6c99a;stroke:#c98a3d}
+    .tx{fill:#dfe7f2;stroke:#9db2cf}
+    .ghost{fill:#ececec;stroke:#c8c8c8}
+    .ca{fill:#fff;stroke:#9db2cf;stroke-width:1.4}
+  </style>
+
+  <!-- 左:图像复制 -->
+  <text class="h" x="40" y="28" fill="#1f6b3a">图像数据(视觉塔的输入)—— 复制</text>
+  <!-- 卡 A -->
+  <rect class="ca" x="40" y="46" width="180" height="90" rx="8"/>
+  <text class="n" x="52" y="66">卡 A</text>
+  <rect class="im" x="56" y="76" width="148" height="48" rx="5"/>
+  <text class="n" x="130" y="104" text-anchor="middle">完整一张图</text>
+  <!-- 卡 B -->
+  <rect class="ca" x="40" y="150" width="180" height="90" rx="8"/>
+  <text class="n" x="52" y="170">卡 B</text>
+  <rect class="im" x="56" y="180" width="148" height="48" rx="5"/>
+  <text class="n" x="130" y="208" text-anchor="middle">同一张完整图</text>
+  <text class="n" x="40" y="266">两卡各算一遍塔 → 各得完整特征库</text>
+  <text class="n" x="40" y="284">(冗余算力,塔小可忽略)</text>
+
+  <!-- 右:token 切分 -->
+  <text class="h" x="500" y="28" fill="#2f5d9e">文本 token 序列(解码器输入)—— 切分</text>
+  <rect class="ca" x="500" y="46" width="180" height="90" rx="8"/>
+  <text class="n" x="512" y="66">卡 A</text>
+  <rect class="tx" x="514" y="76" width="74" height="48"/>
+  <rect class="ghost" x="588" y="76" width="74" height="48"/>
+  <text class="n" x="551" y="104" text-anchor="middle">前半</text>
+  <text class="n" x="625" y="104" text-anchor="middle" fill="#9aa">后半→</text>
+  <rect class="ca" x="500" y="150" width="180" height="90" rx="8"/>
+  <text class="n" x="512" y="170">卡 B</text>
+  <rect class="ghost" x="514" y="180" width="74" height="48"/>
+  <rect class="tx" x="588" y="180" width="74" height="48"/>
+  <text class="n" x="551" y="208" text-anchor="middle" fill="#9aa">前半→</text>
+  <text class="n" x="625" y="208" text-anchor="middle">后半</text>
+  <text class="n" x="500" y="266">两卡各拿一半、互补不重复</text>
+  <text class="n" x="500" y="284">(图像占位 token 也一起被切)</text>
+
+  <!-- 中间分隔 -->
+  <line x1="470" y1="20" x2="470" y2="290" stroke="#d8dee8" stroke-width="1.5" stroke-dasharray="5 5"/>
+</svg>
+<figcaption><b>图 2 · 一个复制、一个切分。</b>左:图像数据两卡各一份完整(橙)。右:token 序列被劈成两半、两卡互补(深蓝是各自持有的部分,灰色是在对家的部分)。</figcaption>
+</div>
+
+<!-- ================= 图 3: 三者分工 ================= -->
+<h2>问题 3:那 CP 到底在干什么?和 FSDP 什么关系?</h2>
+<p class="a">两套并行机制各管一摊、互不干扰:</p>
+
+<div class="fig">
+<svg viewBox="0 0 960 300" width="100%" role="img" aria-label="三者分工图">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .b1{fill:#fdeeee;stroke:#b04a4a;stroke-width:1.4}
+    .b2{fill:#eef7f0;stroke:#1f6b3a;stroke-width:1.4}
+    .b3{fill:#eaf0f8;stroke:#2f5d9e;stroke-width:1.4}
+    .tag{font:600 11px -apple-system,'PingFang SC',sans-serif;fill:#fff}
+  </style>
+
+  <!-- 权重 -->
+  <rect class="b1" x="40" y="24" width="280" height="250" rx="10"/>
+  <rect x="40" y="24" width="280" height="34" rx="10" fill="#b04a4a"/>
+  <rect x="40" y="44" width="280" height="14" fill="#b04a4a"/>
+  <text class="tag" x="56" y="46">FSDP 管(数据并行)</text>
+  <text class="h" x="56" y="86" fill="#b04a4a">模型权重</text>
+  <text class="n" x="56" y="106">(视觉塔 + 解码器)</text>
+  <text class="n" x="56" y="140">平时存 1/16 碎片</text>
+  <text class="n" x="56" y="160">算某层时临时拼全</text>
+  <text class="n" x="56" y="180">算完释放回碎片</text>
+  <text class="h" x="56" y="216" fill="#b04a4a">省的是"平时</text>
+  <text class="h" x="56" y="236" fill="#b04a4a">不常驻全量"</text>
+  <text class="n" x="56" y="262">与 CP 无关</text>
+
+  <!-- 图像 -->
+  <rect class="b2" x="340" y="24" width="280" height="250" rx="10"/>
+  <rect x="340" y="24" width="280" height="34" rx="10" fill="#1f6b3a"/>
+  <rect x="340" y="44" width="280" height="14" fill="#1f6b3a"/>
+  <text class="tag" x="356" y="46">没人切它(整份复制)</text>
+  <text class="h" x="356" y="86" fill="#1f6b3a">图像数据</text>
+  <text class="n" x="356" y="106">(视觉塔的输入)</text>
+  <text class="n" x="356" y="140">每卡一整份</text>
+  <text class="n" x="356" y="160">视觉塔没有 token 序列轴</text>
+  <text class="n" x="356" y="180">不可切,只能复制</text>
+  <text class="h" x="356" y="216" fill="#1f6b3a">两卡各算一遍塔</text>
+  <text class="h" x="356" y="236" fill="#1f6b3a">冗余但无冲突</text>
+  <text class="n" x="356" y="262">塔里也没有 CP</text>
+
+  <!-- token -->
+  <rect class="b3" x="640" y="24" width="280" height="250" rx="10"/>
+  <rect x="640" y="24" width="280" height="34" rx="10" fill="#2f5d9e"/>
+  <rect x="640" y="44" width="280" height="14" fill="#2f5d9e"/>
+  <text class="tag" x="656" y="46">CP 管(上下文并行)</text>
+  <text class="h" x="656" y="86" fill="#2f5d9e">文本 token 序列</text>
+  <text class="n" x="656" y="106">(解码器输入 + 激活)</text>
+  <text class="n" x="656" y="140">每卡只留一半</text>
+  <text class="n" x="656" y="160">激活减半 = CP 的收益</text>
+  <text class="n" x="656" y="180">每层拼 KV = CP 的代价</text>
+  <text class="h" x="656" y="216" fill="#2f5d9e">这是本方案的主角</text>
+  <text class="n" x="656" y="262">序列维的切分</text>
+</svg>
+<figcaption><b>图 3 · 三者分工。</b>权重(FSDP)省存储、图像(复制)没人切、文本 token(CP)省激活。"权重存碎片"和"整图算"说的从来不是同一件事 —— 前者是权重的存储方式,后者是图像数据的完整性。</figcaption>
+</div>
+
+<!-- ================= 图 4: 半行 Q × 整行 KV ================= -->
+<h2>顺带:文本层被切成两半后,注意力怎么还能算对?</h2>
+<p class="a">这是 CP 唯一要付出代价的地方。每半行的查询(Q)需要看到"过去的所有 token",但过去那一半在对家卡上。解法:<b>每层把两卡的 KV 临时拼成整行</b>,算完就丢。</p>
+
+<div class="fig">
+<svg viewBox="0 0 960 320" width="100%" role="img" aria-label="半行 Q 乘整行 KV">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tx{fill:#dfe7f2;stroke:#9db2cf}
+    .txB{fill:#bcd0e8;stroke:#7fa3cc}
+    .ghost{fill:#ececec;stroke:#c8c8c8}
+    .cm{stroke:#b04a4a;stroke-width:2;fill:none;marker-end:url(#a4);stroke-dasharray:5 4}
+  </style>
+  <defs><marker id="a4" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b04a4a"/></marker></defs>
+
+  <!-- 左:Q 半行 × KV 整行 -->
+  <text class="h" x="40" y="28">卡 A 的注意力</text>
+  <text class="n" x="40" y="56">查询 Q:只有前半</text>
+  <rect class="tx" x="40" y="64" width="150" height="26"/>
+  <rect class="ghost" x="190" y="64" width="150" height="26"/>
+  <text class="n" x="115" y="81" text-anchor="middle">Q(前半)</text>
+
+  <text class="n" x="40" y="126">要看的"过去":整行都得在</text>
+  <rect class="tx" x="40" y="134" width="150" height="26"/>
+  <rect class="txB" x="190" y="134" width="150" height="26"/>
+  <text class="n" x="115" y="151" text-anchor="middle">KV 前半(本卡)</text>
+  <text class="n" x="265" y="151" text-anchor="middle">KV 后半(从卡 B 拼来)</text>
+
+  <!-- 拼 KV 通信箭头 -->
+  <line class="cm" x1="360" y1="147" x2="440" y2="147"/>
+  <text class="n" x="360" y="138" fill="#b04a4a">每层从对家拼来</text>
+
+  <text class="n" x="40" y="196">不拼的话,前半最后一个 token 就看不到它前面的任何内容 —— 因果就断了。</text>
+
+  <!-- 右:隐状态始终半行 -->
+  <text class="h" x="520" y="28">隐状态:始终半行(显存减半的来源)</text>
+  <rect class="tx" x="520" y="44" width="150" height="18"/>
+  <rect class="ghost" x="670" y="44" width="150" height="18"/>
+  <text class="n" x="836" y="58">第 1 层</text>
+  <rect class="tx" x="520" y="74" width="150" height="18"/>
+  <rect class="ghost" x="670" y="74" width="150" height="18"/>
+  <text class="n" x="836" y="88">第 20 层</text>
+  <rect class="tx" x="520" y="104" width="150" height="18"/>
+  <rect class="ghost" x="670" y="104" width="150" height="18"/>
+  <text class="n" x="836" y="118">第 40 层</text>
+  <text class="n" x="520" y="150">层与层之间不来回拼整行,</text>
+  <text class="n" x="520" y="168">只有 KV 临时拼 —— 所以激活真的减半。</text>
+
+  <!-- 底部因果三角 -->
+  <rect x="520" y="196" width="200" height="100" rx="8" fill="#fff" stroke="#c9d2e0"/>
+  <text class="n" x="620" y="216" text-anchor="middle">因果:每行只看得到过去</text>
+  <path d="M540 282 L540 226 L700 282 Z" fill="#dfe7f2" stroke="#9db2cf"/>
+  <path d="M540 282 L700 282 L700 226" fill="none" stroke="#b04a4a" stroke-width="1.6" stroke-dasharray="4 3"/>
+  <text class="n" x="620" y="272" text-anchor="middle">整行 KV 保证"过去"完整</text>
+</svg>
+<figcaption><b>图 4 · 半行 Q × 整行 KV。</b>Q 只算本卡那半行,但 KV 必须拼成整行才能保住"过去";隐状态(蓝)始终只有半行,这就是显存减半的来源。</figcaption>
+</div>
+
+<div class="take">
+  <b>整页总结:</b>权重平时撕碎存、算时拼回(FSDP);图像每卡整份复制(没人切);文本 token 切成两半、隐状态减半(CP 的收益),每层把 KV 拼回整行(CP 的代价)。"权重碎片"和"整图算"说的从来不是同一件事。
+</div>
+
+<footer>
+  <p>本页为"图 + 短句"的原理说明,聚焦最易混淆的"权重 vs 数据、平时 vs 算时"两组区分。机制表述可在 torchtitan-npu(FSDP 分片 / CP 切分)与 FSDPTurbo 源码定位。</p>
+  <p>配套:设计文档 docs/20261121-ttnpu-vision-cp-design.md · 三方案对比 reports/20261123-cp-schemes-comparison.html</p>
+</footer>
+
+</div>
+</body>
+</html>

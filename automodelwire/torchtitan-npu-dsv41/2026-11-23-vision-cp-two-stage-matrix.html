@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>两阶段 × 三方案:CP 如何作用于视觉层与文本层 — 参数/输入/激活/通信全图</title>
+<style>
+  :root{
+    --ink:#1d2733; --ink2:#4a5768; --line:#d8dee8; --bg:#fff; --soft:#f4f6fa;
+    --accent:#2f5d9e; --accent-bg:#eaf0f8;
+    --ours:#2f5d9e; --bsnd:#1f6b3a; --tnd:#8a5a00; --red:#b04a4a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16px;line-height:1.75}
+  .page{max-width:1180px;margin:0 auto;padding:44px 28px 70px}
+  header{border-bottom:3px solid var(--accent);padding-bottom:18px;margin-bottom:26px}
+  .kicker{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+  h1{font-size:24px;line-height:1.4;margin:8px 0 6px}
+  .meta{color:var(--ink2);font-size:14px}
+  h2{font-size:20px;margin:40px 0 10px}
+  p{margin:10px 0}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13.5px}
+  th{background:var(--soft);text-align:left;font-weight:600}
+  th,td{border:1px solid var(--line);padding:8px 10px;vertical-align:top}
+  tr:nth-child(even) td{background:#fafbfd}
+  .fig{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px 10px 4px;margin:22px 0}
+  .fig figcaption{font-size:13.5px;color:var(--ink2);padding:8px 12px 10px}
+  .key{background:var(--accent-bg);border:1px solid #c6d5ec;border-left:4px solid var(--accent);
+    border-radius:8px;padding:18px 24px;margin:20px 0}
+  .key h2{margin:0 0 10px;font-size:17px}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+  .ours-h{color:var(--ours);font-weight:700}
+  .bsnd-h{color:var(--bsnd);font-weight:700}
+  .tnd-h{color:var(--tnd);font-weight:700}
+  footer{border-top:1px solid var(--line);margin-top:44px;padding-top:16px;color:var(--ink2);font-size:13.5px}
+  @media print{.fig{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">训练引擎适配 · 两阶段全图</div>
+  <h1>CP 并行策略到底作用在哪:<br>阶段① 图片 → token(视觉层) 与 阶段② token → logits(文本层)</h1>
+  <div class="meta">2026-11-23 · 每格四件事:模型参数分布 / 输入分布 / 激活分布 / 卡间通信 · 三家对比:<span class="ours-h">本方案(doc-chunk)</span> <span class="bsnd-h">FSDPTurbo BSND</span> <span class="tnd-h">FSDPTurbo TND</span></div>
+</header>
+
+<div class="key">
+  <h2>读图前的三个总纲(图都在证这三句)</h2>
+  <p><b>1. 参数分布与 CP 无关。</b>三家完全相同:视觉塔与文本解码器的参数都按数据并行(FSDP)分片,每卡只存 1/N 碎片,某层前向时临时 all-gather 拼全、算完即弃。CP 开不开、开多大,每卡权重占比不变 —— 所以下矩阵里"参数"一行三家同文,不是疏漏,是结论。</p>
+  <p><b>2. 阶段①(视觉塔)CP 不进入塔内。</b>塔的输入是图像 patch,没有 token 序列轴可切:三家的塔都整图前向、每卡一份(冗余计算),塔内激活与塔间通信为零。CP 对图像的唯一作用点在<b>塔之后的"特征注入"</b> —— 而注入发生在词嵌入流上,时序上属于两阶段的交界。</p>
+  <p><b>3. 阶段②(文本层)才是 CP 的主场。</b>token 半行(或文档段)流经 40 层;为让每段查询看到足够的过去,KV 在每层边界做整行拼装(本方案/BSND)或按窗口窄交换(TND);n-gram 记忆的前驱在边界处有三种拿法。激活减半 = CP 的全部收益,通信 = CP 的全部代价,都在这一阶段。</p>
+</div>
+
+<!-- ================= 矩阵主图 ================= -->
+<div class="fig">
+<svg viewBox="0 0 1140 1240" width="100%" role="img" aria-label="两阶段三方案矩阵">
+  <style>
+    .lab{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tiny{font:11px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tt{font:600 11px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .cell{fill:#fff;stroke:#c9d2e0;stroke-width:1.3}
+    .p{fill:#f3d9d9;stroke:#b04a4a;stroke-width:1.2}
+    .g{fill:#d9ecdf;stroke:#1f6b3a;stroke-width:1.2}
+    .b{fill:#dfe9f5;stroke:#2f5d9e;stroke-width:1.2}
+    .a{fill:#fdf6ec;stroke:#c98a3d;stroke-width:1.2}
+    .x{fill:#f6f2fb;stroke:#7a4fb0;stroke-width:1.2}
+    .comm{stroke:#b04a4a;stroke-width:2.4;fill:none;marker-end:url(#ahc)}
+    .comm2{stroke:#b04a4a;stroke-width:2.4;fill:none;marker-end:url(#ahc);stroke-dasharray:5 4}
+    .flow{stroke:#4a5768;stroke-width:1.5;fill:none;marker-end:url(#ahf)}
+    .tx{fill:#dfe7f2;stroke:#9db2cf;stroke-width:1}
+    .im{fill:#f6c99a;stroke:#c98a3d;stroke-width:1}
+  </style>
+  <defs>
+    <marker id="ahc" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b04a4a"/></marker>
+    <marker id="ahf" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4a5768"/></marker>
+  </defs>
+
+  <text class="lab" x="24" y="26">矩阵:行 = 两个阶段,列 = 三套方案;每格自上而下 = 参数 → 输入 → 激活 → 通信</text>
+
+  <!-- 列头 -->
+  <rect x="150" y="42" width="312" height="34" rx="6" fill="#2f5d9e"/>
+  <text x="306" y="64" text-anchor="middle" fill="#fff" font-size="13" font-weight="600">本方案 · doc-chunk 置换(torchtitan-npu)</text>
+  <rect x="474" y="42" width="312" height="34" rx="6" fill="#1f6b3a"/>
+  <text x="630" y="64" text-anchor="middle" fill="#fff" font-size="13" font-weight="600">FSDPTurbo · BSND 连续等分</text>
+  <rect x="798" y="42" width="312" height="34" rx="6" fill="#8a5a00"/>
+  <text x="954" y="64" text-anchor="middle" fill="#fff" font-size="13" font-weight="600">FSDPTurbo · TND 文档可变切分</text>
+
+  <!-- ================= 阶段 ① ================= -->
+  <text class="lab" x="24" y="106">阶段 ①</text>
+  <text class="sub" x="24" y="126">图片 → token</text>
+  <text class="sub" x="24" y="144">(视觉层)</text>
+  <text class="tiny" x="24" y="168">ViT 32 层 + 对齐层</text>
+  <text class="tiny" x="24" y="184">+ 特征注入</text>
+
+  <!-- ---- 阶段① 本方案 ---- -->
+  <rect class="cell" x="150" y="88" width="312" height="400" rx="8"/>
+  <rect class="p" x="162" y="98" width="288" height="52" rx="5"/>
+  <text class="tt" x="174" y="118" fill="#b04a4a">参数:FSDP 碎片 1/N(用时拼全)</text>
+  <text class="tiny" x="174" y="136">塔 0.8B + 对齐层,沿数据并行切,与 CP 无关</text>
+
+  <rect class="g" x="162" y="158" width="288" height="58" rx="5"/>
+  <text class="tt" x="174" y="178" fill="#1f6b3a">输入:图像 patch + 网格 —— 整份复制</text>
+  <text class="tiny" x="174" y="196">CP 对两卡各持同一张图(无序列轴,不可切)</text>
+
+  <rect class="b" x="162" y="224" width="288" height="86" rx="5"/>
+  <text class="tt" x="174" y="244" fill="#2f5d9e">塔内激活:整图 patch 序列,不切</text>
+  <text class="tiny" x="174" y="262">每卡独立跑完整塔 → 特征库完整复制</text>
+  <text class="tiny" x="174" y="280">(冗余前向 ×1,塔小,可忽略)</text>
+  <text class="tiny" x="174" y="298">CP 在塔内不起任何作用</text>
+
+  <rect class="a" x="162" y="318" width="288" height="96" rx="5"/>
+  <text class="tt" x="174" y="338" fill="#8a5a00">交界 · 特征注入:切分后、本卡半行</text>
+  <text class="tiny" x="174" y="356">token 已按 doc-chunk 切成半行;</text>
+  <text class="tiny" x="174" y="374">簿记表(类型/特征位置)随行同置换</text>
+  <text class="tiny" x="174" y="392">nonzero 集合匹配写回,与行序无关</text>
+
+  <rect class="x" x="162" y="422" width="288" height="56" rx="5"/>
+  <text class="tt" x="174" y="442" fill="#7a4fb0">通信:零(塔内无;注入是本卡操作)</text>
+  <text class="tiny" x="174" y="460">空图卡:特征库求和 ×0,梯度保持连通</text>
+
+  <!-- ---- 阶段① BSND ---- -->
+  <rect class="cell" x="474" y="88" width="312" height="400" rx="8"/>
+  <rect class="p" x="486" y="98" width="288" height="52" rx="5"/>
+  <text class="tt" x="498" y="118" fill="#b04a4a">参数:FSDP 碎片 1/N(用时拼全)</text>
+  <text class="tiny" x="498" y="136">同上:塔与对齐层走数据并行分片</text>
+
+  <rect class="g" x="486" y="158" width="288" height="58" rx="5"/>
+  <text class="tt" x="498" y="178" fill="#1f6b3a">输入:完整 token 序列 + 整图,每卡</text>
+  <text class="tiny" x="498" y="196">不预切:trainer 不按 CP 切图文批次</text>
+
+  <rect class="b" x="486" y="224" width="288" height="86" rx="5"/>
+  <text class="tt" x="498" y="244" fill="#2f5d9e">塔内激活:整图 patch 序列,不切</text>
+  <text class="tiny" x="498" y="262">每卡完整跑塔 → 特征库完整复制</text>
+  <text class="tiny" x="498" y="280">无图卡 dummy 前向(保归约集合齐整)</text>
+  <text class="tiny" x="498" y="298">CP 在塔内不起任何作用</text>
+
+  <rect class="a" x="486" y="318" width="288" height="96" rx="5"/>
+  <text class="tt" x="498" y="338" fill="#8a5a00">交界 · 特征注入:切分前、整行融合</text>
+  <text class="tiny" x="498" y="356">先在整行 embedding 上完成注入</text>
+  <text class="tiny" x="498" y="374">(= 非 CP 语义,正确性免证明)</text>
+  <text class="tiny" x="498" y="392">随后才切 h 与 3 个 mask(本地切片)</text>
+
+  <rect class="x" x="486" y="422" width="288" height="56" rx="5"/>
+  <text class="tt" x="498" y="442" fill="#7a4fb0">通信:零(切片是本地 narrow)</text>
+  <text class="tiny" x="498" y="460">代价:整行 embedding 峰值在场</text>
+
+  <!-- ---- 阶段① TND ---- -->
+  <rect class="cell" x="798" y="88" width="312" height="400" rx="8"/>
+  <rect class="p" x="810" y="98" width="288" height="52" rx="5"/>
+  <text class="tt" x="822" y="118" fill="#b04a4a">参数:FSDP 碎片 1/N(用时拼全)</text>
+  <text class="tiny" x="822" y="136">同上:塔与对齐层走数据并行分片</text>
+
+  <rect class="g" x="810" y="158" width="288" height="58" rx="5"/>
+  <text class="tt" x="822" y="178" fill="#1f6b3a">输入:token 文档段 + 图像元数据完整</text>
+  <text class="tiny" x="822" y="196">切点由 plan 推出,图像记录各卡都在场</text>
+
+  <rect class="b" x="810" y="224" width="288" height="86" rx="5"/>
+  <text class="tt" x="822" y="244" fill="#2f5d9e">塔内激活:整图 patch 序列,不切</text>
+  <text class="tiny" x="822" y="262">每卡完整跑塔 → 特征库完整复制</text>
+  <text class="tiny" x="822" y="280">空图卡 dummy 前向(防 HCCL 挂起)</text>
+  <text class="tiny" x="822" y="298">CP 在塔内不起任何作用</text>
+
+  <rect class="a" x="810" y="318" width="288" height="96" rx="5"/>
+  <text class="tt" x="822" y="338" fill="#8a5a00">交界 · 特征注入:切分后、本地交集</text>
+  <text class="tiny" x="822" y="356">图像 span 可跨 rank:每卡只写</text>
+  <text class="tiny" x="822" y="374">自己段内的图像行(交集 plan)</text>
+  <text class="tiny" x="822" y="392">行号换算为纯函数,单测钉死</text>
+
+  <rect class="x" x="810" y="422" width="288" height="56" rx="5"/>
+  <text class="tt" x="822" y="442" fill="#7a4fb0">通信:零(交集 plan 本地推导)</text>
+  <text class="tiny" x="822" y="460">delimiter-only 卡:零项保活,梯度恰为零</text>
+
+  <!-- 阶段间箭头 -->
+  <line class="flow" x1="306" y1="488" x2="306" y2="530"/>
+  <line class="flow" x1="630" y1="488" x2="630" y2="530"/>
+  <line class="flow" x1="954" y1="488" x2="954" y2="530"/>
+  <text class="tiny" x="24" y="512" fill="#8a5a00">↓ 注入之后,序列只剩"半行/段隐状态"一种形态,进入文本层</text>
+
+  <!-- ================= 阶段 ② ================= -->
+  <text class="lab" x="24" y="556">阶段 ②</text>
+  <text class="sub" x="24" y="576">token → logits</text>
+  <text class="sub" x="24" y="594">(文本层)</text>
+  <text class="tiny" x="24" y="618">解码器 40 层</text>
+  <text class="tiny" x="24" y="634">+ n-gram 记忆</text>
+  <text class="tiny" x="24" y="650">+ 输出头/损失</text>
+
+  <!-- ---- 阶段② 本方案 ---- -->
+  <rect class="cell" x="150" y="536" width="312" height="560" rx="8"/>
+  <rect class="p" x="162" y="546" width="288" height="66" rx="5"/>
+  <text class="tt" x="174" y="566" fill="#b04a4a">参数:FSDP 1/N(用时拼全)</text>
+  <text class="tiny" x="174" y="584">+ MoE 专家按 EP 整份持有(每卡 4/64)</text>
+  <text class="tiny" x="174" y="602">+ 记忆表随 EP 切 1/N —— 均与 CP 正交</text>
+
+  <rect class="g" x="162" y="620" width="288" height="66" rx="5"/>
+  <text class="tt" x="174" y="640" fill="#1f6b3a">输入 token:每文档第 r 块归第 r 卡</text>
+  <text class="tiny" x="174" y="658">置换 + 均分,本地完成;图像占位同切</text>
+  <text class="tiny" x="174" y="676">位置/标签/类型表/特征位置表 五件随行</text>
+
+  <rect class="b" x="162" y="694" width="288" height="118" rx="5"/>
+  <text class="tt" x="174" y="714" fill="#2f5d9e">激活:半行 × 40 层(CP 的收益所在)</text>
+  <text class="tiny" x="174" y="732">Q = 本卡半行,不移动</text>
+  <text class="tiny" x="174" y="750">K/V = 每层边界临时拼整行(用完即弃)</text>
+  <text class="tiny" x="174" y="768">因果上限 = 自己段尾(reach),不看未来</text>
+  <text class="tiny" x="174" y="786">logits = 半行;损失标量跨卡求和</text>
+
+  <rect class="a" x="162" y="820" width="288" height="80" rx="5"/>
+  <text class="tt" x="174" y="840" fill="#8a5a00">n-gram 记忆:前驱表切分前预构造</text>
+  <text class="tiny" x="174" y="858">置换后前驱仍在本卡内 → 零通信</text>
+  <text class="tiny" x="174" y="876">图像前驱在构造点替换为填充符(新增)</text>
+
+  <rect class="x" x="162" y="908" width="288" height="96" rx="5"/>
+  <text class="tt" x="174" y="928" fill="#7a4fb0">通信:每层 KV 整行 all-gather(主成本)</text>
+  <text class="tiny" x="174" y="946">原始 KV + 压缩 KV + 索引键 三路;</text>
+  <text class="tiny" x="174" y="964">反向自动 reduce-scatter;</text>
+  <text class="tiny" x="174" y="982">输入切分零通信;损失仅标量</text>
+
+  <rect class="b" x="162" y="1012" width="288" height="72" rx="5" opacity=".6"/>
+  <text class="tiny" x="174" y="1032">专家/token 跨卡派发(EP)与记忆表查表</text>
+  <text class="tiny" x="174" y="1050">属另一并行轴,开不开 CP 都存在;</text>
+  <text class="tiny" x="174" y="1068">为聚焦 CP,矩阵中不展开。</text>
+
+  <!-- ---- 阶段② BSND ---- -->
+  <rect class="cell" x="474" y="536" width="312" height="560" rx="8"/>
+  <rect class="p" x="486" y="546" width="288" height="66" rx="5"/>
+  <text class="tt" x="498" y="566" fill="#b04a4a">参数:FSDP 1/N(用时拼全)</text>
+  <text class="tiny" x="498" y="584">+ 共享专家 TP / 路由专家 EP(官方配置)</text>
+  <text class="tiny" x="498" y="602">+ 记忆表随 EP 切 —— 均与 CP 正交</text>
+
+  <rect class="g" x="486" y="620" width="288" height="66" rx="5"/>
+  <text class="tt" x="498" y="640" fill="#1f6b3a">输入 token:补齐后连续等分(无置换)</text>
+  <text class="tiny" x="498" y="658">纯文本在 trainer 直切;图文在融合后切</text>
+  <text class="tiny" x="498" y="676">切点可能穿过图像 span(由先融合兜底)</text>
+
+  <rect class="b" x="486" y="694" width="288" height="118" rx="5"/>
+  <text class="tt" x="498" y="714" fill="#2f5d9e">激活:半行 × 40 层(同本方案)</text>
+  <text class="tiny" x="498" y="732">Q = 本卡半行(局部坐标)</text>
+  <text class="tiny" x="498" y="750">K/V = 每层手工 kv_allgather 拼整行</text>
+  <text class="tiny" x="498" y="768">窗口索引按全局坐标重算,防看到未来</text>
+  <text class="tiny" x="498" y="786">logits = 半行;损失按全局有效数归一</text>
+
+  <rect class="a" x="486" y="820" width="288" height="80" rx="5"/>
+  <text class="tt" x="498" y="840" fill="#8a5a00">n-gram 记忆:整行哈希后取连续切片</text>
+  <text class="tiny" x="498" y="858">完整序列在场 → 零通信;图像位 DEAD</text>
+  <text class="tiny" x="498" y="876">仅连续切分成立(置换布局不可套用)</text>
+
+  <rect class="x" x="486" y="908" width="288" height="96" rx="5"/>
+  <text class="tt" x="498" y="928" fill="#7a4fb0">通信:每层 KV 整行 all-gather(主成本)</text>
+  <text class="tiny" x="498" y="946">与本方案同型,差别只在手工调用;</text>
+  <text class="tiny" x="498" y="964">长序列下另有分块索引/分块头省显存</text>
+  <text class="tiny" x="498" y="982">(流式 top-k、分块 loss,不影响切分语义)</text>
+
+  <rect class="b" x="486" y="1012" width="288" height="72" rx="5" opacity=".6"/>
+  <text class="tiny" x="498" y="1032">图文 dummy 前向保证每卡归约集合一致,</text>
+  <text class="tiny" x="498" y="1050">否则首次反向在集合通信上挂起;</text>
+  <text class="tiny" x="498" y="1068">该坑与本方案"乘零保活"同源。</text>
+
+  <!-- ---- 阶段② TND ---- -->
+  <rect class="cell" x="798" y="536" width="312" height="560" rx="8"/>
+  <rect class="p" x="810" y="546" width="288" height="66" rx="5"/>
+  <text class="tt" x="822" y="566" fill="#b04a4a">参数:FSDP 1/N(用时拼全)</text>
+  <text class="tiny" x="822" y="584">+ 共享专家 TP / 路由专家 EP(官方配置)</text>
+  <text class="tiny" x="822" y="602">+ 记忆表随 EP 切 —— 均与 CP 正交</text>
+
+  <rect class="g" x="810" y="620" width="288" height="66" rx="5"/>
+  <text class="tt" x="822" y="640" fill="#1f6b3a">输入 token:文档边界可变切分(LCM 对齐)</text>
+  <text class="tiny" x="822" y="658">打包流不补齐,文档可跨卡,段长可不等</text>
+  <text class="tiny" x="822" y="676">图像元数据/标签完整在场,本地切片</text>
+
+  <rect class="b" x="810" y="694" width="288" height="118" rx="5"/>
+  <text class="tt" x="822" y="714" fill="#2f5d9e">激活:文档段 × 40 层</text>
+  <text class="tiny" x="822" y="732">Q = 本段(文档局部坐标)</text>
+  <text class="tiny" x="822" y="750">K/V = 按文档组装"本段可读的前缀"</text>
+  <text class="tiny" x="822" y="768">full_prefix 整段 / halo_prefix 窗口尾部行</text>
+  <text class="tiny" x="822" y="786">logits = 本段;损失整流移位+按文档归一</text>
+
+  <rect class="a" x="810" y="820" width="288" height="80" rx="5"/>
+  <text class="tt" x="822" y="840" fill="#8a5a00">n-gram 记忆:与左邻居 halo 交换</text>
+  <text class="tiny" x="822" y="858">仅换 n-gram 长度−1 个 token(通信最小)</text>
+  <text class="tiny" x="822" y="876">卡 0 无左邻用填充符;图像位 DEAD 同义</text>
+
+  <rect class="x" x="810" y="908" width="288" height="96" rx="5"/>
+  <text class="tt" x="822" y="928" fill="#7a4fb0">通信:按文档窄交换(三家中最省)</text>
+  <text class="tiny" x="822" y="946">只传"本段查询仍可达"的行,与整行解耦;</text>
+  <text class="tiny" x="822" y="964">halo_prefix 下约为"窗口 + 本段";</text>
+  <text class="tiny" x="822" y="982">记忆 halo 交换为第二次、独立的小通信</text>
+
+  <rect class="b" x="810" y="1012" width="288" height="72" rx="5" opacity=".6"/>
+  <text class="tiny" x="822" y="1032">与重计算/分块损失互斥(共享运行时状态</text>
+  <text class="tiny" x="822" y="1050">在重放时被覆盖),配置初始化即拒绝 ——</text>
+  <text class="tiny" x="822" y="1068">显存换取手段少,靠窄交换补。</text>
+
+  <!-- 底部图例 -->
+  <rect class="p" x="150" y="1112" width="14" height="14"/><text class="tiny" x="170" y="1124">参数(切分,与 CP 无关)</text>
+  <rect class="g" x="360" y="1112" width="14" height="14"/><text class="tiny" x="380" y="1124">输入(token/图像)</text>
+  <rect class="b" x="520" y="1112" width="14" height="14"/><text class="tiny" x="540" y="1124">激活(序列维)</text>
+  <rect class="a" x="680" y="1112" width="14" height="14"/><text class="tiny" x="700" y="1124">阶段交界 / 记忆</text>
+  <rect class="x" x="840" y="1112" width="14" height="14"/><text class="tiny" x="860" y="1124">通信与保活</text>
+
+  <text class="tiny" x="150" y="1156">读法:同一行横向比三家;同一列纵向看"图片 → token → logits"的完整旅程。红/绿/蓝/橙/紫五色分区在所有格中含义一致。</text>
+  <text class="tiny" x="150" y="1178">关键不变量:任何一格里,参数行三家同文(FSDP 与 CP 无关);塔内三家同文(整图复制);真正分岔的只有"交界注入"与"文本层的 KV/记忆通信"。</text>
+  <text class="tiny" x="150" y="1200">示意按一对卡(CP=2)绘制;16 卡真实部署下"1/N"= 1/16,CP 对内两张卡关系不变。</text>
+</svg>
+<figcaption><b>主图 · 两阶段 × 三方案矩阵。</b>阶段① 视觉塔:三家完全一致(参数 FSDP、图像整份复制、塔内零 CP 作用),差别只在塔后的注入交界;阶段② 文本层:token/激活的切分形态与 KV、记忆通信在此分岔。</figcaption>
+</div>
+
+<h2>矩阵的文字版(便于检索)</h2>
+<table>
+  <tr><th style="width:13%">阶段 / 方面</th><th style="width:29%">本方案(doc-chunk)</th><th style="width:29%">FSDPTurbo BSND</th><th style="width:29%">FSDPTurbo TND</th></tr>
+  <tr>
+    <td rowspan="4"><b>① 视觉层</b><br>图片 → token</td>
+    <td colspan="3" style="background:#fdeeee"><b>参数(三家相同)</b>:塔 + 对齐层按数据并行(FSDP)分片,每卡 1/N;某层前向时临时 all-gather 拼全、算完即弃。CP 不改变任何参数分布。</td>
+  </tr>
+  <tr>
+    <td colspan="3" style="background:#eef7f0"><b>输入与塔内激活(三家相同)</b>:图像 patch 与网格整份复制;塔无 token 序列轴 → 整图前向,塔内激活不切、塔内无 CP 通信;特征库每卡完整一份(冗余前向)。空图/无图卡用零项保活维持归约集合。</td>
+  </tr>
+  <tr>
+    <td><b>注入交界</b>:切分后,本卡半行;簿记表随 token 同置换,集合匹配写回</td>
+    <td><b>注入交界</b>:切分前,整行融合;再切 embedding 与 3 个 mask</td>
+    <td><b>注入交界</b>:切分后,本地交集;图像 span 可跨卡,plan 纯函数换算</td>
+  </tr>
+  <tr>
+    <td>交界通信:零</td>
+    <td>交界通信:零(本地切片),代价是整行 embedding 峰值</td>
+    <td>交界通信:零(plan 本地推导)</td>
+  </tr>
+  <tr>
+    <td rowspan="5"><b>② 文本层</b><br>token → logits</td>
+    <td colspan="3" style="background:#fdeeee"><b>参数(三家相同)</b>:解码器稠密 FSDP 1/N;MoE 专家按 EP 整份持有(本方案每卡 4/64);记忆表随 EP 切。EP/TP 与 CP 正交,不随 CP 变化。</td>
+  </tr>
+  <tr>
+    <td><b>输入 token</b>:每文档第 r 块归第 r 卡(置换+均分);图像占位同切;五件簿记随行</td>
+    <td><b>输入 token</b>:补齐后连续等分;图文在融合后切;切点可穿图像 span</td>
+    <td><b>输入 token</b>:文档边界可变切分(LCM 对齐);文档可跨卡、段长不等</td>
+  </tr>
+  <tr>
+    <td><b>激活</b>:半行 ×40 层;Q 半行不动;KV 每层临时拼整行(reach 限过去);logits 半行</td>
+    <td><b>激活</b>:半行 ×40 层;Q 半行;KV 手工 all-gather 整行(全局窗口索引)</td>
+    <td><b>激活</b>:文档段 ×40 层;KV 按文档组装前缀(full/halo_prefix)</td>
+  </tr>
+  <tr>
+    <td><b>记忆前驱</b>:切分前预构造,零通信;图像前驱构造点屏蔽</td>
+    <td><b>记忆前驱</b>:整行哈希后取连续切片;图像位 DEAD</td>
+    <td><b>记忆前驱</b>:左邻 halo 交换,O(n-gram 长度);卡 0 填充</td>
+  </tr>
+  <tr>
+    <td><b>通信</b>:每层 KV 整行 all-gather(主成本);输入切分零通信;损失标量</td>
+    <td><b>通信</b>:每层 KV 整行 all-gather(同型);dummy 保活防挂起</td>
+    <td><b>通信</b>:按文档窄交换 + 记忆 halo;与整行长度解耦,三家最省</td>
+  </tr>
+</table>
+
+<div class="key">
+  <h2>用一句话回答"CP 在两个阶段如何起作用"</h2>
+  <p><b>阶段①(图片 → token)</b>:CP 只改变"图像特征写进哪半行词嵌入",不改变视觉塔本身 —— 塔的参数照 FSDP 分片、图像照整份复制、塔内激活照整图计算;三家唯一的分歧是注入发生在切分前(BSND)还是切分后(本方案半行 / TND 交集),而这一步都不需要通信。</p>
+  <p><b>阶段②(token → logits)</b>:CP 把每卡的 token 与激活减半(半行或文档段),为此付出每层一次的 KV 交换 —— 本方案与 BSND 付"整行拼装",TND 付"只交换本段仍可达的行";n-gram 记忆在边界处分别用预构造(零通信)/ 整行哈希切片(零通信)/ 左邻 halo(最小通信)补齐前驱。参数始终走数据并行分片,与 CP 无关。</p>
+</div>
+
+<footer>
+  <p>配套:三方案四维对比 reports/20261123-cp-schemes-comparison.html · 实机地图 reports/20261121-vision-cp-cards-map.html · 设计文档 docs/20261121-ttnpu-vision-cp-design.md</p>
+  <p>证据源:torchtitan-npu(@1e1e60be / 上游 master)与 FSDPTurbo origin/main(@0383285)静态取证 + 上游 PR 实测记录;本页为机制推演图,非实测数据</p>
+</footer>
+
+</div>
+</body>
+</html>

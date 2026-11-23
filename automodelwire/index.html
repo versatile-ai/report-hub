@@ -552,6 +552,18 @@ const EXPERIMENTS=[
    {title:"软件栈与适配修改点 — 调研报告",subtitle:"软件栈分层全景 · DeepSeek V4.1 五处修改点 · A3/A5 分档融合栈 · PR #974 OOM 修复机制图解 (query 维分块 + 逐位等价) · 训练引擎选型参考",file:"torchtitan-npu-dsv41/2026-10-15-survey.html",date:"2026-10-15",type:"survey"},
    {title:"DeepSeek V4.1 训练适配对比 — torchtitan-npu × FSDPTurbo",subtitle:"同一模型两条实现路线的全维度对比 · 组件/并行/算子/量化/数据/checkpoint 十维度差异 · 每项差异的训练影响与优缺点 · 8 大训练场景选型 (CPT/1M/SFT/多模态/QAT/LoRA/研究/续训) · 基于 2026-11-23 双仓最新代码",file:"torchtitan-npu-dsv41/2026-11-23-comparison.html",date:"2026-11-23",type:"survey"}
    ]},
+  {id:"dsv41-vision-cp",name:"DeepSeek V4.1 视觉层 × 上下文并行(CP)接入设计",subtitle:"带视觉塔的多模态档如何解禁 CP>1 —— 开源三道显式拒绝与我们补的三处 · 图像不切/序列切半/KV 每层拼回 · 三方案(doc-chunk / FSDPTurbo BSND / TND)四维对比 · Git Review 行级改动清单(设计待实施)",status:"design",startDate:"2026-11-21",lastUpdate:"2026-11-23",
+   tags:["torchtitan-npu","DeepSeek-V4.1","vision","多模态","上下文并行","CP","FSDPTurbo","设计"],
+   metrics:[{label:"改动面",value:"2 文件 3 处 · +39/−8 行",tone:"info"},{label:"阶段",value:"设计(代码未实施)",tone:"warn"},{label:"上游先例",value:"FSDPTurbo 已实机验收",tone:"good"}],
+   reports:[
+   {title:"三方案对比 + 开源缺口背景 + Git Review 改动清单",subtitle:"为什么开源没支持带视觉层×CP>1(配置门/记忆模块 raise/注入语义未定义)与我们补的三处 · 四个决策点 SVG 对比(切分布局/视觉注入/记忆边界/KV 通信) · Git Review 行级彩色 diff(+39/−8,设计待实施)",file:"torchtitan-npu-dsv41/2026-11-23-vision-cp-schemes-comparison.html",date:"2026-11-23",type:"design"},
+   {title:"原理图:图像不切、序列切半、KV 每层拼回来",subtitle:"三幅图看懂两阶段 —— 全景(图像整份不搬/文本劈半/红虚线只在 40 层注意力) · 视觉层(patch 序列为何不切/特征库复制/占位注入零通信) · 文本层(Q 半行×KV 整行+因果三角/隐状态始终半行)",file:"torchtitan-npu-dsv41/2026-11-23-vision-cp-principle-figures.html",date:"2026-11-23",type:"design"},
+   {title:"两阶段×三方案 CP 作用矩阵",subtitle:"阶段①图片→token 与阶段②token→logits,各按参数/输入/激活/通信四项拆解 · 核心不变量:参数三家同文(FSDP 与 CP 无关)、塔内三家同文(整图复制)、真正分岔只有塔后注入与文本层 KV/记忆通信",file:"torchtitan-npu-dsv41/2026-11-23-vision-cp-two-stage-matrix.html",date:"2026-11-23",type:"design"},
+   {title:"权重 vs 数据、平时 vs 算时 — 视觉塔权重到底存多少",subtitle:"按读者疑问拆解'权重存碎片 vs 整图算'的矛盾 —— 权重生命周期时间轴(平时 1/16 碎片→算时拼全→算完释放) · 图像复制 vs token 切分对照 · 三者分工(FSDP 管权重/没人切图像/CP 管 token) · 半行 Q×整行 KV",file:"torchtitan-npu-dsv41/2026-11-23-vision-cp-weight-vs-data.html",date:"2026-11-23",type:"design"},
+   {title:"CP 实机地图:节点→卡→卡内四区",subtitle:"2 节点×8 卡=16 进程 · 三条权重带(FSDP 1/16 稠密/EP 4 专家/记忆表 1/16) · 单卡四区解剖(权重碎片/图像内容常态复制/token 半行与簿记/层内瞬态) · 切分策略四步(对齐→重排→均分→簿记随行)",file:"torchtitan-npu-dsv41/2026-11-21-vision-cp-cards-map.html",date:"2026-11-21",type:"design"},
+   {title:"CP 数据流可视化:权重/token/图像内容各切不切",subtitle:"切分总览(五件套同置换、图像内容整行复制、KV 整行拼装) · 前向六站数据流(视觉塔独立支路、汇合点=词嵌入后注入、通信清单=图像路径零新增) · 显存账本与 FSDP 权重生命周期",file:"torchtitan-npu-dsv41/2026-11-21-vision-cp-dataflow.html",date:"2026-11-21",type:"design"},
+   {title:"视觉栈 CP 接入设计 — 原理版报告(面向无背景读者)",subtitle:"问题(显存墙与框架拒绝) · 社区未支持的意图分析 · 难点原理拆解(doc-chunk 置换/位置语义注入/n-gram 行内前驱) · 方案(解耦判决:图像内容不参与切分) · 验证门 · 风险清单",file:"torchtitan-npu-dsv41/2026-11-21-vision-cp-design-report.html",date:"2026-11-21",type:"design"}
+   ]},
   {id:"glm53-flash-sft",name:"GLM-5.3-Flash 全量 SFT 训练",subtitle:"321B 模型昇腾 64 卡 SFT 20 步跑通 · loss 9.77→0.083 · 0-size alltoallv notify 握手死锁根因定位与修复 (msprof 点名 + 最小实验复现)",status:"active",startDate:"2026-08-31",lastUpdate:"2026-09-08",
    tags:["GLM-5.3-Flash","321B","SFT","MindSpeed-LLM","fla","MoE","alltoallv","Ascend 910B3","8节点"],
    metrics:[{label:"loss",value:"9.77→0.083 (20步)",tone:"good"},{label:"崩溃",value:"0 (20/20步)",tone:"good"},{label:"稳态耗时",value:"89.4 s/step",tone:"info"},{label:"吞吐",value:"366 tok/s",tone:"info"}],

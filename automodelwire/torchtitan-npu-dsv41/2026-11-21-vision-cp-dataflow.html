@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上下文并行在多模态模型里的完整数据流 — 逐张卡、逐层看权重与 Token</title>
+<style>
+  :root{
+    --ink:#1d2733; --ink2:#4a5768; --line:#d8dee8; --bg:#ffffff; --soft:#f4f6fa;
+    --accent:#2f5d9e; --accent-bg:#eaf0f8;
+    --txt:#dfe7f2; --txt-stroke:#9db2cf;
+    --img:#f6c99a; --img-stroke:#c98a3d;
+    --full:#2f5d9e; --shard:#b04a4a; --stream:#1f6b3a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16px;line-height:1.75}
+  .page{max-width:1060px;margin:0 auto;padding:48px 32px 72px}
+  header{border-bottom:3px solid var(--accent);padding-bottom:20px;margin-bottom:32px}
+  .kicker{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+  h1{font-size:26px;line-height:1.35;margin:8px 0 6px}
+  .meta{color:var(--ink2);font-size:14px}
+  h2{font-size:21px;margin:44px 0 12px}
+  h3{font-size:17px;margin:28px 0 8px}
+  p{margin:10px 0}
+  .lead{color:var(--ink2)}
+  .fig{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:18px 14px 8px;margin:24px 0}
+  .fig figcaption{font-size:13.5px;color:var(--ink2);padding:8px 12px 10px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13.5px;color:var(--ink2);
+    padding:4px 12px 10px;flex-wrap:wrap}
+  .legend .sw{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14.5px}
+  th{background:var(--soft);text-align:left;font-weight:600}
+  th,td{border:1px solid var(--line);padding:9px 12px;vertical-align:top}
+  tr:nth-child(even) td{background:#fafbfd}
+  .key{background:var(--accent-bg);border:1px solid #c6d5ec;border-left:4px solid var(--accent);
+    border-radius:8px;padding:16px 22px;margin:22px 0}
+  .key h2{margin:0 0 10px;font-size:17px}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+  footer{border-top:1px solid var(--line);margin-top:48px;padding-top:18px;color:var(--ink2);font-size:13.5px}
+  @media print{.fig{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">训练引擎适配 · 流程可视化</div>
+  <h1>上下文并行(CP=2)在多模态模型里的完整数据流<br>—— 逐张卡、逐层看:权重切了吗?Token 切了吗?</h1>
+  <div class="meta">2026-11-21 · 配套设计文档与原理报告(同目录)· 本页为纯流程拆解,结论先给,图随后逐张展开</div>
+</header>
+
+<div class="key">
+  <h2>先把答案钉死:四个对象、两种命运</h2>
+  <p>整个流程只需要盯住四个对象。上下文并行(CP=2,两卡合算一条序列)对它们的处置完全不同:</p>
+  <table>
+    <tr><th>对象</th><th>在两张卡上</th><th>一句话原因</th></tr>
+    <tr><td><b>文本解码器 40 层的权重</b></td><td style="color:var(--shard)"><b>切分</b>(每卡 1/16,前向临时拼回)</td><td>FSDP 参数分片铺满全部 16 张卡(CP=1 时沿数据分片 16 单轴,CP=2 时沿数据分片 8 × CP 2 双轴,每卡占比不变);前向逐层 all-gather 拼全量、用完即弃。⚠️ 本图以一对卡示意"分片+拼回"的机制,非完整 16 卡比例 —— 完整集群图见 20261121-vision-cp-cards-map.html</td></tr>
+    <tr><td><b>视觉塔权重(0.8B)</b></td><td style="color:var(--shard)"><b>切分</b>(每卡 1/16,前向临时拼回)</td><td>与文本权重同一套 FSDP 机制;塔的计算量小,分片省显存是主要动机</td></tr>
+    <tr><td><b>图像内容(patch 流、塔输出特征库)</b></td><td style="color:var(--full)"><b>完整复制</b>(每卡一份,永不切)</td><td>视觉塔没有 token 序列轴可切;两卡各自跑一遍完整塔,输出同一份特征库——冗余但语义零冲突,冗余算力约 0.8B 前向 ×1,可忽略</td></tr>
+    <tr><td><b>Token 序列(含图像占位 token)</b></td><td style="color:var(--stream)"><b>切分</b>(每卡每篇文档的一半)</td><td>CP 的本职:按"每篇文档第 0/1 块"重排后均分;图像占位对解码器而言就是普通 token,<b>跟文本一起被切,没有豁免</b></td></tr>
+  </table>
+  <p>一句话总纲:<b>权重和 Token 都切,但切的方式与原因不同——权重按"参数维"切给两卡分摊存储(内容上每卡只有一半),Token 按"序列维"切给两卡分摊计算(每卡看到的行数减半);唯独图像内容既不切也不省,原样两份。</b>"视觉层 CP 与文本层 CP 解耦"说的就是这个:图像内容路径与切分机制无关,而不是存在两个可以分别开关的并行度。</p>
+</div>
+
+<!-- ============ 图 A: 切分总览 ============ -->
+<div class="fig">
+<svg viewBox="0 0 1000 560" width="100%" role="img" aria-label="token 切分总览图">
+  <style>
+    .lab{font:600 13.5px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tiny{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .arr{stroke:#2f5d9e;stroke-width:1.7;fill:none;marker-end:url(#ah2)}
+    .ghost{stroke:#b8c2d2;stroke-width:1.3;fill:none;stroke-dasharray:5 4;marker-end:url(#ahg)}
+    .tx{fill:#dfe7f2;stroke:#9db2cf;stroke-width:1}
+    .im{fill:#f6c99a;stroke:#c98a3d;stroke-width:1}
+    .frame{fill:none;stroke:#b04a4a;stroke-width:2}
+    .badge{font:600 11.5px -apple-system,'PingFang SC',sans-serif;fill:#fff}
+  </style>
+  <defs>
+    <marker id="ah2" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f5d9e"/></marker>
+    <marker id="ahg" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b8c2d2"/></marker>
+  </defs>
+
+  <!-- 原始序列 -->
+  <text class="lab" x="30" y="26">整条序列(切分前,两卡都能看到全量)—— 一篇数学题:题面文本 + 一张图 + 推理过程</text>
+  <rect class="tx" x="30"  y="38" width="270" height="34"/>
+  <rect class="im" x="300" y="38" width="150" height="34"/>
+  <rect class="tx" x="450" y="38" width="520" height="34"/>
+  <text class="sub" x="165" y="60" text-anchor="middle">题面文本</text>
+  <text class="sub" x="375" y="60" text-anchor="middle">图像占位 token</text>
+  <text class="sub" x="710" y="60" text-anchor="middle">推理过程(生成目标)</text>
+
+  <!-- 簿记表行 -->
+  <text class="tiny" x="30" y="98">随 token 一起移动的"簿记表"(各 1×S,与序列同形):</text>
+  <rect class="tx" x="30"  y="104" width="270" height="20" opacity=".55"/>
+  <rect class="im" x="300" y="104" width="150" height="20" opacity=".55"/>
+  <rect class="tx" x="450" y="104" width="520" height="20" opacity=".55"/>
+  <text class="tiny" x="30"  y="118" x="30" dy="0" text-anchor="start" transform="translate(6,14)">token 类型表(文本/图像标记)</text>
+  <text class="tiny" x="470" y="146">图像特征位置表(占位 → 特征行号)</text>
+
+  <!-- 切分箭头 -->
+  <line class="arr" x1="500" y1="160" x2="230" y2="216"/>
+  <line class="arr" x1="500" y1="160" x2="770" y2="216"/>
+  <text class="lab" x="500" y="188" text-anchor="middle">第 1 步:统一"重排 + 均分"(按文档分块布局)</text>
+  <text class="sub" x="500" y="206" text-anchor="middle">五件东西 —— token id、标签、位置、token 类型表、图像特征位置表 —— 经<b>同一置换</b>后各拿一半</text>
+
+  <!-- rank 0 -->
+  <text class="lab" x="30" y="248">卡 0 拿到的 token 流(每篇文档的前半)</text>
+  <rect class="tx" x="30"  y="258" width="120" height="34"/>
+  <rect class="im" x="150" y="258" width="80"  height="34"/>
+  <text class="tiny" x="90"  y="279" text-anchor="middle">题面前半</text>
+  <text class="tiny" x="190" y="279" text-anchor="middle">图像占位·前半</text>
+
+  <!-- rank 1 -->
+  <text class="lab" x="30" y="352">卡 1 拿到的 token 流(每篇文档的后半)</text>
+  <rect class="im" x="30"  y="362" width="70"  height="34"/>
+  <rect class="tx" x="100" y="362" width="110" height="34"/>
+  <text class="tiny" x="65"  y="383" text-anchor="middle">占位·后半</text>
+  <text class="tiny" x="155" y="383" text-anchor="middle">题面后半</text>
+
+  <!-- 图像内容(两份) -->
+  <rect x="640" y="240" width="340" height="170" rx="10" fill="#fff" stroke="#1f6b3a" stroke-width="1.6"/>
+  <text class="lab" x="658" y="268">图像内容:两卡各一份,永不切分</text>
+  <rect x="658" y="280" width="304" height="52" rx="6" fill="#fdf6ec" stroke="#c98a3d"/>
+  <text class="tiny" x="670" y="300">图像 patch 张量(整图像素块)</text>
+  <text class="tiny" x="670" y="320">+ 图像网格表(每图宽高)</text>
+  <rect x="658" y="342" width="304" height="52" rx="6" fill="#fdf6ec" stroke="#c98a3d"/>
+  <text class="tiny" x="670" y="362">视觉塔(完整 0.8B 权重经 FSDP 临时拼全)跑整图</text>
+  <text class="tiny" x="670" y="382">→ 特征库 [V × D](全部图像特征)</text>
+  <line class="arr" x1="640" y1="330" x2="236" y2="292"/>
+  <line class="arr" x1="640" y1="352" x2="236" y2="396"/>
+
+  <!-- KV 说明 -->
+  <text class="lab" x="30" y="452">注:注意力需要的 K/V 隐状态怎么办?</text>
+  <text class="sub" x="30" y="474">卡 1 的"题面前半"作为<b>历史上下文</b>,卡 0 算自己那半行的注意力时必须能看到它 ——</text>
+  <text class="sub" x="30" y="494">机制 = 注意力核心边界上声明式 all-gather:每层把两卡的 KV 临时拼成<b>整行</b>,算完即弃(方向:卡0→整行←卡1)。</text>
+  <text class="sub" x="30" y="514">每卡的注意力元数据里记着"我可以看到序列的全长多少"(reach),因果上限锚在自己分片段的末尾,不会看到未来。</text>
+
+  <text class="tiny" x="30" y="544">边界情况:如果一张图的占位 token 恰好全落在卡 1 的行里,卡 0 一个占位都没有 —— 注入函数走"乘零"空路径,梯度仍然连通,视觉塔参数照常训练。</text>
+</svg>
+<figcaption><b>图 A · 切分总览。</b>上:切分前的整条序列与两张随行簿记表。中:五件套经同一置换各拿一半(这是本方案新增"簿记表随行"的部分);图像内容在右侧独立成路,两卡各持完整一份。下:KV 隐状态的临时整行拼装与空图路径两个关键机制。</figcaption>
+</div>
+
+<div class="legend">
+  <span><span class="sw" style="background:var(--txt)"></span>文本 token / 文本簿记</span>
+  <span><span class="sw" style="background:var(--img)"></span>图像占位 token / 图像簿记</span>
+  <span><span class="sw" style="background:#fff;border:2px solid var(--full)"></span>整行复制(不切)</span>
+  <span><span class="sw" style="background:#fff;border:2px solid var(--shard)"></span>FSDP 参数分片(切)</span>
+</div>
+
+<!-- ============ 图 B: 前向逐层 ============ -->
+<div class="fig">
+<svg viewBox="0 0 1000 700" width="100%" role="img" aria-label="前向数据流逐层图">
+  <style>
+    .lab{font:600 13.5px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tiny{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .stage{fill:#fff;stroke:#d8dee8;stroke-width:1.4}
+    .flow{stroke:#1d2733;stroke-width:1.7;fill:none;marker-end:url(#ah3)}
+    .arr{stroke:#2f5d9e;stroke-width:1.7;fill:none;marker-end:url(#ah3b)}
+    .comm{stroke:#b04a4a;stroke-width:1.8;fill:none;stroke-dasharray:6 4;marker-end:url(#ah3r)}
+    .tx{fill:#dfe7f2;stroke:#9db2cf;stroke-width:1}
+    .im{fill:#f6c99a;stroke:#c98a3d;stroke-width:1}
+    .pill{font:600 11px -apple-system,'PingFang SC',sans-serif;fill:#fff}
+  </style>
+  <defs>
+    <marker id="ah3"  markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1d2733"/></marker>
+    <marker id="ah3b" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f5d9e"/></marker>
+    <marker id="ah3r" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b04a4a"/></marker>
+  </defs>
+
+  <!-- 输入 -->
+  <rect class="stage" x="20" y="18" width="200" height="150" rx="8"/>
+  <text class="lab" x="36" y="44">输入(每卡)</text>
+  <rect class="tx" x="36" y="56"  width="76" height="24"/><rect class="im" x="112" y="56" width="52" height="24"/>
+  <text class="tiny" x="36" y="104">token 流(本卡的一半)</text>
+  <text class="tiny" x="36" y="122">两张簿记表(本卡的一半)</text>
+  <text class="tiny" x="36" y="140">图像 patch + 网格(完整)</text>
+
+  <!-- 视觉塔 -->
+  <rect class="stage" x="20" y="196" width="200" height="120" rx="8" stroke="#c98a3d"/>
+  <text class="lab" x="36" y="222" fill="#8a5a00">① 视觉塔(ViT ×32 层)</text>
+  <text class="tiny" x="36" y="248">输入:整图 patch 流(无序列轴)</text>
+  <text class="tiny" x="36" y="266">权重:FSDP 切 1/2,算前 all-gather 拼全</text>
+  <text class="tiny" x="36" y="284">→ 特征库 [V×D](完整,不切)</text>
+  <text class="tiny" x="36" y="302">对齐层 → 文本嵌入空间</text>
+
+  <!-- 词嵌入 -->
+  <rect class="stage" x="260" y="18" width="220" height="150" rx="8"/>
+  <text class="lab" x="276" y="44">② 词嵌入 + 特征注入</text>
+  <rect class="tx" x="276" y="56"  width="80" height="24"/><rect class="im" x="356" y="56" width="50" height="24"/>
+  <text class="tiny" x="276" y="104">token(半行)→ 词嵌入矩阵(半权重)</text>
+  <text class="tiny" x="276" y="122">占位 token:查簿记 → 从特征库</text>
+  <text class="tiny" x="276" y="140">取对应行,写进词嵌入(可微)</text>
+  <text class="tiny" x="276" y="158">n-gram 记忆:前驱表自带,图像位屏蔽</text>
+
+  <!-- KV restore -->
+  <rect class="stage" x="520" y="18" width="210" height="150" rx="8"/>
+  <text class="lab" x="536" y="44">③ 每层注意力前的准备</text>
+  <text class="tiny" x="536" y="76">Q(查询):不移动,本卡半行直接投影</text>
+  <text class="tiny" x="536" y="98">K/V(键值):本卡半行投影后,先</text>
+  <text class="tiny" x="536" y="116">"还原"到本卡的序列窗口序,再由</text>
+  <text class="tiny" x="536" y="134">核心边界 all-gather 拼整行(见④)</text>
+  <text class="tiny" x="536" y="152">压缩 KV:本地池化,同样整行拼装</text>
+
+  <!-- decoder stack -->
+  <rect class="stage" x="520" y="196" width="210" height="290" rx="8"/>
+  <text class="lab" x="536" y="222">④ 文本解码器(×40 层)</text>
+  <rect class="tx" x="536" y="234" width="178" height="26"/>
+  <text class="tiny" x="536" y="278">隐状态:本卡半行,流经各层</text>
+  <text class="tiny" x="536" y="298">注意力:Q(半行)× KV(整行,</text>
+  <text class="tiny" x="536" y="316">  reach 限定只见过去)</text>
+  <text class="tiny" x="536" y="338">MoE 专家:按专家并行轴另切,</text>
+  <text class="tiny" x="536" y="356">  与 CP 正交;路由逐 token,无冲突</text>
+  <text class="tiny" x="536" y="378">n-gram 记忆:查表逐 token,</text>
+  <text class="tiny" x="536" y="396">  图像 token 位被屏蔽为零贡献</text>
+  <text class="tiny" x="536" y="418">输出:仍保持本卡半行序</text>
+  <text class="tiny" x="536" y="442">(层间永不来回搬整行 ——</text>
+  <text class="tiny" x="536" y="460">  这是 doc-chunk 布局的</text>
+  <text class="tiny" x="536" y="478">  核心收益)</text>
+
+  <!-- head -->
+  <rect class="stage" x="770" y="196" width="210" height="130" rx="8"/>
+  <text class="lab" x="786" y="222">⑤ 输出头 + 损失</text>
+  <text class="tiny" x="786" y="248">logits:本卡半行 × 输出投影</text>
+  <text class="tiny" x="786" y="266">损失:标签同为半行,逐 token</text>
+  <text class="tiny" x="786" y="284">  加权后跨卡求和(损失通信域</text>
+  <text class="tiny" x="786" y="302">  覆盖 CP 轴,只传标量)</text>
+
+  <!-- 反向 -->
+  <rect class="stage" x="770" y="360" width="210" height="126" rx="8" stroke="#b04a4a"/>
+  <text class="lab" x="786" y="386" fill="#b04a4a">⑥ 反向传播</text>
+  <text class="tiny" x="786" y="412">梯度沿原路回流;KV 整行拼装的</text>
+  <text class="tiny" x="786" y="430">  all-gather 反向 = reduce-scatter,</text>
+  <text class="tiny" x="786" y="448">  各卡梯度自动归并回自己那半行</text>
+  <text class="tiny" x="786" y="466">特征注入的写回反向 = 散射回特征库</text>
+
+  <!-- flows -->
+  <line class="arr" x1="120" y1="168" x2="120" y2="196"/>
+  <line class="arr" x1="220" y1="256" x2="260" y2="120" transform="translate(0,0)"/>
+  <line class="flow" x1="480" y1="93"  x2="520" y2="93"/>
+  <line class="flow" x1="730" y1="93"  x2="600" y2="196" transform="translate(30,0)"/>
+  <line class="flow" x1="730" y1="341" x2="770" y2="280"/>
+  <line class="comm" x1="875" y1="326" x2="875" y2="360"/>
+
+  <!-- CP 对通信标注 -->
+  <rect x="260" y="520" width="720" height="150" rx="10" fill="#fdf7f7" stroke="#b04a4a" stroke-width="1.4"/>
+  <text class="lab" x="278" y="548" fill="#b04a4a">整条链路上仅有的卡间通信(CP 两卡之间)</text>
+  <text class="tiny" x="278" y="576">1. 每层注意力的 KV all-gather(半行 → 整行)与反向的 reduce-scatter —— 主要通信量,随层数线性</text>
+  <text class="tiny" x="278" y="598">2. 损失标量的跨卡求和 —— 微小</text>
+  <text class="tiny" x="278" y="620">3. <b>没有</b>为图像新增任何通信:特征库是复制不是交换,注入是本卡局部操作</text>
+  <text class="tiny" x="278" y="642">4. 切分输入时的"置换+均分"是本卡本地操作(全量本来就复制在各卡),零通信</text>
+  <text class="tiny" x="278" y="664">5. 权重的逐层 all-gather 属于数据并行机制(FSDP),与 CP 无关,任何并行形态都有</text>
+</svg>
+<figcaption><b>图 B · 前向/反向数据流(以卡 0 视角,卡 1 镜像)。</b>六站:输入 → 视觉塔(独立支路)→ 词嵌入+注入(两路汇合点)→ 每层注意力准备 → 40 层解码器 → 输出头/损失/反向。红色虚线框 = 卡间通信清单:图像路径零新增通信。</figcaption>
+</div>
+
+<!-- ============ 图 C: 权重显存对比 ============ -->
+<div class="fig">
+<svg viewBox="0 0 1000 470" width="100%" role="img" aria-label="权重与显存对比图">
+  <style>
+    .lab{font:600 13.5px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tiny{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .stage{fill:#fff;stroke:#d8dee8;stroke-width:1.4}
+  </style>
+
+  <text class="lab" x="30" y="26">CP=1(现状):每卡承担整条序列 + 全部激活</text>
+  <rect class="stage" x="30" y="38" width="440" height="120" rx="8"/>
+  <rect x="50"  y="60" width="180" height="26" fill="#c9d6ea" stroke="#9db2cf"/>
+  <rect x="50"  y="96" width="180" height="26" fill="#f0d9b8" stroke="#c98a3d"/>
+  <text class="tiny" x="140" y="77"  text-anchor="middle">文本 40 层权重(FSDP 碎片)</text>
+  <text class="tiny" x="140" y="113" text-anchor="middle">视觉塔权重(FSDP 碎片)</text>
+  <rect x="250" y="60" width="200" height="62" fill="#e8f3ec" stroke="#1f6b3a"/>
+  <text class="tiny" x="350" y="85"  text-anchor="middle">激活:整条序列 × 40 层</text>
+  <text class="tiny" x="350" y="105" text-anchor="middle">序列 4864 → 前向 OOM ✗</text>
+  <text class="tiny" x="350" y="123" text-anchor="middle">(收缩到 2432 才能跑)</text>
+
+  <text class="lab" x="520" y="26">CP=2(方案):每卡半条序列 + 半份激活</text>
+  <rect class="stage" x="520" y="38" width="440" height="120" rx="8"/>
+  <rect x="540" y="60" width="180" height="26" fill="#c9d6ea" stroke="#9db2cf"/>
+  <rect x="540" y="96" width="180" height="26" fill="#f0d9b8" stroke="#c98a3d"/>
+  <text class="tiny" x="630" y="77"  text-anchor="middle">文本权重(FSDP 碎片)</text>
+  <text class="tiny" x="630" y="113" text-anchor="middle">视觉塔权重(FSDP 碎片)</text>
+  <rect x="740" y="60" width="200" height="62" fill="#e8f3ec" stroke="#1f6b3a"/>
+  <text class="tiny" x="840" y="85"  text-anchor="middle">激活:半条序列 × 40 层</text>
+  <text class="tiny" x="840" y="105" text-anchor="middle">序列档可回到 4864 ✓</text>
+  <text class="tiny" x="840" y="123" text-anchor="middle">(权重不因 CP 多省,省的是激活)</text>
+
+  <!-- FSDP 时间线 -->
+  <text class="lab" x="30" y="200">权重的"平时切、用时拼":FSDP 逐层时间线(任一层的生命周期)</text>
+  <rect class="stage" x="30" y="214" width="930" height="180" rx="8"/>
+  <text class="tiny" x="50" y="240">稳态(层与层之间)</text>
+  <rect x="50" y="250" width="180" height="34" fill="#f3d9d9" stroke="#b04a4a" stroke-width="1.6"/>
+  <text class="tiny" x="140" y="271" text-anchor="middle">卡0:层L权重 1/2</text>
+  <rect x="250" y="250" width="180" height="34" fill="#f3d9d9" stroke="#b04a4a" stroke-width="1.6"/>
+  <text class="tiny" x="340" y="271" text-anchor="middle">卡1:层L权重 另1/2</text>
+  <text class="tiny" x="470" y="271">平时各持一半,显存占用 = 1/2</text>
+
+  <text class="tiny" x="50" y="316">第 L 层前向瞬间</text>
+  <rect x="50" y="326" width="180" height="34" fill="#dfe9f5" stroke="#2f5d9e" stroke-width="1.6"/>
+  <text class="tiny" x="140" y="347" text-anchor="middle">all-gather → 拼全量</text>
+  <rect x="250" y="326" width="180" height="34" fill="#dfe9f5" stroke="#2f5d9e" stroke-width="1.6"/>
+  <text class="tiny" x="340" y="347" text-anchor="middle">all-gather → 拼全量</text>
+  <text class="tiny" x="470" y="338">两卡短暂各持全量(峰值),算完该层即释放(reshard)</text>
+  <text class="tiny" x="470" y="356">视觉塔同理 —— 所以"两卡各跑一遍完整塔"并不需要两份常驻权重</text>
+
+  <text class="tiny" x="50" y="392">注:文本解码器的 MoE 专家权重还有另一套按"专家并行"(EP)的分片,与本页 CP 轴正交、互不干扰;为聚焦 CP,图中未展开。</text>
+</svg>
+<figcaption><b>图 C · 显存账本与权重生命周期。</b>CP 省的是<b>激活</b>(序列减半 → 40 层激活减半),权重占用由 FSDP 决定(每卡 1/2,用时临时拼全)。这正是显存墙的解法:4864 序列档在 CP=2 下激活回到 2432 档的水位。</figcaption>
+</div>
+
+<h2>文字版要点回顾(图的索引)</h2>
+<table>
+  <tr><th style="width:26%">你的问题</th><th>答案</th><th>图</th></tr>
+  <tr><td>CP 并行度怎么作用于图像?</td><td>不作用于图像内容。图像 patch、视觉塔计算、特征库在每卡完整一份;CP 只作用于序列里的<b>图像占位 token</b>(它们和文本 token 一起被切分、没有任何豁免)</td><td>图 A 右侧支路</td></tr>
+  <tr><td>CP 并行度怎么作用于文本?</td><td>整条 token 序列(题面+占位+推理)按"每篇文档第 0/1 块"重排后均分;每卡半行流经全部 40 层,KV 在每层注意力边界临时拼整行</td><td>图 A 中部、图 B ③④</td></tr>
+  <tr><td>视觉层权重切了吗?</td><td>切(FSDP 1/2,用时临时拼全)——但这是数据并行的分片,与 CP 无关,CP=1 时也是这样</td><td>图 C 下</td></tr>
+  <tr><td>文本层权重切了吗?</td><td>同上,切(FSDP 1/2);MoE 专家另按专家并行轴切,与 CP 正交</td><td>图 C 下注</td></tr>
+  <tr><td>实时 token 切了吗?</td><td>切,且是唯一因 CP 而切的东西:每卡每篇文档的一半;两张簿记表(token 类型、特征位置)随行同切——这是本方案新增的关键改动</td><td>图 A 中部</td></tr>
+  <tr><td>两路在哪汇合?</td><td>词嵌入之后、第一层之前:注入点把特征库的内容写进本卡半行的占位位置;此后整条流水线只剩"半行隐状态 × 整行 KV"一种形态</td><td>图 B ②</td></tr>
+</table>
+
+<footer>
+  <p>配套:技术设计文档 docs/20261121-ttnpu-vision-cp-design.md · 原理版报告 reports/20261121-vision-cp-design-report.html(同变体目录)</p>
+  <p>证据源:torchtitan-npu 源码双版本锚点静态取证(框架 @1e1e60be 与上游 master),机制表述均可在源码定位;本页为设计推演,尚未实机验证</p>
+</footer>
+
+</div>
+</body>
+</html>

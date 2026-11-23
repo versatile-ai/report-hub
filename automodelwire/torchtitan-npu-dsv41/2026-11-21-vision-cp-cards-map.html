@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CP 并行实机拆解 — 节点、卡、权重与 Token 的切分地图</title>
+<style>
+  :root{
+    --ink:#1d2733; --ink2:#4a5768; --line:#d8dee8; --bg:#fff; --soft:#f4f6fa;
+    --accent:#2f5d9e; --accent-bg:#eaf0f8;
+    --red:#b04a4a; --red-bg:#fdeeee;
+    --green:#1f6b3a; --green-bg:#eef7f0;
+    --amber:#c98a3d; --amber-bg:#fdf6ec;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16px;line-height:1.75}
+  .page{max-width:1080px;margin:0 auto;padding:48px 32px 72px}
+  header{border-bottom:3px solid var(--accent);padding-bottom:20px;margin-bottom:30px}
+  .kicker{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+  h1{font-size:25px;line-height:1.4;margin:8px 0 6px}
+  .meta{color:var(--ink2);font-size:14px}
+  h2{font-size:20px;margin:42px 0 10px}
+  p{margin:10px 0}
+  .lead{color:var(--ink2)}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14.5px}
+  th{background:var(--soft);text-align:left;font-weight:600}
+  th,td{border:1px solid var(--line);padding:9px 12px;vertical-align:top}
+  tr:nth-child(even) td{background:#fafbfd}
+  .fig{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:16px 12px 6px;margin:24px 0}
+  .fig figcaption{font-size:13.5px;color:var(--ink2);padding:8px 12px 10px}
+  .ans{background:var(--accent-bg);border:1px solid #c6d5ec;border-left:4px solid var(--accent);
+    border-radius:8px;padding:18px 24px;margin:22px 0}
+  .ans h2{margin:0 0 10px;font-size:17px}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+  footer{border-top:1px solid var(--line);margin-top:46px;padding-top:16px;color:var(--ink2);font-size:13.5px}
+  @media print{.fig{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">训练引擎适配 · 实机拆解</div>
+  <h1>上下文并行实机地图:节点 → 卡 → 卡内四区<br>—— 权重几分之几、什么在重复、Token 怎么切,一次画清</h1>
+  <div class="meta">2026-11-21 · 部署形态:2 个训练节点 × 8 卡 910B = 16 个训练进程;数据分片 8 × 上下文并行 2 × 专家并行 16 · 配套三份文档见页脚</div>
+</header>
+
+<div class="ans">
+  <h2>四问四答(先结论,图在后)</h2>
+  <table>
+    <tr><th style="width:27%">问题</th><th>答案</th></tr>
+    <tr>
+      <td><b>① 输入的权重是几分之几?</b></td>
+      <td>每卡三份碎片:<b style="color:var(--red)">稠密权重 1/16</b>(视觉塔 0.8B + 解码器稠密层 + 嵌入,FSDP 沿全部 16 卡切)、<b style="color:var(--red)">MoE 专家 64 个中的 4 个</b>(整份持有,专家并行 16)、<b style="color:var(--red)">n-gram 记忆表 1/16</b>(随专家并行切)。关键:<b>CP 开与不开,权重都是每卡 1/16</b>(CP=1 时沿数据分片 16 单轴;CP=2 时沿数据分片 8 × CP 2 双轴)——CP 省的从来不是权重,是激活。</td>
+    </tr>
+    <tr>
+      <td><b>② 重复的内容有哪些?</b></td>
+      <td>只有一类常态复制:<b style="color:var(--green)">图像内容</b>——图像 patch 张量、图像网格表、以及视觉塔输出的特征库,CP 对的两张卡各持完整一份(每卡自己完整跑一遍视觉塔,产出逐位相同)。另有<b style="color:var(--accent)">层内瞬态复制</b>:某层前向的一瞬间,全量权重(16 卡拼来)和整行 KV(伙伴半行拼来)临时在场,算完即弃。跨 CP 对之间:无任何重复(每对吃不同样本)。</td>
+    </tr>
+    <tr>
+      <td><b>③ Token 哪些重复、哪些不重复?</b></td>
+      <td><b>切分前</b>:CP 对两卡各持同一条完整序列(重复态)——这正是"切分零通信"的本钱:整行两卡都有,各自本地"重排+切片"即可,不需要传任何数据。<b>切分后(进入前向时)</b>:两卡各持一半、互补零重叠,<b>没有任何一个 token 重复</b>。图像占位 token 与文本 token 一视同仁被切,没有豁免——本例中 1024 个图像占位恰好全部落在卡 A,卡 B 一个占位都没有(走空路径,见 图 2)。</td>
+    </tr>
+    <tr>
+      <td><b>④ 切分策略怎么映射到图上?</b></td>
+      <td>四步(图 3 逐步画):<b>对齐填充</b>(每篇文档长度补到"并行度×压缩比"的整数倍)→ <b>按文档分块重排</b>(每篇文档切成 R 等份,第 r 张卡拿每篇的第 r 块;RL 形态一条序列就是一篇文档,重排退化为恒等——前后直切)→ <b>均分切片</b> → <b>簿记随行</b>(位置、标签、token 类型表、图像特征位置表四件与 token 同置换同切,后两件是本方案新增)。</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ================= 图 1: 集群鸟瞰 ================= -->
+<div class="fig">
+<svg viewBox="0 0 1000 470" width="100%" role="img" aria-label="集群鸟瞰图">
+  <style>
+    .lab{font:600 13.5px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tiny{font:11px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .node{fill:#fff;stroke:#c9d2e0;stroke-width:1.6}
+    .card{fill:#f4f6fa;stroke:#9db2cf;stroke-width:1.2}
+    .hl{fill:none;stroke:#2f5d9e;stroke-width:2.6}
+    .brk{stroke:#2f5d9e;stroke-width:1.6;fill:none}
+    .arr{stroke:#2f5d9e;stroke-width:1.7;fill:none;marker-end:url(#ah)}
+  </style>
+  <defs><marker id="ah" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f5d9e"/></marker></defs>
+
+  <text class="lab" x="30" y="24">图 1 · 集群鸟瞰:2 个训练节点 × 8 卡,16 个训练进程,8 个"上下文并行对"</text>
+
+  <!-- 节点 1 -->
+  <rect class="node" x="30" y="44" width="440" height="150" rx="10"/>
+  <text class="lab" x="46" y="68">训练节点 1(8 × 910B)</text>
+  <g>
+    <rect class="card" x="46"  y="82" width="44" height="56"/><text class="tiny" x="68"  y="106" text-anchor="middle">卡0</text><text class="tiny" x="68"  y="122" text-anchor="middle">R0</text>
+    <rect class="card" x="98"  y="82" width="44" height="56"/><text class="tiny" x="120" y="106" text-anchor="middle">卡1</text><text class="tiny" x="120" y="122" text-anchor="middle">R1</text>
+    <rect class="card" x="150" y="82" width="44" height="56"/><text class="tiny" x="172" y="106" text-anchor="middle">卡2</text><text class="tiny" x="172" y="122" text-anchor="middle">R2</text>
+    <rect class="card" x="202" y="82" width="44" height="56"/><text class="tiny" x="224" y="106" text-anchor="middle">卡3</text><text class="tiny" x="224" y="122" text-anchor="middle">R3</text>
+    <rect class="card" x="254" y="82" width="44" height="56"/><text class="tiny" x="276" y="106" text-anchor="middle">卡4</text><text class="tiny" x="276" y="122" text-anchor="middle">R4</text>
+    <rect class="card" x="306" y="82" width="44" height="56"/><text class="tiny" x="328" y="106" text-anchor="middle">卡5</text><text class="tiny" x="328" y="122" text-anchor="middle">R5</text>
+    <rect class="card" x="358" y="82" width="44" height="56"/><text class="tiny" x="380" y="106" text-anchor="middle">卡6</text><text class="tiny" x="380" y="122" text-anchor="middle">R6</text>
+    <rect class="card" x="410" y="82" width="44" height="56"/><text class="tiny" x="432" y="106" text-anchor="middle">卡7</text><text class="tiny" x="432" y="122" text-anchor="middle">R7</text>
+  </g>
+  <!-- 节点 1 的 CP 对括号 -->
+  <path class="brk" d="M46,148 v8 h96 v-8"/><text class="tiny" x="94"  y="166" text-anchor="middle">CP 对 0</text>
+  <path class="brk" d="M150,148 v8 h96 v-8"/><text class="tiny" x="198" y="166" text-anchor="middle">CP 对 1</text>
+  <path class="brk" d="M254,148 v8 h96 v-8"/><text class="tiny" x="302" y="166" text-anchor="middle">CP 对 2</text>
+  <path class="brk" d="M358,148 v8 h96 v-8"/><text class="tiny" x="406" y="166" text-anchor="middle">CP 对 3</text>
+  <rect class="hl" x="42" y="78" width="104" height="64" rx="6"/>
+
+  <!-- 节点 2 -->
+  <rect class="node" x="530" y="44" width="440" height="150" rx="10"/>
+  <text class="lab" x="546" y="68">训练节点 2(8 × 910B)</text>
+  <g>
+    <rect class="card" x="546" y="82" width="44" height="56"/><text class="tiny" x="568" y="106" text-anchor="middle">卡8</text><text class="tiny" x="568" y="122" text-anchor="middle">R8</text>
+    <rect class="card" x="598" y="82" width="44" height="56"/><text class="tiny" x="620" y="106" text-anchor="middle">卡9</text><text class="tiny" x="620" y="122" text-anchor="middle">R9</text>
+    <rect class="card" x="650" y="82" width="44" height="56"/><text class="tiny" x="672" y="106" text-anchor="middle">卡10</text><text class="tiny" x="672" y="122" text-anchor="middle">R10</text>
+    <rect class="card" x="702" y="82" width="44" height="56"/><text class="tiny" x="724" y="106" text-anchor="middle">卡11</text><text class="tiny" x="724" y="122" text-anchor="middle">R11</text>
+    <rect class="card" x="754" y="82" width="44" height="56"/><text class="tiny" x="776" y="106" text-anchor="middle">卡12</text><text class="tiny" x="776" y="122" text-anchor="middle">R12</text>
+    <rect class="card" x="806" y="82" width="44" height="56"/><text class="tiny" x="828" y="106" text-anchor="middle">卡13</text><text class="tiny" x="828" y="122" text-anchor="middle">R13</text>
+    <rect class="card" x="858" y="82" width="44" height="56"/><text class="tiny" x="880" y="106" text-anchor="middle">卡14</text><text class="tiny" x="880" y="122" text-anchor="middle">R14</text>
+    <rect class="card" x="910" y="82" width="44" height="56"/><text class="tiny" x="932" y="106" text-anchor="middle">卡15</text><text class="tiny" x="932" y="122" text-anchor="middle">R15</text>
+  </g>
+  <path class="brk" d="M546,148 v8 h96 v-8"/><text class="tiny" x="594" y="166" text-anchor="middle">CP 对 4</text>
+  <path class="brk" d="M650,148 v8 h96 v-8"/><text class="tiny" x="698" y="166" text-anchor="middle">CP 对 5</text>
+  <path class="brk" d="M754,148 v8 h96 v-8"/><text class="tiny" x="802" y="166" text-anchor="middle">CP 对 6</text>
+  <path class="brk" d="M858,148 v8 h96 v-8"/><text class="tiny" x="906" y="166" text-anchor="middle">CP 对 7</text>
+
+  <text class="sub" x="94" y="186" text-anchor="middle">↓ 卡0 + 卡1 放大到 图 2</text>
+
+  <!-- 三条横贯带 -->
+  <rect x="30" y="212" width="940" height="38" rx="6" fill="#fdeeee" stroke="#b04a4a" stroke-width="1.3"/>
+  <text class="tiny" x="44" y="235"><tspan font-weight="700" fill="#b04a4a">FSDP · 稠密权重带:</tspan> 视觉塔 + 解码器稠密层 + 嵌入,沿全部 16 卡切分 —— 每卡 1/16;前向每层临时 all-gather 拼全量,算完即弃</text>
+
+  <rect x="30" y="258" width="940" height="38" rx="6" fill="#fdf6ec" stroke="#c98a3d" stroke-width="1.3"/>
+  <text class="tiny" x="44" y="281"><tspan font-weight="700" fill="#8a5a00">专家并行 EP=16 · 专家权重带:</tspan> 64 个路由专家分布在 16 卡(每卡 4 个、整份持有);MoE 层的 token 按路由表跨卡派发(跨节点)</text>
+
+  <rect x="30" y="304" width="940" height="38" rx="6" fill="#eef7f0" stroke="#1f6b3a" stroke-width="1.3"/>
+  <text class="tiny" x="44" y="327"><tspan font-weight="700" fill="#1f6b3a">n-gram 记忆表带:</tspan> 随专家并行切 1/16;训练时查表按哈希值路由到持有对应分片的卡(与专家带共用 EP=16 分组)</text>
+
+  <text class="sub" x="30" y="372"><tspan font-weight="700">8 个 CP 对 = 8 条数据并行泳道</tspan>:每个微批次,每对两卡合算 1 条完整样本;累积 2 个微批次 → 全局批 16。</text>
+  <text class="sub" x="30" y="396">CP 对的两张卡在<b>同一节点内</b>配对(卡0↔1、2↔3 …)——注意力的 KV 交换因此不跨节点(上游为此做过专门优化)。</text>
+  <text class="sub" x="30" y="420">专家派发与记忆查表才跨节点;这两条通信与 CP 无关,开不开 CP 都存在。</text>
+  <text class="tiny" x="30" y="450">配色:<tspan fill="#b04a4a">■</tspan> 切分的权重碎片 <tspan fill="#c98a3d">■</tspan> 专家/记忆 <tspan fill="#2f5d9e">■</tspan> CP 对(序列轴) <tspan fill="#4a5768">□</tspan> 普通 NPU 卡</text>
+</svg>
+<figcaption><b>图 1 · 集群鸟瞰。</b>真实部署算术:数据分片 8 × CP 2 = 16 进程恰好铺满两节点;稠密权重沿 16 卡 FSDP 切(1/16),专家与记忆表沿 EP=16 切。蓝框是本页主角:一个 CP 对。</figcaption>
+</div>
+
+<!-- ================= 图 2: CP 对解剖 ================= -->
+<div class="fig">
+<svg viewBox="0 0 1000 676" width="100%" role="img" aria-label="CP 对单卡解剖图">
+  <style>
+    .lab{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tiny{font:11px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .pane{fill:#fff;stroke:#c9d2e0;stroke-width:1.6}
+    .hd{fill:#2f5d9e}
+    .zoneW{fill:#fdeeee;stroke:#b04a4a;stroke-width:1.4}
+    .zoneR{fill:#eef7f0;stroke:#1f6b3a;stroke-width:1.4}
+    .zoneT{fill:#eaf0f8;stroke:#2f5d9e;stroke-width:1.4}
+    .zoneX{fill:#f6f2fb;stroke:#7a4fb0;stroke-width:1.4}
+    .tx{fill:#dfe7f2;stroke:#9db2cf;stroke-width:1}
+    .im{fill:#f6c99a;stroke:#c98a3d;stroke-width:1}
+    .pad{fill:#ececec;stroke:#b8b8b8;stroke-width:1}
+    .w{fill:#f3d9d9;stroke:#b04a4a;stroke-width:1.2}
+    .g{fill:#d9ecdf;stroke:#1f6b3a;stroke-width:1.2}
+  </style>
+
+  <text class="lab" x="30" y="22">图 2 · 一个 CP 对的解剖(卡 0 与卡 1 并排;其余 7 对结构完全相同,只是吃不同样本)</text>
+
+  <!-- ============ 卡 0 ============ -->
+  <rect class="pane" x="20" y="40" width="465" height="620" rx="10"/>
+  <rect class="hd" x="20" y="40" width="465" height="34" rx="10"/>
+  <rect x="20" y="60" width="465" height="14" fill="#2f5d9e"/>
+  <text x="36" y="62" fill="#fff" font-size="13.5" font-weight="600">卡 0(节点 1)—— CP 对的"前半卡"</text>
+
+  <!-- ① 权重区 -->
+  <rect class="zoneW" x="34" y="84" width="437" height="106" rx="6"/>
+  <text class="lab" x="46" y="106" fill="#b04a4a">① 权重区 —— 切分:每卡只存碎片</text>
+  <rect class="w" x="46" y="116" width="128" height="30"/><text class="tiny" x="110" y="135" text-anchor="middle">稠密权重 1/16</text>
+  <rect class="w" x="182" y="116" width="128" height="30"/><text class="tiny" x="246" y="135" text-anchor="middle">MoE 专家 4/64 个</text>
+  <rect class="w" x="318" y="116" width="140" height="30"/><text class="tiny" x="388" y="135" text-anchor="middle">n-gram 记忆表 1/16</text>
+  <text class="tiny" x="46" y="162">稠密 = 视觉塔 0.8B + 解码器稠密层 + 嵌入(FSDP 沿 16 卡)</text>
+  <text class="tiny" x="46" y="180">优化器状态同 1/16,换出到宿主内存;CP 开不开都是 1/16</text>
+
+  <!-- ② 复制区 -->
+  <rect class="zoneR" x="34" y="198" width="437" height="100" rx="6"/>
+  <text class="lab" x="46" y="220" fill="#1f6b3a">② 复制区 —— 与卡 1 完全相同(常态复制)</text>
+  <rect class="g" x="46" y="230" width="200" height="52"/><text class="tiny" x="146" y="252" text-anchor="middle">图像 patch 张量(整张图)</text><text class="tiny" x="146" y="270" text-anchor="middle">+ 图像网格表</text>
+  <rect class="g" x="258" y="230" width="200" height="52"/><text class="tiny" x="358" y="252" text-anchor="middle">特征库 [全部图像特征 × D]</text><text class="tiny" x="358" y="270" text-anchor="middle">本卡自己完整跑一遍视觉塔得出</text>
+  <text class="tiny" x="46" y="292">数据加载器给 CP 对两卡发同一样本 → 图像内容天然两份;塔前向冗余 ×1,可忽略</text>
+
+  <!-- ③ Token 切分区 -->
+  <rect class="zoneT" x="34" y="306" width="437" height="186" rx="6"/>
+  <text class="lab" x="46" y="328" fill="#2f5d9e">③ Token 切分区 —— 与卡 1 互补,拼合才是完整序列</text>
+  <rect class="tx"  x="46"  y="340" width="45"  height="30"/><text class="tiny" x="68"  y="359" text-anchor="middle">题面 256</text>
+  <rect class="im"  x="91"  y="340" width="178" height="30"/><text class="tiny" x="180" y="359" text-anchor="middle">图像占位 1024(全部在本卡)</text>
+  <rect class="tx"  x="269" y="340" width="202" height="30"/><text class="tiny" x="370" y="359" text-anchor="middle">响应前段 1152</text>
+  <rect class="tx" x="46" y="378" width="425" height="14"/><text class="tiny" x="258" y="389" text-anchor="middle">位置表 ‖ 标签 ‖ token 类型表 ‖ 图像特征位置表 —— 与 token 同一置换、同切(后两件为本方案新增)</text>
+  <rect class="tx" x="46" y="398" width="425" height="14" opacity=".65"/><text class="tiny" x="258" y="409" text-anchor="middle">n-gram 前驱表:切分前按置换预构造成半行(随行自带,零跨卡通信)</text>
+  <text class="tiny" x="46" y="436">→ 本卡持有全部 1024 个图像占位:<b>特征注入只发生在卡 0</b></text>
+  <text class="tiny" x="46" y="454">(从复制区的特征库按位置表取行,写进本卡词嵌入;逐 token 操作,与行序无关)</text>
+  <text class="tiny" x="46" y="476">半行 2432 token,无任何一份与卡 1 重复</text>
+
+  <!-- ④ 瞬态区 -->
+  <rect class="zoneX" x="34" y="500" width="437" height="112" rx="6"/>
+  <text class="lab" x="46" y="522" fill="#7a4fb0">④ 层内瞬态 —— 用时拼全,用完即弃(40 层每层重复一遍)</text>
+  <rect x="46" y="532" width="410" height="26" fill="#f6f2fb" stroke="#7a4fb0"/><text class="tiny" x="251" y="549" text-anchor="middle">当前层的全量权重 ← 从 16 卡 all-gather 拼来,算完这一层就丢</text>
+  <rect x="46" y="564" width="410" height="26" fill="#f6f2fb" stroke="#7a4fb0"/><text class="tiny" x="251" y="581" text-anchor="middle">本层整行 K/V ← 卡 0 半行 + 卡 1 半行 拼合(节点内交换)</text>
+  <text class="tiny" x="46" y="606">注意力:Q = 本卡半行 × K/V = 整行(只允许看到自己段之前,看不到未来)</text>
+
+  <!-- ============ 卡 1 ============ -->
+  <rect class="pane" x="515" y="40" width="465" height="620" rx="10"/>
+  <rect class="hd" x="515" y="40" width="465" height="34" rx="10"/>
+  <rect x="515" y="60" width="465" height="14" fill="#2f5d9e"/>
+  <text x="531" y="62" fill="#fff" font-size="13.5" font-weight="600">卡 1(节点 1)—— CP 对的"后半卡"</text>
+
+  <rect class="zoneW" x="529" y="84" width="437" height="106" rx="6"/>
+  <text class="lab" x="541" y="106" fill="#b04a4a">① 权重区 —— 切分:每卡只存碎片</text>
+  <rect class="w" x="541" y="116" width="128" height="30"/><text class="tiny" x="605" y="135" text-anchor="middle">稠密权重 1/16</text>
+  <rect class="w" x="677" y="116" width="128" height="30"/><text class="tiny" x="741" y="135" text-anchor="middle">MoE 专家 4/64 个</text>
+  <rect class="w" x="813" y="116" width="140" height="30"/><text class="tiny" x="883" y="135" text-anchor="middle">n-gram 记忆表 1/16</text>
+  <text class="tiny" x="541" y="162">比例与卡 0 相同,但<b>碎片内容不同</b>(互补的另 15 份在其余卡)</text>
+  <text class="tiny" x="541" y="180">前向拼全量时,每卡各贡献自己的 1/16</text>
+
+  <rect class="zoneR" x="529" y="198" width="437" height="100" rx="6"/>
+  <text class="lab" x="541" y="220" fill="#1f6b3a">② 复制区 —— 与卡 0 完全相同(常态复制)</text>
+  <rect class="g" x="541" y="230" width="200" height="52"/><text class="tiny" x="641" y="252" text-anchor="middle">图像 patch 张量(整张图)</text><text class="tiny" x="641" y="270" text-anchor="middle">+ 图像网格表</text>
+  <rect class="g" x="753" y="230" width="200" height="52"/><text class="tiny" x="853" y="252" text-anchor="middle">特征库 [全部图像特征 × D]</text><text class="tiny" x="853" y="270" text-anchor="middle">本卡自己完整跑一遍视觉塔得出</text>
+  <text class="tiny" x="541" y="292">虽然本卡序列里没有图像占位,塔照跑、特征库照样持有 —— 注入空路径用"乘零"保梯度连通</text>
+
+  <rect class="zoneT" x="529" y="306" width="437" height="186" rx="6"/>
+  <text class="lab" x="541" y="328" fill="#2f5d9e">③ Token 切分区 —— 与卡 0 互补,拼合才是完整序列</text>
+  <rect class="tx"  x="541" y="340" width="377" height="30"/><text class="tiny" x="729" y="359" text-anchor="middle">响应后段 2176</text>
+  <rect class="pad" x="918" y="340" width="48" height="30"/><text class="tiny" x="942" y="359" text-anchor="middle">填充</text>
+  <rect class="tx" x="541" y="378" width="425" height="14"/><text class="tiny" x="753" y="389" text-anchor="middle">位置表 ‖ 标签 ‖ token 类型表 ‖ 图像特征位置表 —— 与卡 0 经同一置换切出的另一半</text>
+  <rect class="tx" x="541" y="398" width="425" height="14" opacity=".65"/><text class="tiny" x="753" y="409" text-anchor="middle">n-gram 前驱表:同样在切分前预构造成半行</text>
+  <text class="tiny" x="541" y="436">→ 本卡 <b>零图像占位</b>:特征注入走空路径(输出 + 特征库总和 × 0)</text>
+  <text class="tiny" x="541" y="454">视觉塔参数的梯度仍然连通、仍被训练(有效贡献全部来自卡 0 的注入位)</text>
+  <text class="tiny" x="541" y="476">半行 2432 token,无任何一份与卡 0 重复</text>
+
+  <rect class="zoneX" x="529" y="500" width="437" height="112" rx="6"/>
+  <text class="lab" x="541" y="522" fill="#7a4fb0">④ 层内瞬态 —— 用时拼全,用完即弃</text>
+  <rect x="541" y="532" width="410" height="26" fill="#f6f2fb" stroke="#7a4fb0"/><text class="tiny" x="746" y="549" text-anchor="middle">当前层的全量权重 ← 16 卡拼来(与卡 0 拼出同一份全量)</text>
+  <rect x="541" y="564" width="410" height="26" fill="#f6f2fb" stroke="#7a4fb0"/><text class="tiny" x="746" y="581" text-anchor="middle">本层整行 K/V ← 与卡 0 半行拼合后,两卡各持同一份整行</text>
+  <text class="tiny" x="541" y="606">反向时:KV 拼合自动反演为梯度归并(reduce-scatter),各卡梯度回各卡</text>
+
+  <!-- 中缝互补标记 -->
+  <text class="tiny" x="500" y="410" text-anchor="middle" transform="rotate(-90 500 410)">互补 · 零重叠</text>
+</svg>
+<figcaption><b>图 2 · 单卡解剖(四区)。</b>红区=切分的权重碎片(1/16 / 4 专家 / 1/16 记忆表);绿区=常态复制(图像内容两卡同持);蓝区=切分的 Token 半行与随行簿记;紫区=层内瞬态(全量权重与整行 KV,用完即弃)。注意卡 1 在本例中没有任何图像占位——这正是"注入是逐 token 集合操作"的边界情况,空路径保证视觉塔梯度连通。</figcaption>
+</div>
+
+<!-- ================= 图 3: 切分策略 ================= -->
+<div class="fig">
+<svg viewBox="0 0 1000 560" width="100%" role="img" aria-label="切分策略步骤图">
+  <style>
+    .lab{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tiny{font:11px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .arr{stroke:#2f5d9e;stroke-width:1.7;fill:none;marker-end:url(#ah3)}
+    .tx{fill:#dfe7f2;stroke:#9db2cf;stroke-width:1}
+    .im{fill:#f6c99a;stroke:#c98a3d;stroke-width:1}
+    .pad{fill:#ececec;stroke:#b8b8b8;stroke-width:1}
+    .dim{stroke:#c9d2e0;stroke-width:1.3;fill:none;marker-end:url(#ahd)}
+  </style>
+  <defs>
+    <marker id="ah3" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f5d9e"/></marker>
+    <marker id="ahd" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c9d2e0"/></marker>
+  </defs>
+
+  <text class="lab" x="30" y="24">图 3 · 切分策略逐步拆解:同一条样本怎么变成两卡的半行(以 RL 样本 4864 token 为例)</text>
+
+  <!-- ① 原始序列 -->
+  <text class="sub" x="30" y="54"><tspan font-weight="700">① 原始序列</tspan> —— 一条 RL 样本 = 一篇文档:题面 + 图像占位 + 推理响应 + 对齐填充</text>
+  <rect class="tx"  x="40"  y="64" width="48"  height="32"/><text class="tiny" x="64"  y="84" text-anchor="middle">题面 256</text>
+  <rect class="im"  x="88"  y="64" width="194" height="32"/><text class="tiny" x="185" y="84" text-anchor="middle">图像占位 1024</text>
+  <rect class="tx"  x="282" y="64" width="630" height="32"/><text class="tiny" x="597" y="84" text-anchor="middle">推理响应 3328</text>
+  <rect class="pad" x="912" y="64" width="48"  height="32"/><text class="tiny" x="936" y="84" text-anchor="middle">填充 256</text>
+  <text class="tiny" x="40" y="116">切分前:CP 对两卡各持一份完整拷贝(数据加载器按 8 条泳道发样,对内两卡同一样本)—— 这份"重复"是零通信切分的本钱</text>
+
+  <line class="arr" x1="480" y1="126" x2="480" y2="152"/>
+
+  <!-- ② 重排 -->
+  <text class="sub" x="30" y="178"><tspan font-weight="700">② 按文档分块重排</tspan> —— RL 形态单文档:重排是<tspan font-weight="700">恒等</tspan>(直接前后直切);多文档打包(SFT)才有真正的重排 ↓</text>
+  <!-- 多文档小例 -->
+  <text class="tiny" x="40" y="206">原始(两篇文档 40 token):</text>
+  <rect class="tx" x="190" y="194" width="80"  height="22"/><text class="tiny" x="230" y="209" text-anchor="middle">文A·8</text>
+  <rect class="im" x="270" y="194" width="60"  height="22"/><text class="tiny" x="300" y="209" text-anchor="middle">图·6</text>
+  <rect class="tx" x="330" y="194" width="100" height="22"/><text class="tiny" x="380" y="209" text-anchor="middle">文A·10</text>
+  <rect class="tx" x="430" y="194" width="160" height="22"/><text class="tiny" x="510" y="209" text-anchor="middle">文B·16</text>
+  <line class="arr" x1="620" y1="205" x2="660" y2="205"/>
+  <rect class="tx" x="672" y="194" width="120" height="22"/><text class="tiny" x="732" y="209" text-anchor="middle">A 前半 12</text>
+  <rect class="tx" x="792" y="194" width="80"  height="22"/><text class="tiny" x="832" y="209" text-anchor="middle">B 前半 8</text>
+  <rect class="tx" x="672" y="222" width="120" height="22" opacity=".7"/><text class="tiny" x="732" y="237" text-anchor="middle">A 后半 12</text>
+  <rect class="tx" x="792" y="222" width="80"  height="22" opacity=".7"/><text class="tiny" x="832" y="237" text-anchor="middle">B 后半 8</text>
+  <text class="tiny" x="40" y="262">规则:第 r 张卡拿<tspan font-weight="700">每篇文档的第 r 块、按文档顺序排好</tspan>。上例:卡A = [A前半 ‖ B前半],卡B = [A后半 ‖ B后半] —— 文档边界两卡都可见,因果与池化对齐不被切断</text>
+
+  <line class="arr" x1="480" y1="276" x2="480" y2="302"/>
+
+  <!-- ③ 均分 -->
+  <text class="sub" x="30" y="328"><tspan font-weight="700">③ 均分切片</tspan> —— 置换后的整行从中间切开:前 2432 → 卡 0,后 2432 → 卡 1(各自本地完成,零通信)</text>
+  <rect class="tx" x="40"  y="342" width="45"  height="28"/><text class="tiny" x="62"  y="360" text-anchor="middle">题面</text>
+  <rect class="im" x="85"  y="342" width="194" height="28"/><text class="tiny" x="182" y="360" text-anchor="middle">图像占位 1024</text>
+  <rect class="tx" x="279" y="342" width="216" height="28"/><text class="tiny" x="387" y="360" text-anchor="middle">响应前段 1152</text>
+  <text class="lab" x="510" y="360" fill="#2f5d9e">← 卡 0 的半行(2432)</text>
+
+  <rect class="tx" x="40"  y="382" width="412" height="28"/><text class="tiny" x="246" y="400" text-anchor="middle">响应后段 2176</text>
+  <rect class="pad" x="452" y="382" width="43"  height="28"/><text class="tiny" x="473" y="400" text-anchor="middle">填</text>
+  <text class="lab" x="510" y="400" fill="#2f5d9e">← 卡 1 的半行(2432)</text>
+
+  <!-- ④ 簿记随行 -->
+  <text class="sub" x="30" y="446"><tspan font-weight="700">④ 簿记随行</tspan> —— 与 token 同一置换、同切的四件:位置表 / 标签 / <tspan font-weight="700">token 类型表 / 图像特征位置表(后两件是本方案新增)</tspan>;n-gram 前驱表则在切分前按置换预构造成半行</text>
+  <rect class="tx" x="40" y="458" width="216" height="16" opacity=".55"/><text class="tiny" x="148" y="470" text-anchor="middle">位置表 · 标签(原本就在切分元组里)</text>
+  <rect class="im" x="260" y="458" width="216" height="16" opacity=".55"/><text class="tiny" x="368" y="470" text-anchor="middle">token 类型表 · 特征位置表(新增并入)</text>
+  <text class="tiny" x="40" y="508">为什么必须随行:注入按"位置表找登记位 → 取特征 → 写回"进行,是集合匹配、与行排列顺序无关 —— 但前提是位置表与 token 行经历<b>同一个置换</b>,否则特征会写进别的 token(静默错误)。</text>
+  <text class="tiny" x="40" y="530">切分完成后,token 在两卡间无任何重复;常态"重复"的只剩图像内容(图 2 绿区)。</text>
+</svg>
+<figcaption><b>图 3 · 切分策略四步。</b>对齐填充(保证每篇文档长度是"并行度×压缩比"的整数倍)→ 按文档分块重排 → 均分 → 簿记随行。RL 形态一条序列即一篇文档,重排退化为恒等;多文档打包(SFT 预训练/微调)时才会出现真正的跨文档重排。</figcaption>
+</div>
+
+<h2>三张图怎么对应你的四个问题</h2>
+<table>
+  <tr><th style="width:22%">问题</th><th style="width:30%">看哪里</th><th>一句话</th></tr>
+  <tr><td>权重几分之几</td><td>图 1 三条横贯带 + 图 2 红区</td><td>稠密 1/16(FSDP×16)、专家 4/64(EP=16)、记忆表 1/16;CP 开不开都不变</td></tr>
+  <tr><td>重复的内容</td><td>图 2 绿区</td><td>CP 对内只有图像内容整份复制(含每卡自己算出的特征库);紫区瞬态复制用完即弃</td></tr>
+  <tr><td>Token 重复与不重复</td><td>图 3 ①(切分前全量重复)与 ③(切分后互补零重叠)</td><td>切分前的整行重复是零通信的本钱;切分后没有任何 token 重复,图像占位无豁免</td></tr>
+  <tr><td>切分策略怎么画</td><td>图 3 全部四步</td><td>对齐 → doc-chunk 重排(单文档=恒等)→ 均分 → 簿记五件套随行</td></tr>
+</table>
+
+<footer>
+  <p><b>勘误说明:</b>上一版"数据流可视化"页中,FSDP 分片按抽象两卡画成了 1/2——真实 16 卡部署里,CP=1(数据分片 16 单轴)与 CP=2(数据分片 8 × CP 2 双轴)两种形态下稠密权重都是每卡 1/16。该页已同步修正;本页按真实部署算术绘制。</p>
+  <p>配套:技术设计 docs/20261121-ttnpu-vision-cp-design.md · 原理报告 reports/20261121-vision-cp-design-report.html · 数据流页 reports/20261121-vision-cp-dataflow.html(同变体目录)</p>
+  <p>部署参数依据:该变体 GRPO 场景配置(数据分片/CP/EP 取值与 11 月实测修正);机制表述均可在 torchtitan-npu 源码定位,本页为设计推演、尚未实机验证</p>
+</footer>
+
+</div>
+</body>
+</html>

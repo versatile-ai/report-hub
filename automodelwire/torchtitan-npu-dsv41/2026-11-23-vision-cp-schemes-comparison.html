@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三套视觉×CP 方案对比 — 图 + 短句,四个决策点看清区别</title>
+<style>
+  :root{--ink:#1d2733;--ink2:#4a5768;--line:#d8dee8;--bg:#fff;--soft:#f4f6fa;--accent:#2f5d9e;
+    --ours:#2f5d9e;--bsnd:#1f6b3a;--tnd:#8a5a00;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:15px;line-height:1.7}
+  .page{max-width:1020px;margin:0 auto;padding:36px 26px 56px}
+  header{border-bottom:3px solid var(--accent);padding-bottom:14px;margin-bottom:10px}
+  .kicker{color:var(--accent);font-weight:600;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase}
+  h1{font-size:22px;line-height:1.45;margin:8px 0 4px}
+  .meta{color:var(--ink2);font-size:13px}
+  h2{font-size:18px;margin:30px 0 4px}
+  .a{color:var(--ink);margin:2px 0 8px}
+  .a b{color:var(--accent)}
+  .fig{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px 10px 4px;margin:12px 0}
+  .fig figcaption{font-size:13px;color:var(--ink2);padding:6px 12px 8px}
+  .take{border-left:4px solid var(--accent);background:#eaf0f8;padding:12px 18px;border-radius:0 8px 8px 0;margin:18px 0}
+  .take b{color:var(--accent)}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13.5px}
+  th{background:var(--soft);text-align:left;font-weight:600}
+  th,td{border:1px solid var(--line);padding:8px 10px;vertical-align:top}
+  tr:nth-child(even) td{background:#fafbfd}
+  footer{border-top:1px solid var(--line);margin-top:30px;padding-top:12px;color:var(--ink2);font-size:13px}
+  .ours-h{color:var(--ours);font-weight:700}
+  .bsnd-h{color:var(--bsnd);font-weight:700}
+  .tnd-h{color:var(--tnd);font-weight:700}
+  /* ---- Git Review / diff 样式 ---- */
+  .review{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:18px 0}
+  .rv-head{background:#2b3340;color:#e8edf5;padding:12px 18px;font-size:13.5px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .rv-head .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .rv-head .fname{font-family:ui-monospace,Menlo,monospace;font-weight:600}
+  .rv-badge{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:700}
+  .badge-design{background:#c98a3d;color:#fff}
+  .badge-file{background:#3d4a5c;color:#cfe0f5}
+  .rv-stat{margin-left:auto;font-size:12px;color:#9fb3cf}
+  .rv-stat .add{color:#7ee2a0}.rv-stat .del{color:#ff9a9a}
+  .rv-sub{background:#f4f6fa;border-bottom:1px solid var(--line);padding:8px 18px;font-size:12.5px;color:var(--ink2)}
+  .rv-sub code{background:#e8edf3;border-radius:3px;padding:0 5px;font-size:12px}
+  .diff{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.65}
+  .dline{display:flex;white-space:pre-wrap;word-break:break-all}
+  .dline .ln{flex:0 0 46px;text-align:right;padding-right:12px;color:#9aa7b8;user-select:none;
+    border-right:1px solid var(--line);margin-right:12px;font-size:11px;line-height:1.9}
+  .dline .code{flex:1;padding-right:14px}
+  .d-ctx{background:#fff;color:#4a5768}
+  .d-del{background:#ffe9e9}
+  .d-del .code{color:#a33}
+  .d-add{background:#e6f6e6}
+  .d-add .code{color:#164}
+  .d-hunk{background:#eaf0fb;color:#2f5d9e;font-weight:600}
+  .d-note{background:#fff8e6;color:#8a5a00;font-style:italic}
+  .sign{color:#9aa7b8;margin-right:6px;font-weight:700}
+  .d-del .sign{color:#c66}.d-add .sign{color:#2a7}
+  .rv-why{padding:10px 18px;border-top:1px solid var(--line);background:#fbfcfe;font-size:13px;color:var(--ink2)}
+  .rv-why b{color:var(--ink)}
+  .legend-diff{display:flex;gap:18px;font-size:12.5px;color:var(--ink2);margin:6px 0 2px;flex-wrap:wrap}
+  .legend-diff .sw{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">三方案对比 · 图 + 短句</div>
+  <h1>三套"视觉 × 上下文并行"方案的区别<br>—— 切分布局 / 视觉注入 / 记忆边界 / KV 通信,四个决策点</h1>
+  <div class="meta"><span class="ours-h">本方案(doc-chunk 置换)</span> · <span class="bsnd-h">FSDPTurbo BSND(连续等分)</span> · <span class="tnd-h">FSDPTurbo TND(文档可变切分)</span> · 权重切分三家相同(FSDP,每卡 1/16),本页只画序列侧</div>
+</header>
+
+<!-- ================= 背景:为什么开源没支持 ================= -->
+<h2>背景:开源为什么一直没支持"带视觉层 × CP&gt;1"?我们改了什么让它支持?</h2>
+
+<div class="fig">
+<svg viewBox="0 0 1000 380" width="100%" role="img" aria-label="开源缺口与我们补的三处">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .gate{fill:#fdeeee;stroke:#b04a4a;stroke-width:1.6}
+    .fix{fill:#eef7f0;stroke:#1f6b3a;stroke-width:1.6}
+    .ar{stroke:#4a5768;stroke-width:1.7;fill:none;marker-end:url(#bg1)}
+  </style>
+  <defs><marker id="bg1" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4a5768"/></marker></defs>
+
+  <!-- 左:开源的三道门 -->
+  <text class="h" x="30" y="26" fill="#b04a4a">开源框架(torchtitan-npu)的三道"显式拒绝"</text>
+
+  <rect class="gate" x="30" y="42" width="430" height="72" rx="8"/>
+  <text class="h" x="46" y="66" fill="#b04a4a">门 ① 配置层直接拒绝</text>
+  <text class="n" x="46" y="86">多模态档的 accepts_context_parallel = False,</text>
+  <text class="n" x="46" y="102">请求 CP&gt;1 时配置阶段就抛 NotImplementedError,训练未开始即终止。</text>
+
+  <rect class="gate" x="30" y="126" width="430" height="86" rx="8"/>
+  <text class="h" x="46" y="150" fill="#b04a4a">门 ② n-gram 记忆模块硬 raise</text>
+  <text class="n" x="46" y="170">记忆模块在"CP 切分(产生 per-row history)+ 图像掩码"</text>
+  <text class="n" x="46" y="186">组合下直接 ValueError("目前只支持纯文本输入"),</text>
+  <text class="n" x="46" y="202">因为 per-row history 构造点不知道哪些前驱是图像 token。</text>
+
+  <rect class="gate" x="30" y="224" width="430" height="86" rx="8"/>
+  <text class="h" x="46" y="248" fill="#b04a4a">门 ③ 视觉注入点的切分语义未定义</text>
+  <text class="n" x="46" y="268">图像特征注入按"整行绝对位置"做,而 CP 的 doc-chunk 是"置换+均分",</text>
+  <text class="n" x="46" y="284">位置表若不随行同置换,特征会写进别的 token(静默错误)。</text>
+  <text class="n" x="46" y="300">上游选择"宁可拒绝,不放半支持"。</text>
+
+  <!-- 中:箭头 -->
+  <line class="ar" x1="470" y1="180" x2="520" y2="180"/>
+  <text class="h" x="498" y="168" text-anchor="middle">我们的</text>
+  <text class="h" x="498" y="186" text-anchor="middle">改动</text>
+
+  <!-- 右:补的三处 -->
+  <text class="h" x="530" y="26" fill="#1f6b3a">我们补的三处(共 2 个文件、3 处)</text>
+
+  <rect class="fix" x="530" y="42" width="440" height="72" rx="8"/>
+  <text class="h" x="546" y="66" fill="#1f6b3a">改 ① 放行配置门(一行)</text>
+  <text class="n" x="546" y="86">accepts_context_parallel 改为 True —— 它是声明式的门,</text>
+  <text class="n" x="546" y="102">不是机制缺口;真正的契约由改 ②③ 提供。</text>
+
+  <rect class="fix" x="530" y="126" width="440" height="86" rx="8"/>
+  <text class="h" x="546" y="150" fill="#1f6b3a">改 ② 记忆模块的图像前驱屏蔽</text>
+  <text class="n" x="546" y="170">在 per-row history 构造点,凡前驱落在图像协议 token 上,</text>
+  <text class="n" x="546" y="186">以填充符替代(与非 CP 路径"n-gram 不跨图像 token"同语义),</text>
+  <text class="n" x="546" y="202">随后删除"CP × 图像"的显式 raise。</text>
+
+  <rect class="fix" x="530" y="224" width="440" height="86" rx="8"/>
+  <text class="h" x="546" y="248" fill="#1f6b3a">改 ③ 让位置表随 token 一起切分</text>
+  <text class="n" x="546" y="268">把"token 类型表 + 图像特征位置表"两张簿记表,</text>
+  <text class="n" x="546" y="284">并入与 token 相同的"置换 + 均分"切分调用;</text>
+  <text class="n" x="546" y="300">注入函数(nonzero 取位 + 按行写回)与置换可交换,零改动。</text>
+
+  <!-- 底部关键洞察 -->
+  <rect x="30" y="326" width="940" height="46" rx="8" fill="#eaf0f8" stroke="#2f5d9e" stroke-width="1.4"/>
+  <text class="h" x="46" y="348" fill="#2f5d9e">关键洞察:视觉塔不需要被切分(它没有 token 序列轴),所以 CP 在视觉层"不做事" ——</text>
+  <text class="n" x="46" y="366">要补的不是"给视觉塔设计切分",而是"让两张簿记表随行 + 补一处记忆语义"。这就是改动面只有 2 文件 3 处的原因。</text>
+</svg>
+<figcaption><b>背景 · 为什么开源没支持。</b>左边三道显式拒绝(配置门 / 记忆模块 raise / 注入语义未定义),右边对应的三处修补。核心:视觉塔本身不可切也不必切,CP 只作用于序列里的图像占位 token。</figcaption>
+</div>
+
+<p class="a">为什么开源一直没做?三个原因叠加:<b>① 需求交集小</b> —— 同时命中"多模态 × 超长序列 × 分布式"的用户群很小,上游不会优先投入;<b>② 文本栈的机制刚建成</b> —— 上游三周 12 个提交全投向纯文本栈,视觉目录零提交,是"还没轮到"而非"不可能";<b>③ 真正难的是定义正确性契约</b> —— 切分后所有与位置对齐的状态必须同步移动,错一处是静默数值错误,面对它工程上的正确选择就是硬门禁。业界同形态先例(Meta torchtitan 主线 Kimi K3 的多模态 CP,2026-10 合并)刚出现,证明这条形态可行 —— 我们做的是把已验证的形态接到华为分叉的 V4.1 栈,不是发明新机制。</p>
+
+
+<!-- ================= Git Review: 行级改动清单 ================= -->
+<h2>改动清单(Git Review):具体改了哪些文件、哪些行</h2>
+
+<p class="a" style="background:#fff8e6;border:1px solid #ecd9b0;border-radius:8px;padding:12px 16px">
+<b>状态声明(务必先读):</b>这套视觉栈 CP 方案目前处于<b>设计阶段,代码尚未实施</b>——以下是按设计文档<b>将要施加的三处补丁</b>的精确行级 diff(改前 = 基线 <code>1e1e60be</code> 现状,改后 = 设计目标),<b>不是已提交的改动</b>。行号与现状代码均取自基线源码实读。三处补丁共涉及 <b>2 个文件</b>(外加 1 个文件的删除式改动),合计 <b>+约 30 / −约 8 行</b>。</p>
+
+<div class="legend-diff">
+  <span><span class="sw" style="background:#ffe9e9"></span>红 = 删除(改前行)</span>
+  <span><span class="sw" style="background:#e6f6e6"></span>绿 = 新增(改后行)</span>
+  <span><span class="sw" style="background:#fff"></span>灰 = 上下文(不变)</span>
+  <span><span class="sw" style="background:#eaf0fb"></span>蓝 = hunk 头(函数定位)</span>
+</div>
+
+<!-- ========== 文件 1: model.py — 改动① + 改动② ========== -->
+<div class="review">
+  <div class="rv-head">
+    <span class="dot" style="background:#c98a3d"></span>
+    <span class="fname">torchtitan_npu/models/deepseek_v4_1/model.py</span>
+    <span class="rv-badge badge-file">改动① + 改动②</span>
+    <span class="rv-badge badge-design">设计待实施</span>
+    <span class="rv-stat"><span class="add">+约 22</span> / <span class="del">−约 4</span></span>
+  </div>
+  <div class="rv-sub">这个文件承担两处改动:<b>① 放行配置门</b>(<code>accepts_context_parallel</code>)、<b>② n-gram 前驱的图像位屏蔽</b>(<code>_engram_row_history</code>)。</div>
+
+  <!-- hunk 1: accepts_context_parallel -->
+  <div class="diff">
+    <div class="dline d-hunk"><span class="ln">@@</span><span class="code">class DeepSeekV41MultimodalModel.Config — 配置门放行(改动①)</span></div>
+    <div class="dline d-ctx"><span class="ln">699</span><span class="code">    @dataclass(kw_only=True, slots=True)</span></div>
+    <div class="dline d-ctx"><span class="ln">700</span><span class="code">    class Config(DeepSeekV41Model.Config):</span></div>
+    <div class="dline d-del"><span class="ln">701</span><span class="code"><span class="sign">−</span>        # Context parallelism is defined for the text stack; the vision path has no CP</span></div>
+    <div class="dline d-del"><span class="ln">702</span><span class="code"><span class="sign">−</span>        # contract yet, so the multimodal stack keeps rejecting it.</span></div>
+    <div class="dline d-add"><span class="ln">701</span><span class="code"><span class="sign">+</span>        # CP is now defined for the multimodal stack: sequence-aligned vision</span></div>
+    <div class="dline d-add"><span class="ln">702</span><span class="code"><span class="sign">+</span>        # bookkeeping (token_types / image_feature_indices) is sharded with the</span></div>
+    <div class="dline d-add"><span class="ln">703</span><span class="code"><span class="sign">+</span>        # tokens by the same doc-chunk permutation, and the Engram per-row</span></div>
+    <div class="dline d-add"><span class="ln">704</span><span class="code"><span class="sign">+</span>        # history masks image predecessors at construction (see _engram_row_history).</span></div>
+    <div class="dline d-del"><span class="ln">703</span><span class="code"><span class="sign">−</span>        accepts_context_parallel: ClassVar[bool] = False</span></div>
+    <div class="dline d-add"><span class="ln">705</span><span class="code"><span class="sign">+</span>        accepts_context_parallel: ClassVar[bool] = True</span></div>
+    <div class="dline d-ctx"><span class="ln">706</span><span class="code"> </span></div>
+    <div class="dline d-ctx"><span class="ln">707</span><span class="code">        vision_encoder: DeepSeekV41VisionEncoder.Config</span></div>
+    <div class="dline d-ctx"><span class="ln">708</span><span class="code">        image_marker_embeddings: ImageMarkerEmbeddings.Config</span></div>
+  </div>
+  <div class="rv-why"><b>为什么是一行放行:</b>这是配置树层的<b>声明式守卫</b>,在模块构建前触发——它的存在理由是"视觉路径尚无 CP 契约"。契约由下面改动②③提供,所以放行 = 设计成立的声明,不是绕过检查。</div>
+
+  <!-- hunk 2: _engram_row_history -->
+  <div class="diff" style="margin-top:14px">
+    <div class="dline d-hunk"><span class="ln">@@</span><span class="code">def _engram_row_history(...) — n-gram 前驱的图像位屏蔽(改动②)</span></div>
+    <div class="dline d-ctx"><span class="ln">574</span><span class="code">    def _engram_row_history(</span></div>
+    <div class="dline d-del"><span class="ln">575</span><span class="code"><span class="sign">−</span>        self,</span></div>
+    <div class="dline d-del"><span class="ln">576</span><span class="code"><span class="sign">−</span>        tokens: torch.Tensor,</span></div>
+    <div class="dline d-del"><span class="ln">577</span><span class="code"><span class="sign">−</span>        positions: torch.Tensor,</span></div>
+    <div class="dline d-del"><span class="ln">578</span><span class="code"><span class="sign">−</span>        parallel_dims,</span></div>
+    <div class="dline d-add"><span class="ln">575</span><span class="code"><span class="sign">+</span>        self,</span></div>
+    <div class="dline d-add"><span class="ln">576</span><span class="code"><span class="sign">+</span>        tokens: torch.Tensor,</span></div>
+    <div class="dline d-add"><span class="ln">577</span><span class="code"><span class="sign">+</span>        positions: torch.Tensor,</span></div>
+    <div class="dline d-add"><span class="ln">578</span><span class="code"><span class="sign">+</span>        parallel_dims,</span></div>
+    <div class="dline d-add"><span class="ln">579</span><span class="code"><span class="sign">+</span>        token_types: torch.Tensor | None = None,   # 新增:图像协议标记(可选)</span></div>
+    <div class="dline d-ctx"><span class="ln">580</span><span class="code">    ) -> torch.Tensor:</span></div>
+    <div class="dline d-ctx"><span class="ln">581</span><span class="code">        """Each of this rank's rows' predecessors ... """</span></div>
+    <div class="dline d-ctx"><span class="ln">587</span><span class="code">        cp_mesh = parallel_dims.get_mesh("cp")</span></div>
+    <div class="dline d-ctx"><span class="ln">588</span><span class="code">        cp_size, cp_rank = cp_mesh.size(), cp_mesh.get_local_rank()</span></div>
+    <div class="dline d-ctx"><span class="ln">590</span><span class="code">        local_rows = rows[cp_rank * slab_len : (cp_rank + 1) * slab_len]</span></div>
+    <div class="dline d-ctx"><span class="ln">598</span><span class="code">        for distance in range(1, self.engram_history_size + 1):</span></div>
+    <div class="dline d-del"><span class="ln">600</span><span class="code"><span class="sign">−</span>            history[:, :, distance - 1] = tokens[:, (local_rows - distance).clamp(min=0)]</span></div>
+    <div class="dline d-add"><span class="ln">600</span><span class="code"><span class="sign">+</span>            gathered = tokens[:, (local_rows - distance).clamp(min=0)]</span></div>
+    <div class="dline d-add"><span class="ln">601</span><span class="code"><span class="sign">+</span>            if token_types is not None:</span></div>
+    <div class="dline d-add"><span class="ln">602</span><span class="code"><span class="sign">+</span>                # 前驱若是图像协议 token,该距离无 n-gram(与非 CP 的 _shift_tokens 同语义):</span></div>
+    <div class="dline d-add"><span class="ln">603</span><span class="code"><span class="sign">+</span>                # 以 pad 替换,经 token_id_map 后自然落到 compressed_pad_id。</span></div>
+    <div class="dline d-add"><span class="ln">604</span><span class="code"><span class="sign">+</span>                pred_types = token_types[:, (local_rows - distance).clamp(min=0)]</span></div>
+    <div class="dline d-add"><span class="ln">605</span><span class="code"><span class="sign">+</span>                gathered = torch.where(pred_types.ge(0), self._engram_pad_token_id, gathered)</span></div>
+    <div class="dline d-add"><span class="ln">606</span><span class="code"><span class="sign">+</span>            history[:, :, distance - 1] = gathered</span></div>
+    <div class="dline d-ctx"><span class="ln">607</span><span class="code">        return history</span></div>
+  </div>
+  <div class="rv-why"><b>为什么在构造点屏蔽:</b>非 CP 路径的 <code>_shift_tokens</code> 用 <code>image_mask</code> 把"跨图像 token 的 shift"替换为 <code>compressed_pad_id</code>。本改动把同样的屏蔽挪到 history 构造点(<code>local_rows − distance</code> 本就是整行坐标),两种并行度共享同一套既有语义。<code>token_types</code> 由 <code>preprocess_inputs</code> 透传(<code>input_dict</code> 中已有),<code>self._engram_pad_token_id</code> 为对应 pad 的原始 token id。</div>
+</div>
+
+<!-- ========== 文件 2: decoder.py — 改动③ ========== -->
+<div class="review">
+  <div class="rv-head">
+    <span class="dot" style="background:#c98a3d"></span>
+    <span class="fname">torchtitan_npu/patches/torchtitan/models/common/decoder.py</span>
+    <span class="rv-badge badge-file">改动③</span>
+    <span class="rv-badge badge-design">设计待实施</span>
+    <span class="rv-stat"><span class="add">+约 14</span> / <span class="del">−约 2</span></span>
+  </div>
+  <div class="rv-sub"><code>_cp_shard</code>:把两张序列对齐的图像簿记表并入与 token 相同的"置换 + 均分"切分调用。</div>
+
+  <div class="diff">
+    <div class="dline d-hunk"><span class="ln">@@</span><span class="code">def _cp_shard(...) — 序列对齐图像键进切分 buffer(改动③)</span></div>
+    <div class="dline d-ctx"><span class="ln">186</span><span class="code">    row_positions = extra_kwargs.get("positions")</span></div>
+    <div class="dline d-ctx"><span class="ln">199</span><span class="code">    attention_masks = extra_kwargs.get("attention_masks")</span></div>
+    <div class="dline d-del"><span class="ln">201</span><span class="code"><span class="sign">−</span>    buffers: tuple[torch.Tensor, ...] = (inputs, labels) if row_positions is None else (inputs, labels, row_positions)</span></div>
+    <div class="dline d-add"><span class="ln">201</span><span class="code"><span class="sign">+</span>    # 序列对齐的多模态簿记表(token 类型 / 图像特征位置)与 token 走同一置换切分:</span></div>
+    <div class="dline d-add"><span class="ln">202</span><span class="code"><span class="sign">+</span>    # 注入(nonzero 取位 + 按行写回)与置换可交换,前提是这些表与 token 同序。</span></div>
+    <div class="dline d-add"><span class="ln">203</span><span class="code"><span class="sign">+</span>    # 图像内容(pixel_values / image_grid)整行复制,不进切分。</span></div>
+    <div class="dline d-add"><span class="ln">204</span><span class="code"><span class="sign">+</span>    _SEQ_ALIGNED_MM = ("token_types", "image_feature_indices")</span></div>
+    <div class="dline d-add"><span class="ln">205</span><span class="code"><span class="sign">+</span>    seq_keys = [k for k in _SEQ_ALIGNED_MM if isinstance(extra_kwargs.get(k), torch.Tensor)]</span></div>
+    <div class="dline d-add"><span class="ln">206</span><span class="code"><span class="sign">+</span>    buffers = tuple(</span></div>
+    <div class="dline d-add"><span class="ln">207</span><span class="code"><span class="sign">+</span>        [inputs, labels]</span></div>
+    <div class="dline d-add"><span class="ln">208</span><span class="code"><span class="sign">+</span>        + ([row_positions] if row_positions is not None else [])</span></div>
+    <div class="dline d-add"><span class="ln">209</span><span class="code"><span class="sign">+</span>        + [extra_kwargs[k] for k in seq_keys]</span></div>
+    <div class="dline d-add"><span class="ln">210</span><span class="code"><span class="sign">+</span>    )</span></div>
+    <div class="dline d-ctx"><span class="ln">211</span><span class="code">    sharded, attention_masks = cp_shard(</span></div>
+    <div class="dline d-ctx"><span class="ln">212</span><span class="code">        cp_mesh, buffers, attention_masks, layout,</span></div>
+    <div class="dline d-ctx"><span class="ln">213</span><span class="code">        ptrr_mask_key=ptrr_mask_key, positions=row_positions,</span></div>
+    <div class="dline d-ctx"><span class="ln">214</span><span class="code">    )</span></div>
+    <div class="dline d-ctx"><span class="ln">215</span><span class="code">    inputs, labels = sharded[0], sharded[1]</span></div>
+    <div class="dline d-ctx"><span class="ln">216</span><span class="code">    if len(sharded) > 2:</span></div>
+    <div class="dline d-ctx"><span class="ln">217</span><span class="code">        extra_kwargs["positions"] = sharded[2]</span></div>
+    <div class="dline d-add"><span class="ln">218</span><span class="code"><span class="sign">+</span>    # 切分后的图像簿记表回写(索引:2 + positions 是否在场)</span></div>
+    <div class="dline d-add"><span class="ln">219</span><span class="code"><span class="sign">+</span>    _idx = 2 + (1 if row_positions is not None else 0)</span></div>
+    <div class="dline d-add"><span class="ln">220</span><span class="code"><span class="sign">+</span>    for k in seq_keys:</span></div>
+    <div class="dline d-add"><span class="ln">221</span><span class="code"><span class="sign">+</span>        extra_kwargs[k] = sharded[_idx]; _idx += 1</span></div>
+    <div class="dline d-ctx"><span class="ln">222</span><span class="code">    if attention_masks is not None:</span></div>
+    <div class="dline d-ctx"><span class="ln">223</span><span class="code">        extra_kwargs["attention_masks"] = attention_masks</span></div>
+  </div>
+  <div class="rv-why"><b>为什么追加即正确:</b><code>patched_cp_shard → shard_for_layout</code> 对 buffer 元组<b>统一施加同一 doc-chunk 置换再均分</code>——追加两个成员,它们自动获得与 token 完全一致的行序,零新布局代码。<code>pixel_values / image_grid</code> 不追加(图像对齐,整行复制是正确语义)。<b>版本边界警示:</b>pin 0.3.0 的 <code>annotate_input_spmd_types</code> 只 assert input/labels/positions 三键,追加键不查(恰好是我们想要的);但上游 0.4.0+ 改为"每个张量输入必须有 layout 否则 raise",重基时需按 Kimi K3 的 <code>multimodal_input_sharding()</code> 先例补声明——已在此补丁注释预置警告。</div>
+</div>
+
+<!-- ========== 文件 3: engram/core.py — 改动②的另一半(删除式) ========== -->
+<div class="review">
+  <div class="rv-head">
+    <span class="dot" style="background:#c98a3d"></span>
+    <span class="fname">torchtitan_npu/models/deepseek_v4_1/engram/core.py</span>
+    <span class="rv-badge badge-file">改动②(另一半)</span>
+    <span class="rv-badge badge-design">设计待实施</span>
+    <span class="rv-stat"><span class="add">+约 3</span> / <span class="del">−约 2</span></span>
+  </div>
+  <div class="rv-sub">删除"CP × 图像"组合的显式拒绝——前提 = model.py 的 history 构造点已做图像位屏蔽(上面改动②)。</div>
+
+  <div class="diff">
+    <div class="dline d-hunk"><span class="ln">@@</span><span class="code">class EngramTable.hash(...) — 删除 CP×图像 的显式 raise(改动②配套)</span></div>
+    <div class="dline d-ctx"><span class="ln">263</span><span class="code">            if positions_BL is None:</span></div>
+    <div class="dline d-ctx"><span class="ln">264</span><span class="code">                raise ValueError("Engram token history requires document-relative positions.")</span></div>
+    <div class="dline d-del"><span class="ln">265</span><span class="code"><span class="sign">−</span>            if image_mask is not None:</span></div>
+    <div class="dline d-del"><span class="ln">266</span><span class="code"><span class="sign">−</span>                raise ValueError("Engram context parallelism currently supports text-only inputs.")</span></div>
+    <div class="dline d-add"><span class="ln">265</span><span class="code"><span class="sign">+</span>            # per-row history 的图像位屏蔽已在构造点(model.py._engram_row_history)完成;</span></div>
+    <div class="dline d-add"><span class="ln">266</span><span class="code"><span class="sign">+</span>            # 此处的 image_mask 继续承担"本行是图像 token 则无 n-gram"的现行语义(下方 alive 掩码)。</span></div>
+    <div class="dline d-ctx"><span class="ln">267</span><span class="code">            token_history = token_id_map[token_history.long()]</span></div>
+    <div class="dline d-ctx"><span class="ln">268</span><span class="code">        shifts = [</span></div>
+    <div class="dline d-ctx"><span class="ln">269</span><span class="code">            self._shift_tokens(compressed_ids_BL, positions_BL, distance, token_history)</span></div>
+    <div class="dline d-ctx"><span class="ln">272</span><span class="code">        if image_mask is not None:</span></div>
+    <div class="dline d-ctx"><span class="ln">275</span><span class="code">            # No n-gram may cross an image token, including a multi-token image span.</span></div>
+    <div class="dline d-ctx"><span class="ln">276</span><span class="code">            alive = ~image_mask</span></div>
+  </div>
+  <div class="rv-why"><b>为什么能删:</b>这个 raise 挡的是<b>旧语义</b>——per-row history 构造时,视觉 token 的前驱行可能跨过图像边界,hash 会把图像 token id 当普通 n-gram 成员。但 model.py 改动②已在构造点把图像位前驱替换为 pad,语义闭合,所以拒绝可删。<b>注意:</b>这是触碰 Engram 数值语义的改动,<b>必须</b>先过 V2 单模块对拍(整行前向 vs 按行前驱,输出逐位相等)才可进实验分支——若对拍失败,说明"图像前驱→pad"的语义假设与官方 n-gram 定义有出入,须停下对齐,不降标硬闯。</div>
+</div>
+
+<!-- ========== 汇总表 ========== -->
+<h3>三处改动汇总(文件级)</h3>
+<table>
+  <tr><th style="width:30%">文件</th><th style="width:12%">改动编号</th><th style="width:16%">行数(+增/−删)</th><th>性质与风险</th></tr>
+  <tr><td><code>models/deepseek_v4_1/model.py</code></td><td>① + ②</td><td>+22 / −4</td><td>配置门放行(零风险)+ n-gram 前驱图像位屏蔽(数值语义,需 V2 对拍)</td></tr>
+  <tr><td><code>patches/.../models/common/decoder.py</code></td><td>③</td><td>+14 / −2</td><td>序列对齐图像键进切分 buffer(布局契约,需 V0 纯函数门);版本重基注意</td></tr>
+  <tr><td><code>models/deepseek_v4_1/engram/core.py</code></td><td>② 配套</td><td>+3 / −2</td><td>删除 CP×图像 raise(依赖改动②先落地,需 V2 对拍)</td></tr>
+  <tr><td colspan="2"><b>合计</b></td><td><b>+39 / −8</b></td><td>视觉注入函数本身零改动(nonzero 集合语义与置换可交换);视觉塔零改动</td></tr>
+</table>
+
+<p class="a">验证门与上游回流:三处改动均按"补丁 + issue"形态推回 gitcode 上游(引用本 diff + Kimi K3 先例)。验证分三层:<b>V0</b> 纯函数(scatter 分解律 / 空图 rank / history 图像屏蔽,Mac 可跑)、<b>V1</b> 文本 batch × 多模态档 CP=2 单步(同 degree 改动前后逐位)、<b>V2</b> 图文 batch + Engram 单模块对拍(逐位)。判据不放宽,任一门失败即停。</p>
+
+
+<!-- ================= 图例 ================= -->
+<svg viewBox="0 0 1000 56" width="100%" role="img" aria-label="图例">
+  <style>
+    .t{font:12px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .tx{fill:#dfe7f2;stroke:#9db2cf}
+    .im{fill:#f6c99a;stroke:#c98a3d}
+    .cm{stroke:#b04a4a;stroke-width:2.4;fill:none;marker-end:url(#am);stroke-dasharray:5 4}
+  </style>
+  <defs><marker id="am" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b04a4a"/></marker></defs>
+  <rect class="tx" x="24" y="14" width="15" height="15"/><text class="t" x="46" y="26">文本 token / 文本激活</text>
+  <rect class="im" x="220" y="14" width="15" height="15"/><text class="t" x="242" y="26">图像占位 token / 视觉特征</text>
+  <path d="M470 22 h26" stroke="#4a5768" stroke-width="2" marker-end="url(#am)" style="stroke-dasharray:none"/><text class="t" x="506" y="26">实线 = 本卡内计算</text>
+  <line class="cm" x1="24" y1="42" x2="54" y2="42"/><text class="t" x="64" y="46">红虚线 = 卡间通信(越粗搬得越多)</text>
+  <text class="t" x="470" y="46" fill="#4a5768">灰色块 = 在对家卡上的部分 · 色块重叠 = 复制</text>
+</svg>
+
+<!-- ================= 图 1: 切分布局 ================= -->
+<h2>决策点 1:序列怎么切给两张卡?</h2>
+<p class="a">同一条样本(两篇文档,含一段图像占位),三种切法:</p>
+
+<div class="fig">
+<svg viewBox="0 0 1000 560" width="100%" role="img" aria-label="切分布局对比">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tx{fill:#dfe7f2;stroke:#9db2cf}
+    .im{fill:#f6c99a;stroke:#c98a3d}
+    .co{fill:none;stroke:#2f5d9e;stroke-width:2}
+    .cb{fill:none;stroke:#1f6b3a;stroke-width:2}
+    .ct{fill:none;stroke:#8a5a00;stroke-width:2}
+    .cut{stroke:#b04a4a;stroke-width:2.4;stroke-dasharray:6 5}
+  </style>
+
+  <!-- 原始序列 -->
+  <text class="n" x="30" y="24">原始序列:</text>
+  <g>
+    <rect class="tx" x="130" y="12" width="14" height="24"/><rect class="tx" x="144" y="12" width="14" height="24"/><rect class="tx" x="158" y="12" width="14" height="24"/><rect class="tx" x="172" y="12" width="14" height="24"/><rect class="tx" x="186" y="12" width="14" height="24"/><rect class="tx" x="200" y="12" width="14" height="24"/><rect class="tx" x="214" y="12" width="14" height="24"/><rect class="tx" x="228" y="12" width="14" height="24"/>
+    <rect class="im" x="242" y="12" width="14" height="24"/><rect class="im" x="256" y="12" width="14" height="24"/><rect class="im" x="270" y="12" width="14" height="24"/><rect class="im" x="284" y="12" width="14" height="24"/><rect class="im" x="298" y="12" width="14" height="24"/><rect class="im" x="312" y="12" width="14" height="24"/>
+    <rect class="tx" x="326" y="12" width="14" height="24"/><rect class="tx" x="340" y="12" width="14" height="24"/>
+    <rect class="tx" x="364" y="12" width="14" height="24"/><rect class="tx" x="378" y="12" width="14" height="24"/><rect class="tx" x="392" y="12" width="14" height="24"/><rect class="tx" x="406" y="12" width="14" height="24"/><rect class="tx" x="420" y="12" width="14" height="24"/><rect class="tx" x="434" y="12" width="14" height="24"/><rect class="tx" x="448" y="12" width="14" height="24"/><rect class="tx" x="462" y="12" width="14" height="24"/>
+  </g>
+  <text class="n" x="242" y="52" text-anchor="middle">文档 A(8 文本 + 6 图像 + 2 文本)</text>
+  <text class="n" x="413" y="52" text-anchor="middle">文档 B(8 文本)</text>
+  <line class="cut" x1="356" y1="8" x2="356" y2="40"/><text class="n" x="360" y="8" font-size="10">文档边界</text>
+
+  <!-- 本方案 -->
+  <text class="h" x="30" y="74" fill="#2f5d9e">本方案 · doc-chunk 置换</text>
+  <rect class="co" x="130" y="80" width="176" height="30" rx="4"/>
+  <g>
+    <rect class="tx" x="134" y="84" width="14" height="22"/><rect class="tx" x="148" y="84" width="14" height="22"/><rect class="tx" x="162" y="84" width="14" height="22"/><rect class="tx" x="176" y="84" width="14" height="22"/><rect class="tx" x="190" y="84" width="14" height="22"/><rect class="tx" x="204" y="84" width="14" height="22"/><rect class="tx" x="218" y="84" width="14" height="22"/><rect class="tx" x="232" y="84" width="14" height="22"/>
+    <rect class="tx" x="252" y="84" width="14" height="22"/><rect class="tx" x="266" y="84" width="14" height="22"/><rect class="tx" x="280" y="84" width="14" height="22"/><rect class="tx" x="294" y="84" width="14" height="22"/>
+  </g>
+  <text class="n" x="134" y="126">卡 0 = A 第 0 块 ‖ B 第 0 块</text>
+  <rect class="co" x="330" y="80" width="176" height="30" rx="4"/>
+  <g>
+    <rect class="im" x="334" y="84" width="14" height="22"/><rect class="im" x="348" y="84" width="14" height="22"/><rect class="im" x="362" y="84" width="14" height="22"/><rect class="im" x="376" y="84" width="14" height="22"/><rect class="im" x="390" y="84" width="14" height="22"/><rect class="im" x="404" y="84" width="14" height="22"/>
+    <rect class="tx" x="418" y="84" width="14" height="22"/><rect class="tx" x="432" y="84" width="14" height="22"/>
+    <rect class="tx" x="452" y="84" width="14" height="22"/><rect class="tx" x="466" y="84" width="14" height="22"/><rect class="tx" x="480" y="84" width="14" height="22"/><rect class="tx" x="494" y="84" width="14" height="22"/>
+  </g>
+  <text class="n" x="334" y="126">卡 1 = A 第 1 块(图像全在此)‖ B 第 1 块</text>
+  <text class="n" x="560" y="92">每篇文档等分 R 块,第 r 卡拿每文档第 r 块(重排后均分)</text>
+  <text class="n" x="560" y="110">→ 两卡负载天然均衡;需整行"置换"一次(本地,零通信)</text>
+
+  <!-- BSND -->
+  <text class="h" x="30" y="164" fill="#1f6b3a">BSND · 连续等分</text>
+  <rect class="cb" x="130" y="170" width="176" height="30" rx="4"/>
+  <g>
+    <rect class="tx" x="134" y="174" width="14" height="22"/><rect class="tx" x="148" y="174" width="14" height="22"/><rect class="tx" x="162" y="174" width="14" height="22"/><rect class="tx" x="176" y="174" width="14" height="22"/><rect class="tx" x="190" y="174" width="14" height="22"/><rect class="tx" x="204" y="174" width="14" height="22"/><rect class="tx" x="218" y="174" width="14" height="22"/><rect class="tx" x="232" y="174" width="14" height="22"/>
+    <rect class="im" x="246" y="174" width="14" height="22"/><rect class="im" x="260" y="174" width="14" height="22"/><rect class="im" x="274" y="174" width="14" height="22"/><rect class="im" x="288" y="174" width="14" height="22"/>
+  </g>
+  <text class="n" x="134" y="216">卡 0 = 前 12(8 文本 + 4 图像)</text>
+  <rect class="cb" x="330" y="170" width="176" height="30" rx="4"/>
+  <g>
+    <rect class="im" x="334" y="174" width="14" height="22"/><rect class="im" x="348" y="174" width="14" height="22"/>
+    <rect class="tx" x="362" y="174" width="14" height="22"/><rect class="tx" x="376" y="174" width="14" height="22"/>
+    <rect class="tx" x="396" y="174" width="14" height="22"/><rect class="tx" x="410" y="174" width="14" height="22"/><rect class="tx" x="424" y="174" width="14" height="22"/><rect class="tx" x="438" y="174" width="14" height="22"/><rect class="tx" x="452" y="174" width="14" height="22"/><rect class="tx" x="466" y="174" width="14" height="22"/><rect class="tx" x="480" y="174" width="14" height="22"/><rect class="tx" x="494" y="174" width="14" height="22"/>
+  </g>
+  <text class="n" x="334" y="216">卡 1 = 后 12(2 图像 + 2 文本 + B)</text>
+  <text class="n" x="560" y="182">补齐后从中间直切,无置换</text>
+  <text class="n" x="560" y="200">→ 切点会穿过图像 span(本例:4+2 分开),由"先融合后切"兜底</text>
+
+  <!-- TND -->
+  <text class="h" x="30" y="254" fill="#8a5a00">TND · 文档可变切分</text>
+  <rect class="ct" x="130" y="260" width="206" height="30" rx="4"/>
+  <g>
+    <rect class="tx" x="134" y="264" width="14" height="22"/><rect class="tx" x="148" y="264" width="14" height="22"/><rect class="tx" x="162" y="264" width="14" height="22"/><rect class="tx" x="176" y="264" width="14" height="22"/><rect class="tx" x="190" y="264" width="14" height="22"/><rect class="tx" x="204" y="264" width="14" height="22"/><rect class="tx" x="218" y="264" width="14" height="22"/><rect class="tx" x="232" y="264" width="14" height="22"/>
+    <rect class="im" x="246" y="264" width="14" height="22"/><rect class="im" x="260" y="264" width="14" height="22"/><rect class="im" x="274" y="264" width="14" height="22"/><rect class="im" x="288" y="264" width="14" height="22"/><rect class="im" x="302" y="264" width="14" height="22"/><rect class="im" x="316" y="264" width="14" height="22"/>
+  </g>
+  <text class="n" x="134" y="306">卡 0 = A 前 14(全部图像在此)</text>
+  <rect class="ct" x="360" y="260" width="146" height="30" rx="4"/>
+  <g>
+    <rect class="tx" x="364" y="264" width="14" height="22"/><rect class="tx" x="378" y="264" width="14" height="22"/>
+    <rect class="tx" x="398" y="264" width="14" height="22"/><rect class="tx" x="412" y="264" width="14" height="22"/><rect class="tx" x="426" y="264" width="14" height="22"/><rect class="tx" x="440" y="264" width="14" height="22"/><rect class="tx" x="454" y="264" width="14" height="22"/><rect class="tx" x="468" y="264" width="14" height="22"/><rect class="tx" x="482" y="264" width="14" height="22"/>
+  </g>
+  <text class="n" x="364" y="306">卡 1 = A 后 2 + 整个 B(可变长)</text>
+  <text class="n" x="560" y="272">切点只求压缩比对齐,可落在文档中间</text>
+  <text class="n" x="560" y="290">→ 文档 A 整体跨 rank;两卡段长可不等;打包流不补齐</text>
+
+  <!-- 底部:负载均衡 -->
+  <rect x="30" y="330" width="940" height="86" rx="8" fill="#fff" stroke="#d8dee8"/>
+  <text class="h" x="46" y="356">三家共同的因果负载问题与三种答案</text>
+  <text class="n" x="46" y="380">因果注意力下,序列后段的 token 要看的 KV 更长 —— 连续切分(BSND)与文档切分(TND)的后段卡更重。</text>
+  <text class="n" x="46" y="398">doc-chunk 置换把每篇文档的因果不平衡均摊到每张卡(每卡都拿各文档"前段+后段"混合),这是本方案独有的负载均衡手段。</text>
+  <text class="n" x="30" y="446">TND 的补偿 = 交换时只取"本段查询仍可达"的行(halo_prefix,见决策点 4),把后段卡多付的通信压回去 —— 均衡与省通信,两家各取一头。</text>
+
+  <text class="n" x="30" y="500">图例:<tspan fill="#9db2cf">■</tspan> 文本 token <tspan fill="#c98a3d">■</tspan> 图像占位 token <tspan style="fill:none;stroke:#2f5d9e;stroke-width:2">□</tspan> 本方案卡 <tspan style="fill:none;stroke:#1f6b3a;stroke-width:2">□</tspan> BSND 卡 <tspan style="fill:none;stroke:#8a5a00;stroke-width:2">□</tspan> TND 卡</text>
+  <text class="n" x="30" y="524">注:三例刻意用同一条样本、同一 CP=2,让切点相对图像 span 的位置差异直观可见(整体落一卡 / 被切点劈开 / 段边界穿过文档)。</text>
+</svg>
+<figcaption><b>图 1 · 切分布局。</b>本方案用置换换负载均衡;BSND 直切最简单但切点穿过图像 span;TND 按文档可变切分、允许文档跨卡,最贴合变长打包训练。</figcaption>
+</div>
+
+<!-- ================= 图 2: 视觉注入时机 ================= -->
+<h2>决策点 2:视觉特征在切分前还是切分后注入?</h2>
+<p class="a">视觉塔三家都是"整图前向、每卡一份"(冗余但无冲突),差别在<b>塔之后的注入</b>发生在切分前还是后:</p>
+
+<div class="fig">
+<svg viewBox="0 0 1000 440" width="100%" role="img" aria-label="视觉注入时机对比">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .box{fill:#fff;stroke:#c9d2e0;stroke-width:1.4}
+    .bo{stroke:#2f5d9e}
+    .bb{stroke:#1f6b3a}
+    .bt{stroke:#8a5a00}
+    .hl{fill:#fdf6ec;stroke:#c98a3d;stroke-width:1.8}
+    .ar{stroke:#4a5768;stroke-width:1.6;fill:none;marker-end:url(#a2)}
+  </style>
+  <defs><marker id="a2" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4a5768"/></marker></defs>
+
+  <!-- 本方案 -->
+  <text class="h" x="30" y="28" fill="#2f5d9e">本方案 · 最早切 + 簿记随行</text>
+  <rect class="box bo" x="30" y="42" width="150" height="46" rx="6"/>
+  <text class="n" x="44" y="62">① 切分(最早)</text>
+  <text class="n" x="44" y="78">token+簿记同置换</text>
+  <line class="ar" x1="180" y1="65" x2="210" y2="65"/>
+  <rect class="box bo" x="212" y="42" width="130" height="46" rx="6"/>
+  <text class="n" x="226" y="62">② 视觉塔(整图)</text>
+  <text class="n" x="226" y="78">特征库每卡复制</text>
+  <line class="ar" x1="342" y1="65" x2="372" y2="65"/>
+  <rect class="box bo hl" x="374" y="42" width="160" height="46" rx="6"/>
+  <text class="n" x="388" y="62">③ 注入:本卡半行</text>
+  <text class="n" x="388" y="78">nonzero 集合匹配</text>
+  <line class="ar" x1="534" y1="65" x2="564" y2="65"/>
+  <rect class="box bo" x="566" y="42" width="150" height="46" rx="6"/>
+  <text class="n" x="580" y="62">④ 解码器 40 层</text>
+  <text class="n" x="580" y="78">半行 × 整行 KV</text>
+  <text class="n" x="740" y="62">义务:簿记表必须与 token</text>
+  <text class="n" x="740" y="78">经历同一置换(设计核心)</text>
+  <text class="n" x="30" y="108">→ 显存最省(半行 embedding 进解码器),但簿记随行的正确性要自己证明(V0 纯函数门覆盖)</text>
+
+  <!-- BSND -->
+  <text class="h" x="30" y="158" fill="#1f6b3a">BSND · 最晚切(先融合后切)</text>
+  <rect class="box bb" x="30" y="172" width="150" height="46" rx="6"/>
+  <text class="n" x="44" y="192">① 完整序列每卡</text>
+  <text class="n" x="44" y="208">(不预切)</text>
+  <line class="ar" x1="180" y1="195" x2="210" y2="195"/>
+  <rect class="box bb" x="212" y="172" width="130" height="46" rx="6"/>
+  <text class="n" x="226" y="192">② 视觉塔(整图)</text>
+  <line class="ar" x1="342" y1="195" x2="372" y2="195"/>
+  <rect class="box bb hl" x="374" y="172" width="160" height="46" rx="6"/>
+  <text class="n" x="388" y="192">③ 注入:整行融合</text>
+  <text class="n" x="388" y="208">切分前完成,免证明</text>
+  <line class="ar" x1="534" y1="195" x2="564" y2="195"/>
+  <rect class="box bb" x="566" y="172" width="150" height="46" rx="6"/>
+  <text class="n" x="580" y="192">④ 再切分</text>
+  <text class="n" x="580" y="208">embedding+3 mask</text>
+  <line class="ar" x1="716" y1="195" x2="740" y2="195"/>
+  <rect class="box bb" x="742" y="172" width="150" height="46" rx="6"/>
+  <text class="n" x="756" y="192">⑤ 解码器</text>
+  <text class="n" x="756" y="208">(切分最晚)</text>
+  <text class="n" x="30" y="238">→ 正确性免证明(整行注入即非 CP 语义),但整行 embedding 峰值在场,长序列下入口显存最重</text>
+
+  <!-- TND -->
+  <text class="h" x="30" y="288" fill="#8a5a00">TND · 中间态(token 切了,图像元数据没切)</text>
+  <rect class="box bt" x="30" y="302" width="150" height="46" rx="6"/>
+  <text class="n" x="44" y="322">① 切分(文档段)</text>
+  <text class="n" x="44" y="338">图像记录完整在场</text>
+  <line class="ar" x1="180" y1="325" x2="210" y2="325"/>
+  <rect class="box bt" x="212" y="302" width="130" height="46" rx="6"/>
+  <text class="n" x="226" y="322">② 视觉塔(整图)</text>
+  <text class="n" x="226" y="338">空图卡 dummy 保活</text>
+  <line class="ar" x1="342" y1="325" x2="372" y2="325"/>
+  <rect class="box bt hl" x="374" y="302" width="160" height="46" rx="6"/>
+  <text class="n" x="388" y="322">③ 注入:本地交集</text>
+  <text class="n" x="388" y="338">图跨 rank(交集 plan)</text>
+  <line class="ar" x1="534" y1="325" x2="564" y2="325"/>
+  <rect class="box bt" x="566" y="302" width="150" height="46" rx="6"/>
+  <text class="n" x="580" y="322">④ 解码器</text>
+  <text class="n" x="580" y="338">按文档组装 KV</text>
+  <text class="n" x="740" y="322">义务:交集 plan 的</text>
+  <text class="n" x="740" y="338">行号换算(纯函数)</text>
+  <text class="n" x="30" y="368">→ token 切了、图像元数据没切,交集写入把"图跨 rank"变成纯函数换算 —— 对变长打包最友好</text>
+
+  <!-- 底部共同点 -->
+  <rect x="30" y="392" width="940" height="36" rx="8" fill="#fff" stroke="#d8dee8"/>
+  <text class="n" x="46" y="415">三家共同点:视觉塔永远整图、每卡一份(冗余前向);空图/无图卡的梯度保活机制同型(乘零 / dummy 前向,防归约集合不齐挂起)。</text>
+</svg>
+<figcaption><b>图 2 · 视觉注入时机。</b>"先融合后切"(BSND)绕开正确性证明但付入口显存;"最早切 + 簿记随行"(本方案)反之;TND 的本地交集是第三条路。高亮框 = 各家独有的一站。</figcaption>
+</div>
+
+<!-- ================= 图 3: 记忆边界 ================= -->
+<h2>决策点 3:n-gram 记忆的"前驱"在对家卡上,怎么拿?</h2>
+<p class="a">记忆模块每行要回看本文档内前几个 token。切分后前驱可能在对家,三家给三种答案:</p>
+
+<div class="fig">
+<svg viewBox="0 0 1000 452" width="100%" role="img" aria-label="记忆边界对比">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .tx{fill:#dfe7f2;stroke:#9db2cf}
+    .im{fill:#f6c99a;stroke:#c98a3d}
+    .pred{fill:#e8dff5;stroke:#7a4fb0}
+    .co{fill:none;stroke:#2f5d9e;stroke-width:1.8}
+    .ct{fill:none;stroke:#8a5a00;stroke-width:1.8}
+    .ar{stroke:#4a5768;stroke-width:1.5;fill:none;marker-end:url(#a3)}
+    .cm{stroke:#b04a4a;stroke-width:2;fill:none;marker-end:url(#a3c);stroke-dasharray:5 4}
+  </style>
+  <defs>
+    <marker id="a3" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4a5768"/></marker>
+    <marker id="a3c" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b04a4a"/></marker>
+  </defs>
+
+  <!-- 本方案 -->
+  <text class="h" x="30" y="26" fill="#2f5d9e">本方案 · 切分前预构造前驱表(零通信)</text>
+  <text class="n" x="40" y="46">整行(切分前在场):</text>
+  <g>
+    <rect class="tx" x="40" y="54" width="12" height="20"/><rect class="tx" x="52" y="54" width="12" height="20"/><rect class="tx" x="64" y="54" width="12" height="20"/><rect class="tx" x="76" y="54" width="12" height="20"/><rect class="tx" x="88" y="54" width="12" height="20"/><rect class="tx" x="100" y="54" width="12" height="20"/>
+    <rect class="im" x="112" y="54" width="12" height="20"/><rect class="im" x="124" y="54" width="12" height="20"/><rect class="im" x="136" y="54" width="12" height="20"/>
+    <rect class="tx" x="148" y="54" width="12" height="20"/><rect class="tx" x="160" y="54" width="12" height="20"/><rect class="tx" x="172" y="54" width="12" height="20"/><rect class="tx" x="184" y="54" width="12" height="20"/>
+  </g>
+  <line class="ar" x1="210" y1="64" x2="246" y2="64"/>
+  <rect class="co" x="250" y="48" width="120" height="34" rx="4"/>
+  <g>
+    <rect class="tx" x="254" y="54" width="12" height="20"/><rect class="tx" x="266" y="54" width="12" height="20"/><rect class="tx" x="278" y="54" width="12" height="20"/><rect class="tx" x="290" y="54" width="12" height="20"/><rect class="tx" x="302" y="54" width="12" height="20"/><rect class="tx" x="314" y="54" width="12" height="20"/><rect class="tx" x="326" y="54" width="12" height="20"/><rect class="tx" x="338" y="54" width="12" height="20"/><rect class="tx" x="350" y="54" width="12" height="20"/><rect class="tx" x="362" y="54" width="12" height="20"/>
+    <rect class="pred" x="254" y="78" width="24" height="8"/><rect class="pred" x="282" y="78" width="24" height="8"/><rect class="pred" x="310" y="78" width="24" height="8"/><rect class="pred" x="338" y="78" width="24" height="8"/>
+  </g>
+  <text class="n" x="254" y="104">卡 0 半行 + 每行自带前驱(紫条)</text>
+  <text class="n" x="440" y="56">置换后,一行的"文档内前驱"仍是本卡内更早的行 ——</text>
+  <text class="n" x="440" y="74">切分<tspan font-weight="700">前</tspan>按置换一次取好,随行自带,<tspan font-weight="700" fill="#1f6b3a">零跨卡通信</tspan>。</text>
+  <text class="n" x="440" y="94">代价:预构造 [B,C,H] 大张量;图像位在此构造点屏蔽(本方案新增改动)。</text>
+
+  <!-- BSND -->
+  <text class="h" x="30" y="160" fill="#1f6b3a">BSND · 整行哈希,再切本卡切片</text>
+  <text class="n" x="40" y="180">整行(每卡在场):</text>
+  <g>
+    <rect class="tx" x="40" y="188" width="12" height="20"/><rect class="tx" x="52" y="188" width="12" height="20"/><rect class="tx" x="64" y="188" width="12" height="20"/><rect class="tx" x="76" y="188" width="12" height="20"/><rect class="tx" x="88" y="188" width="12" height="20"/><rect class="tx" x="100" y="188" width="12" height="20"/>
+    <rect class="im" x="112" y="188" width="12" height="20"/><rect class="im" x="124" y="188" width="12" height="20"/><rect class="im" x="136" y="188" width="12" height="20"/>
+    <rect class="tx" x="148" y="188" width="12" height="20"/><rect class="tx" x="160" y="188" width="12" height="20"/><rect class="tx" x="172" y="188" width="12" height="20"/><rect class="tx" x="184" y="188" width="12" height="20"/>
+  </g>
+  <line class="ar" x1="210" y1="198" x2="246" y2="198"/>
+  <text class="n" x="254" y="194">hash(整行,图像位 DEAD)</text>
+  <text class="n" x="254" y="212">→ 本卡取连续切片</text>
+  <text class="n" x="440" y="194">连续切分下本卡行是整行的连续区间,整行哈希后直接切片即正确。</text>
+  <text class="n" x="440" y="212" fill="#b04a4a">此法对本方案不成立:置换后本卡行非连续区间,切片取不到正确前驱。</text>
+
+  <!-- TND -->
+  <text class="h" x="30" y="262" fill="#8a5a00">TND · 与左邻居交换 halo(通信量 O(n-gram 长度))</text>
+  <rect class="ct" x="40" y="288" width="130" height="34" rx="4"/>
+  <g>
+    <rect class="tx" x="44" y="294" width="12" height="20"/><rect class="tx" x="56" y="294" width="12" height="20"/><rect class="tx" x="68" y="294" width="12" height="20"/><rect class="tx" x="80" y="294" width="12" height="20"/><rect class="tx" x="92" y="294" width="12" height="20"/><rect class="tx" x="104" y="294" width="12" height="20"/><rect class="tx" x="116" y="294" width="12" height="20"/><rect class="tx" x="128" y="294" width="12" height="20"/><rect class="tx" x="140" y="294" width="12" height="20"/><rect class="tx" x="152" y="294" width="12" height="20"/>
+    <rect class="pred" x="140" y="274" width="24" height="10"/>
+  </g>
+  <text class="n" x="40" y="340">卡 0 段(尾部 halo 高亮)</text>
+  <line class="cm" x1="168" y1="304" x2="220" y2="304"/>
+  <rect class="ct" x="224" y="288" width="130" height="34" rx="4"/>
+  <g>
+    <rect class="pred" x="228" y="294" width="24" height="20"/>
+    <rect class="tx" x="256" y="294" width="12" height="20"/><rect class="tx" x="268" y="294" width="12" height="20"/><rect class="tx" x="280" y="294" width="12" height="20"/><rect class="tx" x="292" y="294" width="12" height="20"/><rect class="tx" x="304" y="294" width="12" height="20"/><rect class="tx" x="316" y="294" width="12" height="20"/><rect class="tx" x="328" y="294" width="12" height="20"/><rect class="tx" x="340" y="294" width="12" height="20"/>
+  </g>
+  <text class="n" x="160" y="286" fill="#b04a4a" font-size="10">all-to-all ↓</text>
+  <text class="n" x="224" y="340">卡 1 段(行首前驱 = 收到的 halo)</text>
+  <text class="n" x="440" y="296">只交换"左邻尾部 n-gram 长度 − 1 个 token"(红色虚线),</text>
+  <text class="n" x="440" y="314">卡 0 无左邻用填充符 —— 与越过序列起点的替换值一致;</text>
+  <text class="n" x="440" y="332">通信量与 CP 度无关(恒为 halo 大小),比整行哈希省得多。</text>
+
+  <!-- 底部借鉴 -->
+  <rect x="30" y="366" width="940" height="82" rx="8" fill="#fdf7f7" stroke="#b04a4a" stroke-width="1.2"/>
+  <text class="h" x="46" y="390" fill="#b04a4a">对本方案的借鉴点与不适用点(设计 L1 层备忘)</text>
+  <text class="n" x="46" y="414">halo 思想可借鉴,但 TND 的"连续 halo"建立在连续切分上;doc-chunk 置换下本卡行非连续区间,若要用交换代替 [B,C,H] 预构造,</text>
+  <text class="n" x="46" y="432">交换对象需推广为"本卡各行的前驱行"—— 走既有 chunk_plan 的 all-to-all 交换表,不是 TND 的连续尾巴。是否值得,取决于预构造张量的实测显存/耗时。</text>
+</svg>
+<figcaption><b>图 3 · n-gram 记忆边界。</b>三家对"前驱在对家卡上"给了三种答案:预构造(零通信,本方案)/ 整行哈希后切片(BSND,依赖连续切分)/ 左邻 halo 交换(TND,通信最省)。红色虚线 = 卡间通信。</figcaption>
+</div>
+
+<!-- ================= 图 4: KV 交换 ================= -->
+<h2>决策点 4:每层注意力的 KV 交换量,搬多少?</h2>
+<p class="a">Q 用本卡半行,KV 要拼整行才能保住"过去"。三种方案搬的量不同(红色带宽 ≈ 通信量):</p>
+
+<div class="fig">
+<svg viewBox="0 0 1000 340" width="100%" role="img" aria-label="KV 交换量对比">
+  <style>
+    .h{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .n{font:11.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .b{fill:#dfe9f5;stroke:#2f5d9e}
+    .co{fill:none;stroke:#2f5d9e;stroke-width:1.8}
+    .ct{fill:none;stroke:#8a5a00;stroke-width:1.8}
+    .wide{stroke:#b04a4a;stroke-width:7;fill:none;marker-end:url(#a4);opacity:.55}
+    .narrow{stroke:#b04a4a;stroke-width:5;fill:none;marker-end:url(#a4);opacity:.75;stroke-dasharray:2 3}
+  </style>
+  <defs><marker id="a4" markerWidth="10" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#b04a4a"/></marker></defs>
+
+  <!-- 本方案/BSND -->
+  <text class="h" x="30" y="26"><tspan fill="#2f5d9e">本方案</tspan> 与 <tspan fill="#1f6b3a">BSND</tspan>:每层整行 all-gather(同型)</text>
+  <rect class="co" x="40" y="40" width="90" height="28" rx="4"/><text class="n" x="85" y="58" text-anchor="middle">卡 A 半行 KV</text>
+  <rect class="co" x="40" y="76" width="90" height="28" rx="4"/><text class="n" x="85" y="94" text-anchor="middle">卡 B 半行 KV</text>
+  <line class="wide" x1="134" y1="54" x2="240" y2="64"/>
+  <line class="wide" x1="134" y1="90" x2="240" y2="80"/>
+  <rect x="244" y="46" width="240" height="56" rx="6" fill="#fff" stroke="#b04a4a" stroke-width="1.6"/>
+  <text class="n" x="364" y="68" text-anchor="middle">整行 KV(临时在场,用完即弃)</text>
+  <text class="n" x="364" y="86" text-anchor="middle">Q = 本卡半行 × KV = 整行</text>
+  <text class="n" x="510" y="62">每层通信量 = <tspan font-weight="700">整行 KV 宽度</tspan>(原始 KV + 压缩 KV + 索引键三路)</text>
+  <text class="n" x="510" y="82">本方案由框架 SPMD 声明式完成(S(1)→R),反向自动 reduce-scatter;</text>
+  <text class="n" x="510" y="100">BSND 手工 kv_allgather 调用,三路张量同型。层数 ×40,通信随深度线性。</text>
+
+  <!-- TND full_prefix -->
+  <text class="h" x="30" y="158" fill="#8a5a00">TND · full_prefix:按文档前缀</text>
+  <rect class="ct" x="40" y="172" width="90" height="28" rx="4"/><text class="n" x="85" y="190" text-anchor="middle">卡 A 段 KV</text>
+  <rect class="ct" x="40" y="208" width="90" height="28" rx="4"/><text class="n" x="85" y="226" text-anchor="middle">卡 B 段 KV</text>
+  <line class="narrow" x1="134" y1="186" x2="240" y2="192"/>
+  <rect x="244" y="176" width="240" height="30" rx="6" fill="#fff" stroke="#8a5a00" stroke-width="1.4"/>
+  <text class="n" x="364" y="195" text-anchor="middle">本段读到的文档前缀整段</text>
+  <text class="n" x="510" y="192">只搬"本段要读的那段文档",不搬无关文档。</text>
+
+  <!-- TND halo_prefix -->
+  <text class="h" x="30" y="258" fill="#8a5a00">TND · halo_prefix:仅窗口尾部</text>
+  <rect class="ct" x="40" y="272" width="90" height="28" rx="4"/>
+  <rect x="104" y="272" width="26" height="28" fill="#e8dff5" stroke="#7a4fb0"/>
+  <text class="n" x="85" y="290" text-anchor="middle">卡 A 段 KV</text>
+  <rect class="ct" x="40" y="308" width="90" height="28" rx="4"/><text class="n" x="85" y="326" text-anchor="middle">卡 B 段 KV</text>
+  <line class="narrow" x1="134" y1="286" x2="240" y2="292"/>
+  <rect x="244" y="276" width="240" height="30" rx="6" fill="#fff" stroke="#8a5a00" stroke-width="1.4"/>
+  <text class="n" x="364" y="295" text-anchor="middle">仅滑动窗口(≈128)可达的尾部行</text>
+  <text class="n" x="510" y="286">通信量 ≈ "窗口 + 本段",与整行长度解耦 → 三家中最省,</text>
+  <text class="n" x="510" y="304">长序列(百万 token 级)时差距最大,TND 路径为此而生。</text>
+</svg>
+<figcaption><b>图 4 · KV 交换量。</b>本方案与 BSND 同为整行 all-gather(实现层次不同:声明式 vs 手工);TND 的 halo_prefix 只交换滑动窗口可达的行,通信量与整行长度解耦 —— 这是它面向超长序列的核心设计。</figcaption>
+</div>
+
+<!-- ================= 总表 ================= -->
+<h2>六维对比总表(图的文字版,便于检索)</h2>
+<table>
+  <tr><th style="width:15%">维度</th><th style="width:28%">本方案(doc-chunk)</th><th style="width:28%">FSDPTurbo BSND</th><th style="width:29%">FSDPTurbo TND</th></tr>
+  <tr><td><b>切分布局</b></td><td>doc-chunk 置换(每文档第 r 块归第 r 卡),负载均衡独有</td><td>补齐后连续等分,无置换</td><td>文档边界可变切分(LCM 对齐),文档可跨卡,段长可不等</td></tr>
+  <tr><td><b>视觉注入时机</b></td><td>切分后局部注入;簿记表随 token 同置换(设计核心改动)</td><td>切分前整行融合,再切 embedding + 3 个 mask</td><td>切分后本地交集写入;图像元数据完整在场,图跨卡由 plan 换算</td></tr>
+  <tr><td><b>记忆前驱</b></td><td>切分前预构造 per-row 前驱表,零通信;图像位构造点屏蔽</td><td>整行哈希(图像位 DEAD)后取连续切片</td><td>与左邻居 halo 交换,O(n-gram 长度),与 CP 度无关</td></tr>
+  <tr><td><b>KV 交换/层</b></td><td>整行 all-gather(框架声明式),反向 reduce-scatter</td><td>整行 all-gather(手工调用,三路张量)</td><td>按文档窄交换:full_prefix / halo_prefix(仅窗口可达行)</td></tr>
+  <tr><td><b>空图卡保活</b></td><td>乘零早退保梯度连通(设计 V0 门覆盖)</td><td>dummy 视觉前向保归约集合齐整</td><td>同左 + 单测钉死(梯度精确为零)</td></tr>
+  <tr><td><b>成熟度</b></td><td><b>纸面设计</b>,验证门未跑;verl RL 编排现成</td><td>2×910B2 实机 200 步逐值一致(真实图文数据);无 RL 栈</td><td>8×910 实机 VL CP2 500 步 / CP4 300 步 PASS;无 RL 栈</td></tr>
+</table>
+
+<div class="take">
+  <b>怎么读这张图(选型含义):</b>当前变体(视觉塔强化学习)RL 编排(verl + torchtitan 引擎)已建成是硬约束,FSDPTurbo 无 RL 栈 → <b>本方案是唯一不动编排面的路</b>;若新立"超长序列视觉训练"变体,<b>TND 路径是已实机验证的现成答案</b>(窄交换 + 可变切分对变长打包最友好),列为第一候选评估,成本在引擎切换。交叉吸收:TND 的 halo"按需交换"思想可进本方案记忆层(推广为按置换表的前驱行交换);BSND/TND 的实机结论(空图卡保活、图像位 DEAD 语义)反向印证了本方案 V0 门预判的正是同一批坑。
+</div>
+
+<footer>
+  <p>配套:权重 vs 数据原理 reports/20261123-cp-weight-vs-data.html · 设计文档 docs/20261121-ttnpu-vision-cp-design.md · FSDPTurbo 取证见共享会话笔记 20261121-fsdpturbo-vision-cp-handoff.md</p>
+  <p>证据源:torchtitan-npu 双版本锚点(@1e1e60be / 上游 master)与 FSDPTurbo origin/main(@0383285)静态取证 + 上游 PR 实测记录;本页为对比推演,机制表述均可回溯源码坐标</p>
+</footer>
+
+</div>
+</body>
+</html>

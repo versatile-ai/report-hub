@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视觉模型长序列训练解禁方案 — 上下文并行接入设计报告</title>
+<style>
+  :root{
+    --ink:#1d2733; --ink2:#4a5768; --line:#d8dee8; --bg:#ffffff; --soft:#f4f6fa;
+    --accent:#2f5d9e; --accent-bg:#eaf0f8; --warn:#8a5a00; --warn-bg:#fdf3e3; --ok:#1f6b3a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16px;line-height:1.75}
+  .page{max-width:980px;margin:0 auto;padding:48px 32px 72px}
+  header{border-bottom:3px solid var(--accent);padding-bottom:20px;margin-bottom:32px}
+  .kicker{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+  h1{font-size:27px;line-height:1.35;margin:8px 0 6px}
+  .meta{color:var(--ink2);font-size:14px}
+  h2{font-size:21px;margin:44px 0 12px;padding-top:8px}
+  h3{font-size:17px;margin:28px 0 8px;color:var(--ink)}
+  p{margin:10px 0}
+  .lead{color:var(--ink2)}
+  code{background:var(--soft);border:1px solid var(--line);border-radius:4px;padding:1px 6px;
+    font-size:.88em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  .summary{background:var(--accent-bg);border:1px solid #c6d5ec;border-left:4px solid var(--accent);
+    border-radius:8px;padding:20px 24px;margin:26px 0}
+  .summary h2{margin:0 0 10px;font-size:17px}
+  .summary p{margin:8px 0}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14.5px}
+  th{background:var(--soft);text-align:left;font-weight:600}
+  th,td{border:1px solid var(--line);padding:9px 12px;vertical-align:top}
+  tr:nth-child(even) td{background:#fafbfd}
+  .fig{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:16px 12px 8px;margin:22px 0}
+  .fig figcaption{font-size:13.5px;color:var(--ink2);padding:6px 10px 8px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+  .card{border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h4{margin:0 0 8px;font-size:15px}
+  .card.split{border-top:3px solid var(--accent)}
+  .card.rep{border-top:3px solid #c98a3d}
+  .card ul{margin:6px 0 2px;padding-left:20px}
+  .card li{margin:3px 0}
+  .note{background:var(--warn-bg);border:1px solid #ecd9b0;border-radius:8px;padding:12px 18px;
+    font-size:14.5px;color:#5c4a17;margin:14px 0}
+  .num{display:inline-block;background:var(--accent);color:#fff;border-radius:50%;
+    width:22px;height:22px;line-height:22px;text-align:center;font-size:13px;font-weight:700;margin-right:6px}
+  ol.tight li,ul.tight li{margin:6px 0}
+  footer{border-top:1px solid var(--line);margin-top:48px;padding-top:18px;color:var(--ink2);font-size:13.5px}
+  .tag{display:inline-block;font-size:12.5px;color:var(--ink2);border:1px solid var(--line);
+    border-radius:99px;padding:0 10px;margin:0 4px 4px 0;background:#fff}
+  a{color:var(--accent)}
+  @media (max-width:720px){.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">训练引擎适配 · 设计报告</div>
+  <h1>让带视觉塔的模型也能切分长序列:<br>视觉栈接入上下文并行(Context Parallelism)的设计</h1>
+  <div class="meta">2026-11-21 · 基于昇腾 910B 上的 torchtitan-npu 训练框架(torchtitan 的华为 NPU 适配层)· 只读分析 + 方案设计,尚未改代码</div>
+</header>
+
+<div class="summary">
+  <h2>一页结论</h2>
+  <p><b>问题:</b>我们在 910B 集群上对一个带视觉塔的多模态大模型(DeepSeek-V4.1-Flash)做强化学习训练。长推理链要求几千 token 的序列,但显存不够:实测序列约 4900 token 时前向即溢出,目前只能收缩到约 2400 token 运行。<b>上下文并行</b>(把一条序列切到多张卡上算)是标准解法,但训练框架对<b>带视觉塔的模型档位显式拒绝</b>该并行方式。</p>
+  <p><b>判决:</b>解禁<b>可行,且改动面很小</b>——深入源码后发现,序列切分与视觉前向在机制上天然解耦,冲突不在"布局"本身,而在三处显式守卫与一处记忆模块的语义缺口。方案合计改动 <b>2 个文件、3 处</b>,分两阶段落地,均附带可独立复跑的验证门。</p>
+  <p><b>为什么社区没先做:</b>上游框架在三周内为纯文本栈建成了完整的上下文并行机制(12 个提交),但视觉路径零提交——门禁注释自述"视觉路径尚无上下文并行契约"。真正难的不是代码量,而是<b>正确性契约的逐点证明</b>(切分后所有与位置对齐的状态必须同步移动,错一处是静默的数值错误)。业界同形态先例 2026 年 10 月才在 Meta torchtitan 主线出现(Kimi K3 的多模态上下文并行),我们做的是把已验证的形态接到华为分叉的 V4.1 栈,不是发明新机制。</p>
+</div>
+
+<h2>一、问题:显存墙,以及唯一可用的纵向切分轴被拒绝</h2>
+
+<h3>1.1 训练形态与硬约束</h3>
+<p>被训练的模型是 DeepSeek-V4.1-Flash:一个文本主干(MoE,混合专家)+ 视觉塔(ViT,约 0.8B 参数)+ 对齐层的多模态模型。图像经视觉塔编码后,以<b>最多 1024 个占位 token</b> 的形式嵌入文本序列;每个占位 token 的位置上,由对齐层输出的视觉特征<b>替换/注入</b>词嵌入。训练任务是数学题的强化学习(GRPO),策略模型需要生成几千 token 的推理链,因此序列长度(题面 + 图像 token + 推理过程)决定训练质量上限。</p>
+<p>硬件是 2 节点 16 卡 910B,每卡显存上限约 58 GiB。该模型栈在框架里只允许三种并行:数据并行(每卡一条完整序列)、专家并行(把不同专家分到不同卡)、上下文并行(把一条序列切到多卡)。<b>张量并行与流水线并行被模型栈显式拒绝</b>(框架断言 TP=1、PP=1)。序列维度的显存压力只有上下文并行一条出路。</p>
+
+<h3>1.2 显存墙的实测位置</h3>
+<p>带视觉塔的模型档位、单卡承担整条序列(CP=1)时:序列 4864 token <b>前向即显存溢出</b>;收缩到 2432 token 并打开选择性重计算后可运行。而纯文本档位的对照线在同样硬件上早已用 <b>CP=2</b>(两卡合算一条序列)跑通 4K 序列档——同代硬件上,上下文并行机制本身已工程化落地(上游有完整精度/吞吐对照表),不是纸面能力。也就是说:<b>缺口不在"能不能切序列",而在"带视觉塔时框架拒绝切"。</b></p>
+
+<h3>1.3 拒绝的确切形态</h3>
+<p>框架在模型配置层有一条开关式守卫:多模态档的 <code>accepts_context_parallel = False</code>。请求上下文并行度 &gt;1 时,配置阶段直接抛出
+<code>NotImplementedError("DeepSeek V4.1 rejects context parallelism on the multimodal stack")</code>,训练尚未开始即终止。守卫的注释原文说明了意图:<b>"the vision path has no CP contract yet"</b>(视觉路径尚无上下文并行契约)——即上游自己也把它标记为"待定义",而非"不可能"。</p>
+
+<h2>二、为什么社区至今没有支持(意图分析)</h2>
+<ol class="tight">
+  <li><b>需求交集小,优先级靠后。</b>上下文并行的主战场是超长文本(长文档、代码、长推理链),这些场景绝大多数是纯文本模型;多模态模型里图像 token 通常只有几百到一千,很少成为序列长度的瓶颈。两个需求(多模态 × 超长序列 × 分布式)同时命中的用户群很小,上游框架不会优先投入。</li>
+  <li><b>文本栈的机制是刚建成的,视觉是自然的下一步。</b>时间线很说明问题:我们锁定的基线(2026-10-30)之后,上游三周内落地了 12 个上下文并行相关提交——统一元数据接缝、按文档分块的负载均衡、模块化改造、与图编译的兼容修复——<b>全部</b>投向纯文本栈;同期视觉目录(8 个文件)<b>零提交、零字节改动</b>。这不是"不支持",是"还没轮到"。</li>
+  <li><b>真正难的是定义契约,不是写代码。</b>上下文并行的正确性契约是一句话:<b>所有与序列位置对齐的状态,必须随切分以完全一致的方式移动。</b>文本栈的建设者逐点审计了每个消费者(注意力、旋转位置编码、损失、MoE 路由)。视觉路径引入了新的序列对齐簿记(图像特征位置表、token 类型表)和一个跨层记忆模块,每处都要重新证明"与切分可交换"。<b>而这类错误是静默的</b>——张量形状全部对得上,数值却写错行(上游自己的测试注释记录过:分片派发下整片写回会写进错的那一片,loss 只在小数点后第三位漂移)。面对静默错误,工程上的正确选择就是硬门禁:宁可拒绝,不放半支持。</li>
+  <li><b>业界先例刚刚出现,形态已被验证。</b>Meta torchtitan 主线 2026-10-06 合并了第一个多模态上下文并行支持(Kimi K3):做法是"与 token 对齐的视觉索引随 token 一起切分、视觉塔输出整行复制、每张卡只在本地做特征注入"。我们这次分析的结论是:V4.1 的视觉注入与它<b>结构同构</b>。因此本方案的性质是<b>移植已验证形态</b>,置信度来源不是我们的聪明,而是先例的存在 + 下面的机制推导。</li>
+</ol>
+
+<h2>三、难点的本质(从原理拆解)</h2>
+
+<h3>3.1 这套上下文并行用的不是"连续截断",是"置换 + 均分"</h3>
+<p>V4.1 文本栈的切分布局叫<b>按文档分块(doc-chunk)</b>:为了均衡注意力负载并保持逐文档的池化对齐,切分前先把整行 token 按"属于哪篇文档的第几块"<b>稳定重排</b>,再均分给各卡。第 r 张卡拿到的不是序列的第 r 段,而是<b>每篇文档的第 r 块、按文档顺序排好</b>的一串行。<b>这意味着任何"按序列位置索引"的张量都必须经过同一个置换</b>——这是问题的第一个棱面。</p>
+
+<h3>3.2 视觉注入是"绝对位置"语义</h3>
+<p>图像特征注入的实现是:拿一张 <b>[序列长]</b> 的位置表(每个 token 若是图像占位,则登记它在视觉特征库中的行号),用"找出所有登记位 → 按行号取特征 → 写回对应词嵌入"三步完成。切分发生在前向开始之前,注入发生在词嵌入之后——<b>注入看到的是本卡局部行,位置表却还是整行的</b>。若不同步置换位置表,轻则形状不匹配崩溃,重则特征写进别的 token(静默错误)。这是第二个棱面,也是最像"视觉与 CP 不兼容"的表象来源。</p>
+
+<h3>3.3 记忆模块的"行内前驱"问题</h3>
+<p>模型内置一个检索式 n-gram 记忆模块(代码名 Engram,按"当前 token 前若干个 token"做哈希查表)。在 doc-chunk 布局下,某行的"文档内前驱"不再是一段连续窗口(整行顺序下,前一窗口行可能是另一篇文档的尾巴),所以文本栈的解法是:<b>切分之前</b>按置换预先构造每行的前驱表,切分后各行自带前驱、零跨卡通信。图像给这一步加了新语义:文本的 n-gram 不允许跨过图像 token(避免把图像占位当普通词做哈希),而非并行路径已有一套"屏蔽图像前驱"的既有语义。并行 × 图像的组合,上游留了一个显式的 <code>raise</code>("上下文并行目前只支持纯文本输入"),因为<b>前驱表构造点不知道图像位在哪</b>。这是第三个棱面。</p>
+
+<h3>3.4 两个客观限制(方案必须绕开而非对抗)</h3>
+<ul class="tight">
+  <li><b>静默错误无法靠形状检查兜底</b> → 验证必须靠"小输入 + 手推期望值"的纯函数对拍,和同配置逐位对比,不能只看"跑起来了没崩"。</li>
+  <li><b>本代硬件跨并行度无逐位可比性</b>:910B 上不同并行度会命中不同的内核实现选择,上游文档明言跨度对比不保证逐位(差异可达 1e-1 量级,打开确定性档位后才有逐位结论,而该档位在 910B 上不存在)→ 验证判据必须锚定"<b>同一并行度、改动前后逐位相同</b>",跨并行度只做量级一致性。</li>
+</ul>
+
+<h2>四、方案:关键洞察是"解耦",不是"给视觉塔设计切分"</h2>
+<p>直觉方案是"把视觉塔也切了"——本方案明确<b>不这么做</b>。源码取证给出三个分离,把问题从"设计视觉栈的切分机制"降解为"让两张簿记表随行、补一处记忆语义":</p>
+<ol class="tight">
+  <li><b>视觉塔的输入是图像,不是 token 序列</b> → 视觉塔永远不需要参与序列切分。每张卡复制完整图像,塔输出一份完整的特征库;<b>冗余计算,但语义零冲突</b>(参数由数据并行的分片机制统一管理,梯度自动跨卡归约)。成本核算:约 0.8B 参数的前向 ×2,在 2 节点档远小于训练步时,不为它引入同步点。</li>
+  <li><b>注入是"位置集合"语义,与行排列顺序无关</b> → "找出所有登记位、按行号取特征、写回"这一操作,对整行做一次 = 对各卡局部做一遍再拼回(置换前后两侧同变换,内容不变)。这正是 Kimi K3 先例的机制内核。因此<b>注入函数本身零改动</b>。</li>
+  <li><b>真正必须随 token 移动的只有两张簿记表</b> → 把它们并进切分调用即可。框架的切分函数本来就是"对一个张量元组统一置换再均分",追加两个成员,它们自动获得与 token 完全一致的行序——<b>零新布局代码</b>。</li>
+</ol>
+
+<div class="cards">
+  <div class="card split">
+    <h4>随序列同置换、同均分(切分调用中的元组)</h4>
+    <ul>
+      <li>token id(输入)</li>
+      <li>标签(监督信号)</li>
+      <li>位置(文档内坐标)</li>
+      <li>token 类型表 <b>← 新并入</b>(文本/图像协议标记)</li>
+      <li>图像特征位置表 <b>← 新并入</b>(占位 token → 特征行号)</li>
+    </ul>
+  </div>
+  <div class="card rep">
+    <h4>整行复制、每卡一份(不进切分调用)</h4>
+    <ul>
+      <li>图像 patch 张量(视觉塔输入)</li>
+      <li>图像网格表(每图的宽高)</li>
+      <li>视觉塔输出特征库(注入的数据源)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="fig">
+<svg viewBox="0 0 920 392" width="100%" role="img" aria-label="doc-chunk 切分与局部注入示意图">
+  <style>
+    .txt{fill:#dfe7f2;stroke:#9db2cf;stroke-width:1}
+    .img{fill:#f6c99a;stroke:#c98a3d;stroke-width:1}
+    .lab{font:600 13px -apple-system,'PingFang SC',sans-serif;fill:#1d2733}
+    .sub{font:12.5px -apple-system,'PingFang SC',sans-serif;fill:#4a5768}
+    .bank{fill:#eaf0f8;stroke:#2f5d9e;stroke-width:1.5}
+    .arr{stroke:#2f5d9e;stroke-width:1.6;fill:none;marker-end:url(#ah)}
+  </style>
+  <defs>
+    <marker id="ah" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#2f5d9e"/>
+    </marker>
+  </defs>
+
+  <text class="lab" x="40" y="26">整行序列(切分前,每卡完整可见)</text>
+  <rect class="txt" x="40"  y="38" width="300" height="30"/>
+  <rect class="img" x="340" y="38" width="140" height="30"/>
+  <rect class="txt" x="480" y="38" width="160" height="30"/>
+  <rect class="txt" x="640" y="38" width="100" height="30"/>
+  <rect class="img" x="740" y="38" width="80"  height="30"/>
+  <text class="sub" x="150" y="58" text-anchor="middle">文档 A · 文本</text>
+  <text class="sub" x="410" y="58" text-anchor="middle">图像占位</text>
+  <text class="sub" x="560" y="58" text-anchor="middle">文本</text>
+  <text class="sub" x="700" y="58" text-anchor="middle">文档 B</text>
+  <text class="sub" x="780" y="58" text-anchor="middle" font-size="11">图像</text>
+
+  <line class="arr" x1="460" y1="82" x2="460" y2="128"/>
+  <text class="sub" x="478" y="108">① 同一置换(doc-chunk 重排)统一施加于元组中的全部张量,再均分两半</text>
+
+  <text class="lab" x="40"  y="156">rank 0 分到的行</text>
+  <rect class="txt" x="40"  y="166" width="190" height="28"/>
+  <rect class="txt" x="230" y="166" width="110" height="28"/>
+  <rect class="img" x="340" y="166" width="80"  height="28"/>
+  <text class="sub" x="135" y="185" text-anchor="middle">文档 A 第 0 块</text>
+  <text class="sub" x="285" y="185" text-anchor="middle">文档 B 第 0 块</text>
+  <text class="sub" x="380" y="185" text-anchor="middle" font-size="11">含图像位</text>
+
+  <text class="lab" x="40"  y="248">rank 1 分到的行</text>
+  <rect class="img" x="40"  y="258" width="110" height="28"/>
+  <rect class="txt" x="150" y="258" width="270" height="28"/>
+  <text class="sub" x="95"  y="277" text-anchor="middle">文档 A 第 1 块(图像段为主)</text>
+  <text class="sub" x="285" y="277" text-anchor="middle">文档 B 第 1 块</text>
+
+  <rect class="bank" x="560" y="196" width="330" height="64" rx="8"/>
+  <text class="lab" x="576" y="220">视觉塔输出:特征库 [V × D]</text>
+  <text class="sub" x="576" y="242">图像 patch 流整行计算 → 每卡完整复制(不参与切分)</text>
+
+  <line class="arr" x1="560" y1="216" x2="436" y2="180"/>
+  <line class="arr" x1="560" y1="244" x2="436" y2="272"/>
+  <text class="sub" x="470" y="330">② 各卡只按自己分到的图像占位位,从特征库取对应行写入词嵌入</text>
+  <text class="sub" x="470" y="350">("找登记位 → 按行号取 → 写回"是集合匹配,与行排列顺序无关)</text>
+
+  <text class="sub" x="40" y="332">图例:<tspan fill="#c98a3d">■</tspan> 图像占位 token<tspan fill="#9db2cf"> ■</tspan> 文本 token</text>
+</svg>
+<figcaption><b>图 1</b> 序列切分与视觉注入的解耦(doc-chunk 布局,两卡示意)。置换改变的是行的排列,不改变"哪个 token 该拿哪个特征";图像内容从不参与切分,特征库每卡复制一份,注入在本卡局部完成。若某卡的行里恰好一个图像占位都没有,注入函数的空路径以"乘零求和"保持梯度连通,视觉塔参数仍可训练。</figcaption>
+</div>
+
+<h2>五、改动清单(共 2 个文件、3 处)</h2>
+<table>
+  <tr><th style="width:36px">#</th><th style="width:30%">改动点(框架源码位置)</th><th style="width:38%">改什么</th><th>为什么成立</th></tr>
+  <tr>
+    <td><b>1</b></td>
+    <td>多模态模型配置类<br><code>accepts_context_parallel</code></td>
+    <td><code>False → True</code>,同步更新守卫注释,指向本契约</td>
+    <td>守卫注释自述"尚无契约"——它是声明式的门,不是机制缺口;契约由改动 2、3 提供</td>
+  </tr>
+  <tr>
+    <td><b>2</b></td>
+    <td>解码器预处理的切分调用<br>(上下文并行入口)</td>
+    <td>把 <b>token 类型表</b>与<b>图像特征位置表</b>两张序列对齐簿记,并入与 token 相同的"置换 + 均分"调用;图像 patch/网格保持整行复制;并在注入入口加一条"形状已随行"的可读前置校验</td>
+    <td>切分函数对元组统一施加同一置换,追加即同行;注入函数(nonzero 取位 + 按行写回)与置换可交换,零改动;前置校验防"切分失效时在离根因很远的地方崩"</td>
+  </tr>
+  <tr>
+    <td><b>3</b></td>
+    <td>n-gram 记忆模块的行内前驱构造<br>(切分前的预构造点)</td>
+    <td>构造前驱表时,凡前驱落在图像协议 token 上,以填充符替代(与非并行路径"n-gram 不跨图像 token"同语义);随后删除"并行 × 图像"组合的显式拒绝</td>
+    <td>缺口只在"预构造点不知道图像位在哪";把图像位屏蔽挪到构造点,两种并行度共享同一套既有语义,不引入新语义</td>
+  </tr>
+</table>
+<p class="lead">改动 1、2 构成<b>最小可行层</b>(纯文本批次 × 带视觉塔的模型档 × 两卡切分);改动 3 属于<b>完整层</b>(图像批次也参与训练)。另有一项<b>可选优化存档不实施</b>:视觉塔只在一张卡计算、广播输出——2 节点档下塔前向冗余成本可忽略,不值得为它引入同步点。</p>
+<div class="note"><b>版本边界警示(写进补丁注释):</b>当前依赖的 torchtitan 0.3.0 输入类型检查只核对 token/标签/位置三键,新增的两张簿记表不受检查;但上游新版本已改为"每个张量输入必须声明布局,否则报错"。重基到新版本时需按上游 Kimi K3 的先例补两条布局声明。此风险已在补丁内预置警告,防止未来重基时静默失效。</div>
+
+<h2>六、如何验证(判据锚定"同度逐位",跨度只看量级)</h2>
+<table>
+  <tr><th>层</th><th>环境</th><th>用例</th><th>判据</th></tr>
+  <tr><td>纯函数</td><td>开发机 CPU,无需 NPU/多进程</td><td>分解律:整行注入 vs「置换 → 切分 → 各卡局部注入 → 逆置换拼回」</td><td><b>逐位相等</b></td></tr>
+  <tr><td>纯函数</td><td>CPU</td><td>空图像卡:构造图像占位全落在对侧的切分</td><td>走空路径、梯度仍连通;拼回后逐位等</td></tr>
+  <tr><td>纯函数</td><td>CPU</td><td>n-gram 前驱屏蔽:构造含图像段的前驱表</td><td>与「整行构造后屏蔽」的参考实现逐位等</td></tr>
+  <tr><td>数值</td><td>NPU 单步</td><td>同一并行度,改动前 vs 改动后(同一份权重)</td><td>第 1 步 logits <b>逐位相同</b>(主判据)</td></tr>
+  <tr><td>数值</td><td>NPU 单步</td><td>CP=1 vs CP=2,同一份镜像权重</td><td>910B 上跨并行度无逐位保证 → loss 量级一致(±1e-3);显存读数确认序列档翻倍兑现</td></tr>
+  <tr><td>数值</td><td>NPU</td><td>n-gram 记忆单模块对拍:整行前向为基准 vs 按行前驱(带屏蔽)</td><td>输出逐位相等</td></tr>
+</table>
+<p class="lead">验证形态仿照上游上下文并行单元测试的"oracle 对拍"风格(小输入 + 手推期望值,不依赖设备与进程组),判据哲学继承上游开发者文档的分层口径:布局是纯函数 → CPU 可验;跨并行度的加法树差异 → 梯度只给量级结论。所有判据在实验判读器中预注册、不放宽;任一门失败即停下呈报,不降标硬闯。</p>
+
+<h2>七、风险与未决(诚实清单)</h2>
+<table>
+  <tr><th style="width:30%">风险</th><th>状态与影响</th><th>缓解</th></tr>
+  <tr><td>n-gram 记忆的图像屏蔽语义是本方设计,<b>未经上游确认</b></td><td>若与官方 n-gram 定义有出入,图像批次的记忆查表会有系统性偏差</td><td>单模块对拍先行;失败即停,携带差异样本向上游对齐(补丁按"附 issue 的上游贡献"形态走,不做不可回流的私改)</td></tr>
+  <tr><td>910B 跨并行度无逐位可比性</td><td>跨度对比只能给量级结论,掩盖不了也证明不了细粒度正确性</td><td>主判据锚定"同度、改动前后逐位";纯函数层补齐细粒度证明</td></tr>
+  <tr><td>强化学习数据装配的逐文档对齐来源<b>未核实</b></td><td>doc-chunk 布局要求每篇文档长度是"并行度 × 压缩比"的整数倍,推理侧拼装的序列是否满足待查</td><td>列为图像批次开工前置检查;必要时在装配侧补逐文档填充(纯文本档已有同类补丁先例)</td></tr>
+  <tr><td>输入类型检查的版本漂移</td><td>重基到新 torchtitan 时新增簿记表会被更严格的检查拒绝</td><td>补丁内预置警告 + 按 Kimi K3 先例的布局声明方案已写进设计文档</td></tr>
+  <tr><td>视觉塔每卡冗余前向</td><td>接受(成本核算见 §四);若未来集群放大后成为瓶颈</td><td>单卡计算 + 广播的优化方案已存档,有需要时按等价性验证门实施</td></tr>
+  <tr><td>全部结论来自<b>静态源码取证</b>(两个版本锚点比对),零运行验证</td><td>实施时行号/接口可能漂移</td><td>实施前对涉及文件做一次差异复核;视觉目录"零改动"已二次核实</td></tr>
+</table>
+
+<h2>八、落点与后续</h2>
+<ul class="tight">
+  <li><b>本次交付物</b>:技术设计文档已入库(仓库分支 <code>feature/deepseek-v41-flash-with-torchtitan</code>,提交 <code>0cf18ee4</code>,含全部 file:line 证据坐标与函数级细节);本页为面向无背景读者的原理版报告。</li>
+  <li><b>实施时序</b>:最小可行层可与既定的单步探针站合并执行(探针本来就要构造该模型档,只是把"预期被拒"翻成"预期通过");完整层与图文强化学习数据面工作合流。</li>
+  <li><b>上游回流</b>:三处改动均按"补丁 + issue"形态推回华为 gitcode 上游,引用本文推导与 Kimi K3 先例;上游 11 月以每周 2–3 个上下文并行提交的节奏推进,若其先行解禁,本方案转为对拍参考而非实施件。</li>
+</ul>
+
+<footer>
+  <div>
+    <span class="tag">证据源:torchtitan-npu @1e1e60be(基线)与 @7ee3d71(上游 master)双坐标静态取证</span>
+    <span class="tag">先例:torchtitan 主线 #4639(Kimi K3 多模态上下文并行,2026-10-06 合并)</span>
+    <span class="tag">技术细节:设计文档 docs/20261121-ttnpu-vision-cp-design.md(视觉塔强化学习变体目录)</span>
+  </div>
+  <p style="margin-top:10px">报告产出:2026-11-21 · 纯只读分析 + 方案设计,未改动任何实验代码</p>
+</footer>
+
+</div>
+</body>
+</html>
