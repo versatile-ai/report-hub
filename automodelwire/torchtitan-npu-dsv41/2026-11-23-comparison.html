@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DeepSeek V4.1 训练适配对比报告：torchtitan-npu 与 FSDPTurbo 两条实现路线的全维度对照——组件、并行、算子、量化、数据、checkpoint 十维度差异与训练影响，附 8 大训练场景选型建议。基于 2026-11-23 双仓最新代码。">
+<title>DeepSeek V4.1 训练适配对比：torchtitan-npu × FSDPTurbo</title>
+<style>
+  :root {
+    --paper: #FAFAF9;
+    --ink: #1C2228;
+    --ink-soft: #5C6670;
+    --ink-faint: #8B949C;
+    --line: #E2E5E9;
+    --line-strong: #C9CED4;
+    --a: #2C5E9C;          /* torchtitan-npu */
+    --a-tint: #EDF2F8;
+    --b: #A8541C;          /* FSDPTurbo */
+    --b-tint: #F9F1EA;
+    --common: #2E7D4F;     /* 共同点 */
+    --code-bg: #F0F2F4;
+    --ok: #2E7D4F;
+    --no: #9AA3AB;
+    --part: #B58A1E;
+    --max-w: 1080px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  a { color: var(--a); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
+  code, .mono {
+    font-family: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.82em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    word-break: break-all;
+  }
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(250,250,249,0.94);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-in {
+    max-width: var(--max-w); margin: 0 auto; padding: 10px 24px;
+    display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
+  }
+  .topbar .brand { font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .topbar nav { display: flex; gap: 16px; flex-wrap: wrap; }
+  .topbar nav a { font-size: 13.5px; color: var(--ink-soft); }
+  .topbar nav a:hover { color: var(--ink); text-decoration: none; }
+  /* ---------- Hero ---------- */
+  .hero { max-width: var(--max-w); margin: 0 auto; padding: 72px 24px 40px; }
+  .hero h1 {
+    font-size: clamp(34px, 5.2vw, 52px);
+    line-height: 1.18;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    font-weight: 700;
+  }
+  .hero .sub {
+    font-size: 18px; color: var(--ink-soft); margin: 0 0 44px; max-width: 62ch;
+  }
+  .duo-hero {
+    display: grid; grid-template-columns: 1fr 1px 1fr; gap: 0 28px;
+    align-items: stretch;
+  }
+  .duo-hero .divider { background: var(--line-strong); width: 1px; }
+  .side { padding-top: 4px; }
+  .side .name {
+    font-size: 24px; font-weight: 700; letter-spacing: -0.01em;
+    padding-left: 14px; border-left: 4px solid; margin-bottom: 6px;
+  }
+  .side.a .name { border-color: var(--a); color: var(--a); }
+  .side.b .name { border-color: var(--b); color: var(--b); }
+  .side .role { font-size: 14.5px; color: var(--ink-soft); margin: 0 0 14px 18px; }
+  .side dl { margin: 0 0 0 18px; font-size: 14px; }
+  .side dl div { display: flex; gap: 10px; padding: 3px 0; }
+  .side dt { color: var(--ink-faint); flex: 0 0 5.5em; }
+  .side dd { margin: 0; }
+  .verdict {
+    max-width: var(--max-w); margin: 40px auto 0; padding: 0 24px;
+  }
+  .verdict p {
+    border-top: 1px solid var(--line-strong);
+    padding-top: 22px;
+    font-size: 17px; max-width: 68ch; margin: 0 auto;
+  }
+  /* ---------- 章节 ---------- */
+  .sec { max-width: var(--max-w); margin: 0 auto; padding: 56px 24px 8px; }
+  .sec h2 {
+    font-size: 25px; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 8px;
+  }
+  .sec h2 .mark {
+    display: inline-block; width: 12px; height: 12px; margin-right: 12px;
+    vertical-align: 2px;
+  }
+  .sec > .lead { color: var(--ink-soft); font-size: 15.5px; margin: 0 0 28px; max-width: 70ch; }
+  h3 {
+    font-size: 17.5px; font-weight: 600; margin: 40px 0 12px;
+  }
+  h3 .dim-tag {
+    font-size: 12.5px; font-weight: 500; color: var(--ink-faint);
+    font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+    margin-left: 10px;
+  }
+  p { max-width: 74ch; }
+  /* ---------- 表格 ---------- */
+  .tbl-wrap { overflow-x: auto; margin: 18px 0 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; }
+  thead th {
+    font-size: 13px; font-weight: 600; border-bottom: 2px solid var(--line-strong);
+    padding-bottom: 8px; white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--line); }
+  tbody tr:last-child { border-bottom: none; }
+  td.axis, th.axis { color: var(--ink-soft); font-weight: 600; width: 11em; }
+  th.col-a { color: var(--a); }
+  th.col-b { color: var(--b); }
+  th.col-a::before, th.col-b::before {
+    content: ""; display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 8px; vertical-align: 1px;
+  }
+  th.col-a::before { background: var(--a); }
+  th.col-b::before { background: var(--b); }
+  td .note { display: block; color: var(--ink-faint); font-size: 12.5px; margin-top: 3px; }
+  /* 双栏对照卡 */
+  .duo {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 16px 0 8px;
+  }
+  .duo .panel {
+    border-top: 3px solid; padding: 14px 4px 0 0;
+    font-size: 14px;
+  }
+  .duo .panel.a { border-color: var(--a); }
+  .duo .panel.b { border-color: var(--b); }
+  .duo .panel .pname { font-weight: 700; margin-bottom: 8px; font-size: 14.5px; }
+  .duo .panel.a .pname { color: var(--a); }
+  .duo .panel.b .pname { color: var(--b); }
+  .duo ul { margin: 0; padding-left: 18px; }
+  .duo li { margin: 7px 0; }
+  .obs {
+    border-left: 3px solid var(--line-strong);
+    padding: 6px 0 6px 16px; margin: 18px 0;
+    color: var(--ink-soft); font-size: 14.5px; max-width: 76ch;
+  }
+  td .imp {
+    position: relative; padding-left: 16px; margin: 0 0 9px;
+    font-size: 13px; line-height: 1.62; max-width: 34em;
+  }
+  td .imp:last-child { margin-bottom: 0; }
+  td .imp::before {
+    content: ""; position: absolute; left: 0; top: 7px;
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  td .imp.a::before { background: var(--a); }
+  td .imp.b::before { background: var(--b); }
+  td .imp .lbl { font-weight: 600; margin-right: 4px; white-space: nowrap; }
+  td .imp.a .lbl { color: var(--a); }
+  td .imp.b .lbl { color: var(--b); }
+  .adv { color: var(--ok); }
+  .dis { color: #A8402F; }
+  .duo .panel .pimp {
+    margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line);
+    font-size: 13.5px; color: var(--ink-soft);
+  }
+  .duo .panel .pimp b { font-weight: 600; color: var(--ink); }
+  .duo .panel .pimp .adv { color: var(--ok); }
+  .duo .panel .pimp .dis { color: #A8402F; }
+  /* ---------- 共同点列表 ---------- */
+  .commons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 40px; margin-top: 8px; }
+  .commons .item {
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+  }
+  .commons .item h4 { margin: 0 0 5px; font-size: 15px; font-weight: 600; }
+  .commons .item h4::before {
+    content: ""; display: inline-block; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--common); margin-right: 10px;
+  }
+  .commons .item p { margin: 0; font-size: 13.5px; color: var(--ink-soft); line-height: 1.65; }
+  /* ---------- 能力矩阵状态 ---------- */
+  .st { white-space: nowrap; font-size: 13px; }
+  .st::before {
+    content: ""; display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 7px;
+  }
+  .st.yes { color: var(--ok); } .st.yes::before { background: var(--ok); }
+  .st.no  { color: var(--no); }  .st.no::before  { background: var(--no); }
+  .st.part{ color: var(--part);} .st.part::before{ background: var(--part); }
+  /* ---------- 结论 ---------- */
+  .takeaways { margin-top: 12px; }
+  .takeaways .tk { padding: 16px 0; border-bottom: 1px solid var(--line); }
+  .takeaways .tk:last-child { border-bottom: none; }
+  .takeaways .tk h4 { margin: 0 0 6px; font-size: 15.5px; }
+  .takeaways .tk p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+  .takeaways .tk.to-a h4 strong { color: var(--a); }
+  .takeaways .tk.to-b h4 strong { color: var(--b); }
+  /* ---------- 场景选型 ---------- */
+  .scn { padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .scn:last-child { border-bottom: none; }
+  .scn-head {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  .scn-head h4 { margin: 0; font-size: 16px; font-weight: 650; }
+  .pick {
+    font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    padding: 2px 10px; border-radius: 3px;
+  }
+  .pick.a { color: var(--a); background: var(--a-tint); }
+  .pick.b { color: var(--b); background: var(--b-tint); }
+  .pick.ab { color: var(--common); background: #EDF4EF; }
+  .scn-cfg { margin: 8px 0 6px; font-size: 13.5px; }
+  .scn-cfg .row { display: flex; gap: 10px; padding: 2px 0; }
+  .scn-cfg .row dt { flex: 0 0 5em; color: var(--ink-faint); }
+  .scn-cfg .row dd { margin: 0; }
+  .scn-why { font-size: 13.5px; color: var(--ink-soft); margin: 6px 0 0; max-width: 76ch; }
+  .scn-why b { color: var(--ink); font-weight: 600; }
+  /* ---------- 附注 ---------- */
+  .appendix { font-size: 13.5px; color: var(--ink-soft); }
+  .appendix ul { padding-left: 20px; }
+  footer {
+    max-width: var(--max-w); margin: 48px auto 0; padding: 24px 24px 56px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-faint); font-size: 12.5px;
+  }
+  @media (max-width: 780px) {
+    .duo-hero { grid-template-columns: 1fr; gap: 24px; }
+    .duo-hero .divider { display: none; }
+    .duo { grid-template-columns: 1fr; }
+    .commons { grid-template-columns: 1fr; }
+    .hero { padding-top: 48px; }
+  }
+  @media print {
+    .topbar { display: none; }
+    body { font-size: 12px; }
+    .sec { padding-top: 32px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <span class="brand">DS V4.1 适配对比</span>
+    <nav>
+      <a href="#k1">速览</a>
+      <a href="#k2">定位</a>
+      <a href="#k3">共同点</a>
+      <a href="#k4">差异点</a>
+      <a href="#k5">能力矩阵</a>
+      <a href="#k55">场景选型</a>
+      <a href="#k6">规模与测试</a>
+      <a href="#k7">结论与借鉴</a>
+      <a href="#k8">附注</a>
+    </nav>
+  </div>
+</div>
+
+<header class="hero">
+  <h1>同一模型，两条实现路线</h1>
+  <p class="sub">DeepSeek-V4.1-Flash 在 torchtitan-npu 与 FSDPTurbo 上的训练适配对照 —— 组件、并行、算子、量化、数据与 checkpoint 的全维度比对。</p>
+
+  <div class="duo-hero">
+    <div class="side a">
+      <div class="name">torchtitan-npu</div>
+      <p class="role">CANN 社区基于 torchtitan 的昇腾训练插件，PyTorch native 栈</p>
+      <dl>
+        <div><dt>模型层</dt><dd>torchtitan-native 自研（复用 Decoder 与 models/common 组件）</dd></div>
+        <div><dt>接入方式</dt><dd><code>--module</code> + <code>--config</code> + <code>--override.imports</code> 显式启用</dd></div>
+        <div><dt>NPU 能力</dt><dd>@override 配置级替换，AscendC / AutoFuse / TileLang</dd></div>
+        <div><dt>代码规模</dt><dd>models 26 文件 / 7315 行；override 11 文件 / 1234 行</dd></div>
+        <div><dt>标签提交</dt><dd>master @ 2026-11-23（753a3c07）</dd></div>
+      </dl>
+    </div>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="side b">
+      <div class="name">FSDPTurbo</div>
+      <p class="role">基于 FSDP2 的独立分布式训练加速库，对接 HF 生态</p>
+      <dl>
+        <div><dt>模型层</dt><dd>vendored 复刻官方 <code>inference/</code> 参考实现（revision <code>dba1be0a</code>）</dd></div>
+        <div><dt>接入方式</dt><dd><code>build_model</code> → <code>FSDPTurbo(config, model)</code> + YAML plan</dd></div>
+        <div><dt>NPU 能力</dt><dd><code>register_op</code> 算子注册分发，CANN 融合算子 + Triton</dd></div>
+        <div><dt>代码规模</dt><dd>models 27 文件 / 7405 行；examples 约 2600 行</dd></div>
+        <div><dt>标签提交</dt><dd>main @ 2026-11-23（c988cfd）</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <p>两套实现覆盖同一模型结构、共用同一 CANN 融合算子生态，分化点在工程路线：torchtitan-npu 走「PyTorch native + 配置级 override + torch.compile 入图」，量化激进，面向大规模续训；FSDPTurbo 走「vendored 参考 + FSDP2 plan + 算子注册分发」，强调 HF 生态易用性。11 月中旬后两者能力面快速收敛：FSDPTurbo 补齐了 1M 长序列、attention 重计算、Muon、torchao 量化栈，torchtitan-npu 打通了官方 MXFP8 整包读取并默认 DeepEP dispatcher。</p>
+  </div>
+</header>
+
+<!-- ============ 1 速览 ============ -->
+<section class="sec" id="k1">
+  <h2><span class="mark" style="background:var(--ink)"></span>结论速览</h2>
+  <p class="lead">八条主轴的一眼对照，细节见后文各节。</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr>
+      <th class="axis">对照轴</th>
+      <th class="col-a">torchtitan-npu</th>
+      <th class="col-b">FSDPTurbo</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">模型代码来源</td>
+        <td>torchtitan-native 自研，跨层状态显式传参</td>
+        <td>vendored 复刻官方推理参考实现</td>
+      </tr>
+      <tr>
+        <td class="axis">接入与配置</td>
+        <td><code>--module</code>/<code>--config</code> flavor 注册表，override 逐个显式启用</td>
+        <td>YAML plan（fsdp/tp/ep/cp）声明式驱动</td>
+      </tr>
+      <tr>
+        <td class="axis">并行组合</td>
+        <td>FSDP + 大 EP（TP/PP 固定 1），CP 用 doc_chunk 布局</td>
+        <td>FSDP2 + TP（共享专家）+ EP + CP（KV-AllGather）</td>
+      </tr>
+      <tr>
+        <td class="axis">融合算子机制</td>
+        <td>模块类被 override 替换；AI_CPU metadata 每微批预计算；compile 入图</td>
+        <td>模块保留、算子按 device 分发；YAML 开关回退 eager</td>
+      </tr>
+      <tr>
+        <td class="axis">量化训练</td>
+        <td>block-FP8 / MXFP8 / HiF8 + QAT + QLI/QSLI（torchao_npu）；官方 MXFP8 整包可直接读取</td>
+        <td>低精度栈 11 月迁移至 torchao/torchao_npu（w8a16/w4a8/mxfp8/QAT），V4.1 训练示例仍 BF16（quantization_plan: null）</td>
+      </tr>
+      <tr>
+        <td class="axis">优化器</td>
+        <td>Muon（NS 10）为主 + SparseAdam（Engram）+ CPU swap；DeepEP/asc_deepep 为默认 dispatcher</td>
+        <td>AdamW 默认 + 已引入 MuonAdamW（Keller Jordan/Moonshot 实现）；ActiveRowAdam（Engram 活跃行）</td>
+      </tr>
+      <tr>
+        <td class="axis">长序列</td>
+        <td>1M context（CP=128，doc_chunk 布局，RoPE 按训练长度建表）</td>
+        <td>1M 已支持（BSND KV-AllGather CP + 长序列分块计划 <code>enable_long_sequence_chunking</code>，11-16 合入）</td>
+      </tr>
+      <tr>
+        <td class="axis">LoRA</td>
+        <td><span class="st yes">支持</span>（PEFT 导出、Engram 派生冻结表）</td>
+        <td><span class="st no">未支持</span></td>
+      </tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 2 定位 ============ -->
+<section class="sec" id="k2">
+  <h2><span class="mark" style="background:var(--a)"></span>定位与代码来源</h2>
+  <p class="lead">两者对「官方只发布了推理参考实现、没有可训练 modeling」这一前提，给出了相反的工程回答。</p>
+
+  <div class="duo">
+    <div class="panel a">
+      <div class="pname">torchtitan-npu：自研 torchtitan-native 实现</div>
+      <ul>
+        <li>模型层落在 <code>torchtitan_npu/models/deepseek_v4_1/</code>，继承 torchtitan 的 <code>Decoder</code> 与 <code>models/common</code> 公共组件（RMSNorm、ComplexRoPE、MoE 工厂），配置走 <code>config_registry.py</code>（9 个模型 flavor + 3 个 LoRA flavor）。</li>
+        <li>跨层状态（压缩 KV、index keys、候选池、student logits）作为显式前向参数逐层传递，不留全局可变缓存；packed 文档由 <code>DeepSeekV41Metadata</code> 统一描述，参考核与融合核读同一份元数据。</li>
+        <li>NPU 能力与模型层解耦：<code>override/deepseek_v4_1/</code> 无 <code>__init__.py</code>，导入不注册任何条目，全部经 <code>--override.imports</code> 写完整 <code>module.function</code> 显式启用。</li>
+      </ul>
+    </div>
+    <div class="panel b">
+      <div class="pname">FSDPTurbo：vendored 复刻官方参考实现</div>
+      <ul>
+        <li>官方仓只发布 <code>inference/model.py</code> 等参考源码，FSDPTurbo 将其按固定 revision（<code>dba1be0a</code>）复制进 <code>fsdp_turbo/models/deepseek/deepseek_v41/</code>，保留原组件命名与 checkpoint 键路径，剥离了推理 TP 分支与全局 rank 状态。</li>
+        <li>跨层状态走 <code>runtime.py</code> 的全局单例 <code>shared_attn</code>（source 层写、consumer 层读，每步 reset）；<code>attention_mask</code>/<code>sfa_layout</code>/<code>cu_seqlens</code> 经前向参数显式传递。</li>
+        <li>训练能力由 <code>adapter.py</code>（<code>DeepseekV41ForCausalLMAdapter</code>）包装：构造期校验（BF16 强制、MTP/DSpark 拒绝），图文 causal-LM loss 接口，chunk loss 装配。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="obs">这一选择的直接后果：torchtitan-npu 与 torchtitan 的训练器、compile、并行栈深度耦合，可整图编译入图，但升级要跟着上游走；FSDPTurbo 与官方推理实现逐行对应、便于对照升级，但全局共享 runtime 使 attention 无法 recompute，也无法接 <code>torch.func</code> 之外的分块求导方案。</div>
+</section>
+
+<!-- ============ 3 共同点 ============ -->
+<section class="sec" id="k3">
+  <h2><span class="mark" style="background:var(--common)"></span>共同点</h2>
+  <p class="lead">两边在「模型结构、算子生态、平台分档、Engram 存储、参考对照」五个层面高度一致。</p>
+  <div class="commons">
+    <div class="item">
+      <h4>组件结构对齐官方发布配置</h4>
+      <p>均实现 CSA2 稀疏注意力（latent attention + 滑窗 + 压缩条目 + sink）、Lightning Indexer 两级 top-k、Compressor softmax 门控 KV 池化、Single-Pass mHC（hc_mult=4、Sinkhorn 20 迭代）、MoE 384+1 专家 top-6（sqrtsoftplus 打分 + noaux correction bias）、Engram n-gram 哈希记忆（第 1/14 层，约 3.84 亿行/表）与 ViT 图文塔，对齐 HF <code>config.json</code>（40 层 / hidden 5120 / moe_inter 2304）。</p>
+    </div>
+    <div class="item">
+      <h4>均不做 MTP / DSpark 训练</h4>
+      <p>torchtitan-npu 在 readme 中明确未实现；FSDPTurbo 保留了推理结构代码（<code>dspark.py</code>），但训练期构造校验直接拒绝（<code>adapter.py</code> 的 <code>_validate_training_args</code>）。</p>
+    </div>
+    <div class="item">
+      <h4>同一 CANN 融合算子生态</h4>
+      <p>SparseFlashMla、Lightning Indexer、Compressor、MhcPreSinkhorn/MhcPost、EngramFetch/ElasticBuffer、视觉 FlashAttention 均来自 <code>cann_ops_transformer</code> / torch_npu 系列，且都做成「可选开关 + eager 参考回退」，关闭开关即回到纯 PyTorch 路径。</p>
+    </div>
+    <div class="item">
+      <h4>A3 / A5 双平台分档</h4>
+      <p>各自提供 Atlas A3（Ascend 910_93 / 910B / 910C）与 Ascend950DT（A5）两套配置与融合栈，按 NPU 型号选择实现；A5 档普遍启用更多量化与融合特性。</p>
+    </div>
+    <div class="item">
+      <h4>Engram Host-offload + 活跃行稀疏更新</h4>
+      <p>哈希表权重 BF16 驻 CPU pinned memory、Adam moment FP32，稀疏梯度只触达活跃行；表沿 EP 切行、副本共享行分片，行数按 2048 对齐以便 EP 等分。</p>
+    </div>
+    <div class="item">
+      <h4>图文多模态联合训练</h4>
+      <p>ViT 与语言塔联合反传，均在 processor / 协议层适配 DeepSeek 图文 token 协议；视觉注意力有 NPU 融合路径（torchtitan-npu 走 SDPA 自动路由 FA，FSDPTurbo 走 FlashAttentionScore/Grad 算子）。</p>
+    </div>
+    <div class="item">
+      <h4>参考路径作为数值对照</h4>
+      <p>torchtitan-npu 用 <code>USE_GOLDEN=1</code> 切纯参考栈、<code>--debug.seed/--debug.deterministic</code> 做精度对照；FSDPTurbo 关闭全部融合开关即回退 eager 实现。两边都把 PyTorch 参考实现当作精度基线而非仅 fallback。</p>
+    </div>
+    <div class="item">
+      <h4>HF 初始化 + DCP 续训双轨 checkpoint</h4>
+      <p>均支持 HF safetensors 权重初始化与 torch DCP 断点续训；Engram 表以全局逻辑行保存（不含本地 padding），支持 EP 分片的导入导出。</p>
+    </div>
+    <div class="item">
+      <h4>单序列 packed 训练形态</h4>
+      <p>local batch / MBS 固定为 1，一条 packed 序列含多篇文档；多文档边界 label 置 −100，文档间注意力与位置编码相互隔离。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4 差异点 ============ -->
+<section class="sec" id="k4">
+  <h2><span class="mark" style="background:var(--b)"></span>差异点（分维度）</h2>
+  <p class="lead">按十个维度展开：每个对照点给出两侧机制与设计决策，并在「影响与训练优缺」列给出该差异在训练场景下的影响及各自得失。蓝点＝torchtitan-npu，橙点＝FSDPTurbo；「优/缺」为该侧在训练中的优势与代价。</p>
+
+  <h3>工程形态与元数据管理<span class="dim-tag">models layout</span></h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th class="axis">方面</th><th class="col-a">torchtitan-npu</th><th class="col-b">FSDPTurbo</th><th style="width:30%">影响与训练优缺</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">组件复用</td>
+        <td>Decoder 基类 + 上游公共 MoE 工厂（<code>sqrtsoftplus</code>/<code>swiglu_limit</code> 由插件 patch 注入）；state_dict 适配直接继承上游 DeepSeek-V3 adapter</td>
+        <td>全部组件仓内自带（layers/experts/indexer/attention…），与官方实现同名同参；不依赖 HF transformers 建模代码</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>公共组件的修复与升级随上游自动获得，自有代码量小、维护面窄</p>
+          <p class="imp a"><span class="lbl">缺</span>被上游接口变更绑定：升级 torchtitan 版本时需同步核对全部 patch 目标与模型接口</p>
+          <p class="imp b"><span class="lbl">优</span>与官方推理实现逐行可对照，官方修复/升级时直接 diff 固定 revision 即可搬运</p>
+          <p class="imp b"><span class="lbl">缺</span>5.3k 行模型代码全部自己背，上游/官方任何修复都要手工同步，长期维护成本更高</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">元数据契约</td>
+        <td><code>DeepSeekV41Metadata</code>（model.py:67-168）：每张量一个 KernelFrame，packed 边界是唯一 varlen 元数据；融合栈把 AI_CPU metadata 挂在 (config 类, compress_ratio) entry 上每微批预计算一次</td>
+        <td>无统一 metadata 对象：TND 布局传 <code>actual_seq_len</code> 逐文档向量；融合算子的调度参数由各 ops 层自建</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>参考核与融合核读同一份元数据——同一形状下双栈精度对照成本极低，且这正是其数值验证体系的地基；AI_CPU metadata 每微批预计算一次，摊薄了逐层调度开销</p>
+          <p class="imp a"><span class="lbl">缺</span>契约复杂（frames + pytree 注册 + 构造期校验），新算子接入门槛高</p>
+          <p class="imp b"><span class="lbl">优</span>实现直白、单算子调试路径短</p>
+          <p class="imp b"><span class="lbl">缺</span>各算子调度参数自建，多算子协同（TND + 融合压缩/LI）时契约易不一致，README 也据此禁止了这批组合——融合能力被元数据短板拖累</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">契约校验</td>
+        <td>构造期检查融合对：SMLA 与 LI 两个 override 必须同开（SMLAG 反向产出教师信号 p，SLIKG 反向消费），单开任一侧直接 ValueError</td>
+        <td>adapter 构造期校验 dtype/expert_dtype/MTP/DSpark；不支持的开关组合（CP + chunk_loss、TND + fused compressor/LI）在配置初始化时拒绝</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>把「训练信号是否正确」前移到构造期：杜绝单开 LI 时 indexer 全程不更新、单开 sparse-attn 时教师信号错误这类静默精度事故，长训中这类事故的代价远大于报错本身</p>
+          <p class="imp b"><span class="lbl">优</span>组合合法性全部在配置层拦截，报错直接指向开关名，排障快</p>
+          <p class="imp b"><span class="lbl">缺</span>禁止组合偏多（如 CP 下关闭全部融合），可用配置空间明显小于 torchtitan-npu</p>
+        </td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>接入与配置方式<span class="dim-tag">config &amp; launch</span></h3>
+  <div class="duo">
+    <div class="panel a">
+      <div class="pname">torchtitan-npu</div>
+      <ul>
+        <li>启动：<code>--module torchtitan_npu.models.deepseek_v4_1 --config &lt;flavor&gt;</code>，脚本经 <code>scripts/run_train_multinodes.sh</code>。</li>
+        <li>NPU 能力逐个显式启用：<code>--override.imports torchtitan_npu.override.…</code>；A3/A5 脚本组织默认融合列表，末尾 CLI 覆盖；显式传入会整体替换集合。</li>
+        <li>量化：<code>--extension.quantization.enable-quantized-training --extension.quantization.recipe all_block_fp8</code>（A5 默认）。</li>
+      </ul>
+    </div>
+    <div class="panel b">
+      <div class="pname">FSDPTurbo</div>
+      <ul>
+        <li>启动：<code>run.sh</code> → torchrun → <code>train.py --config config_A5.yaml</code>。</li>
+        <li>三份 YAML（A3/A5/TND）+ <code>model_config/</code> 5 份结构 JSON；并行由 <code>fsdp_plan</code>/<code>tp_plan</code>/<code>ep_plan</code>/<code>cp_plan</code> 声明。</li>
+        <li>融合为 YAML 布尔开关：<code>use_sparse_flash_attn</code>、<code>use_fused_lightning_indexer</code>、<code>use_fused_compressor</code>、<code>use_fused_mhc</code>、<code>use_triton_inplace_rope</code> 等。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="duo" style="grid-template-columns:1fr 1fr; margin-top:-6px">
+    <div class="panel a" style="border-top-width:1px; padding-top:10px">
+      <div class="pimp"><b>影响：</b>CLI 显式启用使每次运行的 NPU 能力组合随命令行留痕、可复现可审计，适合 recipe 化的预训练流程；但融合列表写错一个模块名即启动失败，新用户上手成本高。</div>
+    </div>
+    <div class="panel b" style="border-top-width:1px; padding-top:10px">
+      <div class="pimp"><b>影响：</b>YAML 声明式 plan 上手快、改拓扑不动代码，SFT/微调团队友好；但 plan 与模型强耦合（tp_plan 键写死层路径），换模型要重写整套 YAML，且开关组合的合法性只能靠文档约定。</div>
+    </div>
+  </div>
+
+  <h3>并行切分<span class="dim-tag">parallelism</span></h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th class="axis">维度</th><th class="col-a">torchtitan-npu</th><th class="col-b">FSDPTurbo</th><th style="width:30%">影响与训练优缺</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">FSDP</td>
+        <td>上游 FSDP + FullAC 默认；Engram 表排除出 FSDP，走 EFSDP×EP 联合分片；vision 塔单独 wrap</td>
+        <td>FSDP2（custom 实现）；<code>output_dtype: null</code> + <code>cast_forward_inputs: false</code> 保护 FP32 HC 系数不被截断；vision 整塔作一个 FSDP 单元以合并跨卡 AG；11 月新增 FSDP/EP 显存管理与计算通信重叠优化（333f10e）</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>FullAC 默认开启，长序列/大模型下显存安全边际大，适合不稳定的大规模续训</p>
+          <p class="imp a"><span class="lbl">缺</span>整块 AC 的重算开销直接压吞吐——用显存换速度的保守选择</p>
+          <p class="imp b"><span class="lbl">优</span>dtype 边界处理精细（HC 系数不被 FSDP 盲转 BF16）；参数预取按前向执行顺序配置，且新增显存/通信重叠优化，AG 与计算重叠后吞吐收益直接</p>
+          <p class="imp b"><span class="lbl">缺</span>默认不开 AC，配置不当时更易 OOM，需要用户自己权衡</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">TP</td>
+        <td><span class="st no">固定 1</span></td>
+        <td><span class="st part">仅共享专家</span> SwiGLU colwise/rowwise；注意力头保持复制（attention sink 与 indexed sparse 布局需要模型专用 head sharder，不套通用 Colwise/Rowwise）</td>
+        <td>
+          <p class="imp a"><span class="lbl">缺</span>TP=1 时单卡必须装下整个非专家参数（attention + dense + 共享专家），小集群/大 hidden 场景显存吃紧，只能靠更多 DP 分摊</p>
+          <p class="imp b"><span class="lbl">优</span>共享专家 TP 切分补上了这块显存，8 卡拓扑可以塞下更大模型</p>
+          <p class="imp b"><span class="lbl">缺</span>注意力不切 TP，通信收益有限；TP 引入的 all-reduce 在小集群上可能反而拖慢吞吐</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">EP</td>
+        <td>大 EP 路线：多机 EP128/FSDP128、DP_SHARD=1，EP 必须整除 384；专家 placement 由 spmd_types 后端声明；asc_deepep（DeepEP）已为默认 MoE token dispatcher（ecbf7037），MoonEP 亦已支持（cf74ec5c）</td>
+        <td>两种 dispatcher：A3/TND 用 <code>custom_native_eager_forward</code>（保留概率乘法与 FP32 累加顺序）+ fixed_router；A5 用 <code>all2all</code> + <code>use_fused_ops</code>；MOONEP 适配已合入（dfe0cc0）；MoE a2a split sizes 缓存支持重算与反向 wgrad（2fdf2a2）；routed experts 跨 dense 副本分片（6c92e0ea，torchtitan-npu 侧同名提交）</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>大 EP（EP128）+ DeepEP 默认化把 384 专家摊到 128 卡且 token 派发走高效 all2all，支撑大规模集群 + 全参低精度训练</p>
+          <p class="imp a"><span class="lbl">缺</span>EP 必须整除 384，小集群（如单机 8 卡 EP8）下每卡仍持有 48 个专家，专家显存压力大</p>
+          <p class="imp b"><span class="lbl">优</span>fixed_router + eager 累加保序在 A3 上数值确定性最好；MOONEP 补齐了大规模 dispatcher 选项；a2a split 缓存让重算路径不重复计算派发尺寸</p>
+          <p class="imp b"><span class="lbl">缺</span>fixed_router 是人为负载均衡（牺牲真实路由质量），仅适合小 EP/对照实验</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">CP</td>
+        <td>仅融合栈 + 纯文本；per-document chunk 布局（doc_chunk）+ CP load balancer（11 月新增 ZigZag 均衡 42616e09、SWA 窗口前缀交换 9dc85841）；CP 下压缩 KV 在消费端声明性 gather</td>
+        <td>eager KV-AllGather 全面升级：packed-TND CP（69cc6d5，多文档打包可 CP）、Engram 只交换 n-gram halo（d84d257）、halo_prefix 窗口交换、vision-CP 修复；限制从「等长无 padding BSND」放宽到 packed-TND；Engram hash 只取左邻 halo 降低 CP 通信</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>文档级 chunk/ZigZag 均衡让 1M 长序列训练成为现实；SWA 窗口前缀交换进一步压 CP 域通信量</p>
+          <p class="imp a"><span class="lbl">缺</span>依赖融合栈 + spmd_types 声明式 placement，门槛高；多模态不支持 CP</p>
+          <p class="imp b"><span class="lbl">优</span>KV-AllGather 路线快速工程化：TND CP + halo 交换后通信开销大幅下降，还带 vision-CP；与 1M 分块计划配合后已具备长训能力</p>
+          <p class="imp b"><span class="lbl">缺</span>仍限纯文本/图文部分场景，融合开关组合约束多</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">长序列</td>
+        <td><span class="st yes">1M</span>（seq 1048576 + CP128 脚本）；RoPE 运行时按训练长度建表</td>
+        <td><span class="st yes">1M</span>（11-16 合入 DSV41_1M_seq Adapt）：BSND CP + <code>enable_long_sequence_chunking</code> 分块计划——FP32 索引流式分块合并 top-k、attention 分 tile 重算、共享专家与融合 mHC premix 分块、cp_chunk_loss 复用</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>1M 能力是稀缺卖点：长文档/代码语料 CPT 无需截断，RoPE 按训练长度建表避免位置外推误差</p>
+          <p class="imp b"><span class="lbl">优</span>1M 用「分块计划」而非只靠 CP：索引流式合并 top-k 避免全量 score 物化，与 CP 正交叠加；速度上限取决于分块粒度调参</p>
+          <p class="imp b"><span class="lbl">缺</span>分块计划参数多（索引阈值/tile 尺寸），调优成本高；默认关闭，需要显式启用</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">torch.compile</td>
+        <td><span class="st yes">支持</span>：每 TransformerBlock 整图（aot_eager / inductor）；负载均衡路由保持整图（含 MoE 通信），数据依赖路由对 dispatcher graph-break；11 月修复 CP 训练下的 compile 报错与挂起（fe968804）、保留 FSDP RS overlap（b780d3ae）、DeepEP GraphTrainer 支持 full Inductor overlap</td>
+        <td><span class="st no">不支持</span>（融合路径仅 eager autograd 一阶梯度）；Engram Host 表路径遇 compile 会显式拒绝（防表未更新的静默错误）</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>整图入图 + AutoFuse 算子自动融合是吞吐的关键杠杆，CP/DeepEP 场景的 compile 问题也已修复，全 Inductor 下还能保住 RS overlap</p>
+          <p class="imp a"><span class="lbl">缺</span>编译图按 MoE 路由形态二分：数据依赖路由（真实训练常态）时 MoE 通信在图外，实际加速比依赖路由形态</p>
+          <p class="imp b"><span class="lbl">缺</span>eager-only 意味着逐 kernel 启动开销无法用编译消除，吞吐上限受 launch overhead 限制；Host Engram 与 compile 的冲突被显式拒绝而非支持</p>
+        </td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>NPU 算子机制<span class="dim-tag">operator dispatch</span></h3>
+  <div class="duo">
+    <div class="panel a">
+      <div class="pname">torchtitan-npu：配置层替换</div>
+      <ul>
+        <li><code>@override(target=…Config, exact=True)</code> 注册工厂，启用后模块类整体被换掉（如 <code>AscV41SparseAttention</code> 替换参考 CSA2）。</li>
+        <li>kernel geometry 是 override 的 kwargs 而非 config 字段；底层封装在 <code>ops/ascendc/</code>（compressor、mhc、grouped_mm、MoE permute/unpermute）。</li>
+        <li>备选后端：TileLang（mHC pre/post，单卡验证）；arch22 TND 的 A3KeyWorkaround；<code>torch.compile</code> + Inductor AutoFuse 算子自动融合。</li>
+      </ul>
+    </div>
+    <div class="panel b">
+      <div class="pname">FSDPTurbo：算子层分发</div>
+      <ul>
+        <li><code>register_op(op_name, device_type)</code> 字典注册 + <code>dispatch_op</code> 按当前 accelerator 分发，缺 NPU 实现回退 CPU；语义层 <code>ops/*.py</code> → npu/cpu/cuda/triton 后端。</li>
+        <li>按型号自动选实现：A3/910B/910C 用 LightningIndexerV2/SparseLightningIndexer；950DT 用 QuantLightningIndexer（MXFP4 打分打包，AOT profile 固定 index_topk=512，需 Python 3.11 + cannbotdsl）。</li>
+        <li>模型内 <code>device.type == "npu"</code> 分支（RMSNorm、silu_mul）；Triton <code>inplace_rope</code> 来自 mindspeed_ops。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="obs">机制差异的本质：torchtitan-npu 把融合当成「模型形态的改变」（模块类被换、元数据契约共享，因此能编译入图）；FSDPTurbo 把融合当成「实现的可替换」（模块结构不动、算子分发，因此开关粒度更细、回退更容易，但难入图）。</div>
+  <div class="obs">训练影响：torchtitan-npu 的融合直接替换模型组件，吞吐收益完整（通信+计算+调度一起融合），但一个 override 出错会改变模型行为，必须靠双栈对照兜底；FSDPTurbo 的融合只换算子实现，出错面小、逐开关验证成本低，适合「融合渐进上线」，但每个算子各自为战，端到端加速比封顶。</div>
+
+  <h3>精度与量化<span class="dim-tag">precision</span></h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th class="axis">方面</th><th class="col-a">torchtitan-npu</th><th class="col-b">FSDPTurbo</th><th style="width:30%">影响与训练优缺</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">训练 dtype</td>
+        <td>BF16 基线 + 低精度训练路线（block-FP8 为 A5 默认）</td>
+        <td>训练仍强制 BF16（<code>adapter.py</code> 校验，否则 ValueError）；head 投影可选 fp32/bf16/hf32；HF32 修复了 mHC Sinkhorn 的数值/dtype 一致性（09feb98）</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>block-FP8 直接砍主 GEMM 通信与算力开销（README 宣称 950 64 卡完成全参低精度训练复现），同等卡数下吞吐与显存双收益，是大规模 CPT 的核心竞争力</p>
+          <p class="imp a"><span class="lbl">缺</span>低精度路径多、组合多（recipe × QAT × 量化注意力），数值验证矩阵大，稳定性依赖配套算子版本</p>
+          <p class="imp b"><span class="lbl">优</span>BF16-only 数值行为简单可预期，loss 曲线异常时排障维度少，SFT/微调场景的收敛风险最低</p>
+          <p class="imp b"><span class="lbl">缺</span>放弃了低精度训练的全部吞吐红利，同等算力下单位 token 成本高于 torchtitan-npu 路线</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">量化训练</td>
+        <td>torchao_npu adaptor：recipe <code>all_block_fp8 / all_mxfp8 / all_hif8 / mix</code>；QAT 组合（block-FP8 + QAT + QLI/QSLI）；量化稀疏注意力是独立 backend（自建 metadata entry，强制与 QLI/QSLI 同开，仅 mxfp4）；11 月新增 MXFP8 DeepEP all-to-all 量化（a40d3b7a/e0a34d89）与 EngramContextGate.wkv 量化（384ad753）</td>
+        <td>11-16 完成低精度栈向 torchao/torchao_npu 的整体迁移（c4dddea）：w8a16/w4a16/w4a8/mxfp8/QAT 走 torchao 包 + MoE filter；V4.1 训练示例仍未接（<code>quantization_plan: null</code>）；MXFP4 仅在融合 LI 内部（950DT）；另有 Swap Core with Quantization（156dc3c）</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>「量化注意力独立 backend + 强制同开」的模式把量化正确性纳入构造期校验；通信量化（DeepEP a2a MXFP8）进一步压 EP 域带宽；QAT 支持量化模型直接后训练</p>
+          <p class="imp a"><span class="lbl">缺</span>量化配置错一个开关可能静默走错 backend（靠 should_trigger 抛错兜底），对用户的理解要求高</p>
+          <p class="imp b"><span class="lbl">优</span>torchao 迁移后与 torchtitan-npu 同栈（torchao/torchao_npu），量化生态对齐，未来 V4.1 接入的工程量小；Swap+Quant 组合支持低精度状态交换</p>
+          <p class="imp b"><span class="lbl">缺</span>当前 V4.1 上仍未接入——需要量化训练的用户暂只能选 torchtitan-npu</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">官方量化权重</td>
+        <td><span class="st yes">整包可读</span>：11-16 新增 <code>OfficialMxHuggingFaceStorageReader</code>（4e3e6aaf）——官方 MXFP8 发布目录按 FQN 路由：Engram MX 交给 Engram reader、固定格式 MX 对交给 MX reader、普通张量走上游 HF 路径；MTP/vision 等未引用张量跳过，不支持的格式明确报错</td>
+        <td>不支持 FP8/FP4 checkpoint 加载——检测到 float8 tensor 直接报错、忽略 <code>.scale</code>，要求已反量化的 BF16 safetensors</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>官方权重整包直接入场训练（此前只有 Engram 部分可读），省去一整轮离线反量化与存储成本（98B×2 表约 400+ GB 临时产物）</p>
+          <p class="imp b"><span class="lbl">缺</span>必须先跑一遍离线反量化得到 BF16 副本，准备链路多一步且容易版本错配</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">数值约定</td>
+        <td>LI 分母（num_global_queries）由 trainer step 前统计注入；Muon 逐头 FlexShard 布局</td>
+        <td>路由专家 FP32 累加 + 共享专家 FP32 相加后一次 cast；ratio&gt;1 的压缩强制 FP32 GEMM；稀疏梯度归并/裁剪/更新全程 FP32</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>LI 分母全局统计注入避免了 DP 分片下的分母偏差——这类细节直接决定多卡 loss 是否等价单卡</p>
+          <p class="imp b"><span class="lbl">优</span>FP32 累加点选得保守（MoE 累加、压缩、稀疏梯度全程 FP32），数值鲁棒性好，长训下梯度异常概率低</p>
+          <p class="imp b"><span class="lbl">缺</span>大量 FP32 中间计算吃掉部分 BF16 吞吐收益，是「精度换速度」的又一处体现</p>
+        </td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>优化器<span class="dim-tag">optimizer</span></h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th class="axis">部分</th><th class="col-a">torchtitan-npu</th><th class="col-b">FSDPTurbo</th><th style="width:30%">影响与训练优缺</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">主干参数</td>
+        <td>Muon 为主（NS steps=10、nesterov、<code>match_rms_adamw</code>，lr 1e-5）；FlexShard 逐头 BlockShard（wq_b/wo_a），每层按 attn/dense/routed 分 3 bucket 防 NS all-gather OOM；AdamW 为 fallback；A5 示例默认关闭 optimizer swap（753a3c07）</td>
+        <td>AdamW + CosineAnnealingLR 默认；11 月引入 MuonAdamW（<code>fsdp_turbo/optimizer/muon.py</code>，基于 Keller Jordan/Moonshot 开源实现）；另有通用 AdamWSwap（CPU swap 优化器状态）特性</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>Muon 在 MoE 大模型上的收敛效率优势已有公开证据，同等 token 预算下 loss 更低；逐头分 bucket 的 FlexShard 布局防住了 NS 正交化的大 all-gather OOM</p>
+          <p class="imp a"><span class="lbl">缺</span>Muon 超参（NS steps、lr 匹配函数）敏感且和 AdamW 调参习惯完全不同，用户迁移学习成本高；bucket 策略对拓扑变化敏感</p>
+          <p class="imp b"><span class="lbl">优</span>AdamW + cosine 是最低调参风险的默认组合；MuonAdamW 引入后两种优化器可选用，SFT 与预训练不再二选一</p>
+          <p class="imp b"><span class="lbl">缺</span>MuonAdamW 尚未见 V4.1 大规模训练的公开验证记录，收敛收益待确认</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">Engram 参数</td>
+        <td><code>HostSparseOptimizersContainer</code> + SparseAdam（lr 5e-5）；跨 EP 拓扑的 checkpoint 恢复修复（1e1e60b）</td>
+        <td>自研 <code>ActiveRowAdam</code>：SparseAdam 等价更新限定在稀疏梯度命中的活跃行，规避原生 SparseAdam 的「BF16 权重 += FP32 稀疏」全表混合精度加；<code>EngramOptimizer</code> 编排 dense + sparse + 调度器容器</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>挂在 torchtitan 的优化器容器体系上，与调度器/checkpoint/拓扑恢复复用同一套基础设施</p>
+          <p class="imp a"><span class="lbl">缺</span>原生 SparseAdam 的混合精度稀疏加成本随表大小增长（约 3.84 亿行时 CPU 更新是可感知的开销），需要靠 host 表实现层规避</p>
+          <p class="imp b"><span class="lbl">优</span>ActiveRowAdam 把每步更新严格限定在活跃行——CPU 优化器步的耗时与活跃行数而非表大小成正比，这是针对 98B×2 表的针对性设计，长训中每步都省</p>
+          <p class="imp b"><span class="lbl">缺</span>自研优化器要自己维护与 SparseAdam 的数值等价性证明和 checkpoint 兼容</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">状态交换</td>
+        <td>swap_optimizer（novaswap）：优化器状态驻 CPU swap buffer，DCP 零拷贝视图读写</td>
+        <td>Engram 权重与 moments 常驻 CPU pinned；未将主干优化器状态下沉 CPU</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>优化器状态下沉 CPU 后，NPU 显存只装参数+梯度，同等卡上能开更大模型或更大 batch；DCP 零拷贝视图让 swap 态 checkpoint 读写不经过 GPU</p>
+          <p class="imp a"><span class="lbl">缺</span>swap 依赖 novaswap 组件与 PCIe 带宽，optimizer step 的隐含时延增加；checkpoint 恢复要求正确拓扑</p>
+          <p class="imp b"><span class="lbl">优</span>Engram 常驻 CPU 是唯一可行解（单表 183 GiB 放不进显存），实现上避免多余的显存↔主机搬运</p>
+        </td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>Engram 记忆模块<span class="dim-tag">engram</span></h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th class="axis">方面</th><th class="col-a">torchtitan-npu</th><th class="col-b">FSDPTurbo</th><th style="width:30%">影响与训练优缺</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">存储后端</td>
+        <td><code>HostEngramTable</code>（CPU 权威表 + Torch lookup）为基线；override 切换 CANN <code>EngramFetch/EngramFetchGrad</code>（ElasticBuffer，128 元素行对齐）与 MXFP8 变体（E4M3 数据 + E8M0/32 scale）</td>
+        <td>双后端：<code>HostOffloadEngram</code>（CANN ElasticBuffer custom_op，梯度经 fetch-token 路由回 owner rank）与 <code>TorchHostOffloadEngram</code>（纯 PyTorch 兜底）；YAML <code>engram_storage_backend</code> 选择</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>MXFP8 变体把 Engram 的 host↔NPU 搬运带宽再压一半（E4M3+scale），lookup 热路径的 PCIe 流量减半，长训中是稳定收益</p>
+          <p class="imp a"><span class="lbl">缺</span>后端切换走 override 机制，需要用户理解 override 列表语义</p>
+          <p class="imp b"><span class="lbl">优</span>纯 PyTorch 兜底后端让无 CANN 算子包的环境（CPU 验证、CI）也能跑通全链路</p>
+          <p class="imp b"><span class="lbl">缺</span>无低精度搬运变体，ElasticBuffer 路径的带宽就是瓶颈上限</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">初始化</td>
+        <td>表随模型构造，FSDP 排除 + EFSDP/EP 分片</td>
+        <td>meta 设备延迟初始化：先并行化再按全局种子/层号/行起点派生随机种子逐 rank 初始化本地 shard（拓扑固定即可复现）</td>
+        <td>
+          <p class="imp a"><span class="lbl">缺</span>构造期需要先想好分片拓扑，初始化与并行的耦合更深；构造 3.84 亿行表对象本身的内存峰值要小心</p>
+          <p class="imp b"><span class="lbl">优</span>meta 延迟初始化避免了「先建全表再切」的瞬时内存峰值（每 rank 只初始化本地 shard），种子派生方案让固定拓扑下可复现——这是多机确定性训练的关键细节</p>
+          <p class="imp b"><span class="lbl">缺</span>逐 rank 派生的随机值与「先初始化完整表再切分」不逐元素一致，跨框架对照时随机基线不可比</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">分片</td>
+        <td>override 提供 EFSDP×EP 联合分片开关（<code>shard_over_efsdp</code>）</td>
+        <td>哈希表沿 EP 域切行，TP/EDP 副本共享行分片；自动加入 FSDP ignore 集合</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>EFSDP×EP 联合分片把每卡 Engram 占用再除一层（EP×EFSDP），配合 128 卡大 EP，是 Engram 大表能落地的关键</p>
+          <p class="imp b"><span class="lbl">优</span>自动 ignore 免去用户手写 plan 的心智负担</p>
+          <p class="imp b"><span class="lbl">缺</span>副本共享行分片意味着 TP/EDP 维度不省显存，小 EP 配置下每卡占用仍高</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">HF 权重导入</td>
+        <td>MXFP8 量化表直接读取；全局逻辑行保存，支持 EP 与 EP×EFSDP 布局导入导出</td>
+        <td>65536 行分块流式载入 host（不构造完整表）；带 hash_fingerprint 校验；要求 EP-only（expert FSDP=1）</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>量化表直接读 + 两种分片布局互转，续训拓扑调整时不用重做权重预处理</p>
+          <p class="imp b"><span class="lbl">优</span>hash_fingerprint 校验能在加载时直接发现「训练/打包用了不同结构 JSON」这类错配，避免训出无效模型；分块流式导入内存峰值可控</p>
+          <p class="imp b"><span class="lbl">缺</span>EP-only 限制使 EFSDP 联合分片场景无法直接吃官方权重</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">compile</td>
+        <td><span class="st yes">支持</span> AscendC Host lookup 的 torch.compile</td>
+        <td><span class="st no">不支持</span>：Host 表路径遇 compile 显式拒绝（防表未更新的静默错误），要求 EP>1</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>Host lookup 也入图，消除了 Engram 热路径上最后的 kernel launch 开销</p>
+          <p class="imp b"><span class="lbl">缺</span>lookup 留在 eager，CPU↔NPU 每步往返的调度开销无法编译消除</p>
+        </td>
+      </tr>
+    </tbody>
+  </table></div>
+  <div class="obs">容量参考（两边一致，来自官方发布配置）：第 1/14 层各一张约 3.84 亿行表，BF16 纯权重约 183 GiB/表；8 EP rank 同机时 BF16 权重 + FP32 moments 合计约 915 GiB/表——这决定了两边都把「Host 常驻 + 活跃行更新」作为唯一现实路径。</div>
+
+  <h3>数据管道<span class="dim-tag">data pipeline</span></h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th class="axis">方面</th><th class="col-a">torchtitan-npu</th><th class="col-b">FSDPTurbo</th><th style="width:30%">影响与训练优缺</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">文本对齐</td>
+        <td><code>AlignedHuggingfaceDataloader</code>：<code>per_doc_alignment</code> = 压缩比 LCM（=2），EOS 后 pad 至整池化组（label −100、位置续累），已知会损失奇数长度文档的一个监督目标</td>
+        <td>TND 打包脚本按真实 processor 长度贪心打包；TND 向 SparseFlashMla 传逐文档 <code>actual_seq_len</code>；BSND 为对照布局；11-20 后 fused compressor 已支持多文档 TND（bb2b403），并新增在线打包（startup pack plans + 超长截断，0383285）</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>对齐在 dataloader 层统一解决，任意数据源自动获得池化组对齐，用户无感</p>
+          <p class="imp a"><span class="lbl">缺</span>奇数长度文档会少一个监督目标——数据里奇偶分布无关时影响可忽略，但短文本为主的语料上会系统性稀释少量监督信号</p>
+          <p class="imp b"><span class="lbl">优</span>TND/BSND 双布局 + fixed_router 同关约定给了精确对照实验手段；融合压缩 + TND 解锁后打包训练不再强制关融合；在线打包免离线预处理</p>
+          <p class="imp b"><span class="lbl">缺</span>fixed_router 依赖 token 序号使 padding 敏感，对照实验约束仍多</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">图文 CPT</td>
+        <td>复用上游 <code>HuggingFaceMultiModalDataset</code>/<code>MMSamplePacker</code> + CC12M WebDataset tar（在线流式/本地两用）；只适配协议层：BOS + 图像协议 + caption + EOS，仅 caption 与 EOS 监督</td>
+        <td><code>DeepSeekV41Processor</code> 按官方对话协议渲染 messages + <code>token_types</code>；图文超长按 prompt/response 预算分配截断（沿用 MindSpeed-MM 公式），图片 token 区间完整保留</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>协议层薄适配 + 复用上游数据组件，多模态数据接入的代码量最小；CC12M 在线流式免预处理</p>
+          <p class="imp a"><span class="lbl">缺</span>监督信号只有 caption/EOS，图片区间不参与监督——这符合 CPT 设定但不适合指令对齐类数据</p>
+          <p class="imp b"><span class="lbl">优</span>processor 级预算分配（截文本保图片）对图文混排数据的长度利用率更高，超长样本不整条丢弃</p>
+          <p class="imp b"><span class="lbl">缺</span>processor 逻辑重（262 行），协议变更要同步维护</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">SFT</td>
+        <td><span class="st yes">专门数据栈</span>：LLaVA/ShareGPT/OpenAI messages/Alpaca，thinking_mode/drop_thinking 策略；VL SFT 训练脚本</td>
+        <td><span class="st part">协议级</span>：messages 格式 JSONL + LLaVA 格式转换脚本；SFT/CPT 共用同一训练入口</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>四种格式直读 + 思维链策略开关，微调团队免数据转换，SFT 实验迭代快</p>
+          <p class="imp b"><span class="lbl">优</span>转换脚本 + mock 生成器使数据链路可离线验证，格式问题在训练前暴露</p>
+          <p class="imp b"><span class="lbl">缺</span>非 messages 格式要过一道转换脚本，长链路上格式错配的排查点多</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">测试工具</td>
+        <td>仓内 CC12M 测试 tar（32 样本）；1M 长度下 Engram token history 预构建</td>
+        <td>mock 图文数据生成器（MindSpeed-MM 改编，固定图片尺寸/数量/文本长度）；数据生成与打包共用同一结构 JSON</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>1M 场景的 token history 预构建避免了超长序列下 Engram 哈希的运行时开销</p>
+          <p class="imp b"><span class="lbl">优</span>mock 生成器可控样本形态（图片数/文本长），是测吞吐和验证链路的标准工具——这是 torchtitan-npu 缺的能力</p>
+        </td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>Checkpoint 与权重互转<span class="dim-tag">checkpoint</span></h3>
+  <div class="duo">
+    <div class="panel a">
+      <div class="pname">torchtitan-npu</div>
+      <ul>
+        <li><code>DeepSeekV41StateDictAdapter</code> 继承上游 V3 adapter：experts merge/split 与 DTensor 传输全部复用；compressor/indexer 键仅在 source/非 REUSE 层生成。</li>
+        <li>vision 半区（塔、marker、bias_vl）按 config 的模型类组合进主 adapter，纯文本 config 不生成 vision 规则。</li>
+        <li>LoRA：<code>DeepSeekV41LoRACheckpointManager</code> adapter-only DCP 周期保存 + PEFT 导出 + resume 校验。</li>
+        <li>CLI 三档加载：DCP 完整续训 / HF model-only / HF quantized（Engram MXFP8 反量化）。</li>
+      </ul>
+      <div class="pimp"><b>影响：</b>继承上游 V3 adapter 使 DeepSeek 系模型的 checkpoint 逻辑一处维护、全系受益，LoRA/PEFT 导出即插即用；三档 CLI 加载把「续训拓扑」显式交给用户，灵活但参数组合多、易配错（文档为此专门写了标准参数段）。训练中优势是大 EP 拓扑下导入导出布局完整；缺点是 Engram 之外的官方量化权重读不了，官方整包入场仍有缺口。</div>
+    </div>
+    <div class="panel b">
+      <div class="pname">FSDPTurbo</div>
+      <ul>
+        <li>独立 474 行 adapter：HF 逐专家键（w1/w2/w3）↔ 打包键（<code>gate_up_proj</code> [E,2I,H] / <code>down_proj</code>）映射。</li>
+        <li>DTensor 感知：解析 Shard/_StridedShard placement，只向 DCP 暴露 owner-local 专家，避免 all-gather 整层 MoE。</li>
+        <li>「先并行化再加载」：按 layers/vision/root 分组 <code>dcp.load</code> 流式控内存；Engram 表分块流式读入。</li>
+        <li>Engram 训练状态与 DCP 主状态分开保存（含 metadata 校验）；HF 初始加载要求 expert FSDP=1。</li>
+      </ul>
+      <div class="pimp"><b>影响：</b>逐组 <code>dcp.load</code> + 分块流式使 98B×2 表的加载内存峰值可控、失败点提前；DTensor placement 感知避免了 MoE 整层 all-gather，多机恢复速度快。<span class="dis">缺点：</span>HF 初始加载要求 expert FSDP=1，EP 下只能靠 EP 切行走，EFSDP 联合分片吃不到官方权重；训练 checkpoint 与 DCP 分开保存，断点恢复是两步操作，出错面多一个。</div>
+    </div>
+  </div>
+
+  <h3>内存手段在 V4.1 上的可用性<span class="dim-tag">memory</span></h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th class="axis">手段</th><th class="col-a">torchtitan-npu</th><th class="col-b">FSDPTurbo</th><th style="width:30%">影响与训练优缺</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">激活重计算</td>
+        <td>FullAC（整块 AC）为默认</td>
+        <td><span class="st yes">attention 已支持</span>：11-30 合入 attention-module recompute（1dae0be，带 replay 状态副本）；1M 分块计划下共享专家与融合 mHC premix 也可分块重算；此前仅 FFN</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>attention 重算可用，长序列下激活显存的大头（attention 中间张量随 seq 平方增长）能被压掉，显存-吞吐曲线可调</p>
+          <p class="imp b"><span class="lbl">优</span>attention recompute 通过 replay 状态副本解决跨层 runtime 状态难题，打通了此前「shared runtime 不能重算」的结构性限制——瓶颈已解除</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">分块损失</td>
+        <td>未见 V4.1 专用入口</td>
+        <td><span class="st yes">chunk_loss</span>（ChunkedLMHead，torch.func 分块求导；CP 场景复用 <code>cp_chunk_lm_loss</code> 按 token 分块算 vocab logits，跨 CP 边界保留 next-token 目标并按全局有效目标归一化）</td>
+        <td>
+          <p class="imp a"><span class="lbl">缺</span>无分块损失意味着 logits 全量物化——40 层 × vocab 投影的 logits 显存随 batch×seq 线性涨，长序列/大 batch 下是显存热点</p>
+          <p class="imp b"><span class="lbl">优</span>chunk_loss 按 512 token 分块算 CE，logits 显存从 O(seq) 降到 O(chunk)；CP 分块损失与 1M 计划配合后，长序列下 logits 显存热点也已解除</p>
+        </td>
+      </tr>
+      <tr>
+        <td class="axis">CPU offload</td>
+        <td>优化器状态 swap（novaswap）+ Engram Host 表</td>
+        <td>Engram Host 表 + 通用 swap_optimizer/swap_activation 文档特性</td>
+        <td>
+          <p class="imp a"><span class="lbl">优</span>主干优化器状态也下沉，NPU 显存压力最小，同等卡跑更大模型/更宽 batch</p>
+          <p class="imp b"><span class="lbl">优</span>swap 手段作为通用特性有文档与配置支撑，组合方式更灵活</p>
+          <p class="imp b"><span class="lbl">缺</span>V4.1 示例未默认启用，实际训练中能否叠加融合开关需要自行验证</p>
+        </td>
+      </tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 5 能力矩阵 ============ -->
+<section class="sec" id="k5">
+  <h2><span class="mark" style="background:var(--ink)"></span>能力矩阵</h2>
+  <p class="lead">面向使用者的一页对照；「部分」表示有条件或范围限制。</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr>
+      <th class="axis">能力</th>
+      <th class="col-a">torchtitan-npu</th>
+      <th class="col-b">FSDPTurbo</th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="axis">BF16 图文 CPT/SFT</td><td><span class="st yes">支持</span></td><td><span class="st yes">支持</span></td></tr>
+      <tr><td class="axis">FSDP + EP</td><td><span class="st yes">支持</span>（大 EP128 多机）</td><td><span class="st yes">支持</span>（示例 EP8）</td></tr>
+      <tr><td class="axis">共享专家 TP</td><td><span class="st no">不支持</span>（TP 固定 1）</td><td><span class="st yes">支持</span></td></tr>
+      <tr><td class="axis">Context Parallel</td><td><span class="st part">融合栈 + 纯文本</span>（doc_chunk）</td><td><span class="st part">KV-AllGather</span>（等长 BSND 纯文本，限制多）</td></tr>
+      <tr><td class="axis">1M 长序列</td><td><span class="st yes">支持</span>（CP128 + doc_chunk/ZigZag）</td><td><span class="st yes">支持</span>（BSND CP + 长序列分块计划，11-16 合入）</td></tr>
+      <tr><td class="axis">量化训练（FP8/MXFP8/HiF8）</td><td><span class="st yes">支持</span>（torchao_npu + 通信量化）</td><td><span class="st part">栈已迁移 torchao</span>，V4.1 训练示例未接（仍 BF16）</td></tr>
+      <tr><td class="axis">官方 FP8/FP4 权重直接加载</td><td><span class="st yes">MXFP8 整包可读</span>（OfficialMx reader，11-16）</td><td><span class="st no">不支持</span>（需先反量化 BF16）</td></tr>
+      <tr><td class="axis">torch.compile</td><td><span class="st yes">支持</span>（整图 + CP/DeepEP 修复）</td><td><span class="st no">不支持</span></td></tr>
+      <tr><td class="axis">Muon 优化器</td><td><span class="st yes">支持</span>（FlexShard 逐头布局）</td><td><span class="st yes">已引入</span>（MuonAdamW，验证待公开）</td></tr>
+      <tr><td class="axis">CSA2 recompute</td><td><span class="st yes">FullAC</span> 默认</td><td><span class="st yes">attention 已支持</span>（replay 状态副本，10-30）</td></tr>
+      <tr><td class="axis">DeepEP/MoonEP dispatcher</td><td><span class="st yes">asc_deepep 默认 + MoonEP</span></td><td><span class="st part">MOONEP 已合入</span>，示例默认仍 all2all/custom</td></tr>
+      <tr><td class="axis">packed-TND CP</td><td><span class="st yes">支持</span>（doc_chunk）</td><td><span class="st yes">支持</span>（11-11 合入，含 vision-CP）</td></tr>
+      <tr><td class="axis">LoRA</td><td><span class="st yes">支持</span>（PEFT 导出）</td><td><span class="st no">不支持</span></td></tr>
+      <tr><td class="axis">VL SFT 数据栈</td><td><span class="st yes">专门实现</span>（4 种格式 + 思维链策略）</td><td><span class="st part">协议级</span>（messages + LLaVA 转换）</td></tr>
+      <tr><td class="axis">MTP / DSpark</td><td><span class="st no">未实现</span></td><td><span class="st part">结构保留</span>、训练禁止（V4 主线已加 MTP，V4.1 训练仍禁）</td></tr>
+      <tr><td class="axis">数据工具链</td><td><span class="st part">仓内测试资产</span>（CC12M tar）</td><td><span class="st yes">成套</span>（mock 生成 + TND 打包 + 在线打包 + LLaVA 转换）</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 5.5 场景选型 ============ -->
+<section class="sec" id="k55">
+  <h2><span class="mark" style="background:var(--common)"></span>场景选型：我要训练什么，该选哪个？</h2>
+  <p class="lead">按真实训练任务出发给出推荐。每个场景给出首选框架、并行/精度/优化器的具体配置要点，以及选择理由；两仓均以 2026-11-23 master/main 为准。</p>
+
+  <div class="takeaways">
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 1 · 大规模预训练（CPT）：64 卡以上集群、长文本语料、追求最低单位 token 成本</h4>
+        <span class="pick a">选 torchtitan-npu</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>并行</dt><dd>A5 多机 EP128 / FSDP128 / DP_SHARD=1，CP 按需；参考 <code>deepseek_v4_1_flash_cpt_4k_a5.sh</code>（16 机）与 <code>cpt_1m_a5.sh</code>（CP128）</dd></div>
+        <div class="row"><dt>精度</dt><dd>BF16 基线 + <code>--extension.quantization.recipe all_block_fp8</code>（A5 默认）；注意力/压缩器走 QLI/QSLI 量化 backend</dd></div>
+        <div class="row"><dt>优化器</dt><dd>Muon（NS 10、nesterov），FlexShard 逐头布局；Engram 走 SparseAdam</dd></div>
+        <div class="row"><dt>必开</dt><dd>asc_deepep dispatcher（默认）、A5 融合栈、FullAC、<code>USE_GOLDEN=0</code></dd></div>
+        <div class="row"><dt>权重入场</dt><dd><code>--checkpoint.initial-load-in-hf-quantized</code> 直读官方 MXFP8 整包</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>这个场景的胜负手是「单位 token 成本」——block-FP8 量化训练 + DeepEP 通信量化 + 整图 compile 入图三者叠加，只有 torchtitan-npu 同时具备；大 EP128 摊薄专家显存，1M CP 方案直接可用。FSDPTurbo 在此场景缺量化训练、缺 compile、EP dispatcher 默认保守，吞吐差距会被集群规模放大。<b>代价：</b>Muon 调参与 override 列表的学习成本，且依赖 torchao_npu/cann_ops 版本配套。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 2 · 超长上下文训练（0.5M–1M token：长文档/代码/ genomic 语料）</h4>
+        <span class="pick a">选 torchtitan-npu</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>并行</dt><dd>CP=128 + doc_chunk/ZigZag 均衡 + spmd_types 声明式 placement；DP_REPLICATE 由剩余卡数派生</dd></div>
+        <div class="row"><dt>精度</dt><dd>与场景 1 相同（block-FP8 可叠加）</dd></div>
+        <div class="row"><dt>必开</dt><dd>融合栈（SMLA+LI 对必须同开）、RoPE 按训练长度建表（运行时自动）</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>1M 是 torchtitan-npu 已公开验证（README 2026-09 声明、Ascend950 64 卡复现）的路径，文档级 chunk 均衡保证 CP 域负载均匀。FSDPTurbo 的 1M（11-16 新合入）路线不同——靠「分块计划」流式合并索引 top-k，与 CP 正交，<b>理论上限可比较，但尚无公开的大规模验证记录</b>；生产长训建议先选前者，把 FSDPTurbo 的 1M 当作二选一的对照实验。<b>注意：</b>两边多模态 + CP 均受限，超长图文混合训练要另行验证。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 3 · 小/中集群 SFT 与领域微调（8–64 卡、指令数据、快速迭代）</h4>
+        <span class="pick b">选 FSDPTurbo</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>并行</dt><dd>默认 8 卡拓扑 FSDP4 / TP2（共享专家）/ EP4 / EDP2；改 YAML 即改拓扑，不动代码</dd></div>
+        <div class="row"><dt>精度</dt><dd>BF16 训练（强制）+ <code>head_compute_dtype: bf16</code>；950 上可用 HF32 head</dd></div>
+        <div class="row"><dt>优化器</dt><dd>AdamW + CosineAnnealingLR（默认，调参风险最低）；可切 MuonAdamW</dd></div>
+        <div class="row"><dt>必开</dt><dd><code>chunk_loss</code>（省 logits 显存）、recompute（attention 已支持）、按需融合开关</dd></div>
+        <div class="row"><dt>数据</dt><dd>messages JSONL 直读；LLaVA 格式走转换脚本；mock 生成器先验链路</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>SFT 场景迭代速度优先于绝对吞吐——FSDPTurbo 的 YAML 声明式配置、HF 生态直连（AutoModel 式权重入场）、BF16 数值可预期、AdamW 零学习成本，都为「频繁改配置重跑」优化；chunk_loss + attention recompute 解决微调常见的小显存卡。torchtitan-npu 也能做 SFT（有专门 VL SFT 数据栈），但 override 列表、Muon 超参和 flavor 体系对微调团队是额外负担。<b>代价：</b>无 compile，吞吐上限低于场景 1；EP 下官方权重入场要求 expert FSDP=1。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 4 · 图文多模态 CPT（CC12M 级图文对，ViT + 语言塔联合训练）</h4>
+        <span class="pick ab">两边均可用，侧重不同</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>torchtitan-npu</dt><dd>复用上游 MMSamplePacker + CC12M WebDataset（在线流式/本地 tar），协议层薄适配；仅 caption/EOS 监督；单机 8 卡 debug 脚本可起步</dd></div>
+        <div class="row"><dt>FSDPTurbo</dt><dd>Processor 级图文预算分配（截文本保图片）、token_types 协议、fused vision FlashAttn；数据超长利用率更高</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>两边的图文 CPT 都已跑通，选择更多由数据形态决定：<b>WebDataset tar / 海量图文对</b>顺 torchtitan-npu 的上游数据栈（流式不落盘）；<b>长图文混排、图片 token 占比高</b>选 FSDPTurbo（预算截断不丢整条样本）。若需要图文 SFT/对齐类监督，torchtitan-npu 的 VL SFT 数据栈（4 种格式 + 思维链策略）是两边唯一现成的。<b>注意：</b>FSDPTurbo 的 vision-CP 已修复但经验尚浅；两边 CP + 多模态组合都建议先小规模验证。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 5 · 量化感知训练 / 低精度后训练（QAT、MXFP8/HiF8 实验）</h4>
+        <span class="pick a">选 torchtitan-npu</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>路径</dt><dd>torchao_npu adaptor：<code>all_mxfp8 / all_hif8 / mix / all_block_fp8</code> recipe；QAT 组合（block-FP8 + QAT + QLI/QSLI）；debug/ 下有 QAT 脚本</dd></div>
+        <div class="row"><dt>扩展</dt><dd>MXFP8 DeepEP a2a 通信量化、EngramContextGate.wkv 量化（均为 11 月新增）</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>这是目前两边差距最明确的场景——FSDPTurbo 的 torchao 栈已迁移完成但 V4.1 尚未接线（<code>quantization_plan: null</code>），做低精度实验只能选 torchtitan-npu；其「量化注意力独立 backend + 强制同开」契约也把 QAT 数值正确性纳入构造期校验。<b>动态关注：</b>FSDPTurbo 的 torchao 迁移意味着接线是时间问题，选型前可查其 main 分支 <code>quantization_plan</code> 是否已对 V4.1 开放。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 6 · 参数高效微调（LoRA / PEFT）</h4>
+        <span class="pick a">选 torchtitan-npu</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>路径</dt><dd><code>deepseek_v4_1_flash_lora_4k_a3.sh</code>；rank 16 / alpha 32，冻结基座 + Engram + ViT；adapter-only DCP 保存 + PEFT 导出</dd></div>
+        <div class="row"><dt>优化器</dt><dd>Muon 逐头布局（LoRA 参数走 AdamW fallback）</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>FSDPTurbo 完全没有 LoRA 路径——这是硬性排除。torchtitan-npu 的 LoRA 还处理了 Engram 派生表冻结、专家 rank 等模型特有细节，单卡/少卡即可跑。<b>若无 LoRA 需求且是全参微调</b>，回落到场景 3 的判断。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 7 · 算法研究 / 数值实验（路由策略、索引器行为、loss 消融）</h4>
+        <span class="pick b">选 FSDPTurbo</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>手段</dt><dd>TND/BSND 双布局对照（fixed_router 同关）、mock 数据生成器（可控样本形态）、融合开关逐个切换回退 eager、可对照官方 revision</dd></div>
+        <div class="row"><dt>组合</dt><dd>小模型 JSON（config_8p*.json）裁剪拓扑做快速消融；indexer_loss 系数可调</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>算法研究需要「变量可控 + 回退容易 + 与参考实现对得上」：FSDPTurbo 的逐开关融合、vendored 参考实现（可 diff 官方源码）、BSND/TND 对照协议天然契合；torchtitan-npu 的 USE_GOLDEN 双栈对照也支持消融，但其变量耦合在 override 列表里，构造期契约（如 SMLA+LI 同开）限制了部分单变量实验。<b>例外：</b>若研究对象是量化对训练的影响，仍须回到场景 5 选 torchtitan-npu。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>场景 8 · 从官方 checkpoint 续训（HF 发布权重直接入场）</h4>
+        <span class="pick a">选 torchtitan-npu</span>
+      </div>
+      <dl class="scn-cfg">
+        <div class="row"><dt>路径</dt><dd>官方 MXFP8 发布目录直读（OfficialMx reader 按 FQN 路由反量化），MTP/vision 未引用张量自动跳过</dd></div>
+        <div class="row"><dt>FSDPTurbo 替代</dt><dd>先离线反量化为 BF16 safetensors（400+ GB 临时产物），再 <code>load_pretrained_weights</code>（要求 expert FSDP=1）</dd></div>
+      </dl>
+      <p class="scn-why"><b>为什么：</b>官方发布格式是 MXFP8，torchtitan-npu 是两边唯一能整包直读的——省一轮离线反量化也消除版本错配风险。若坚持 FSDPTurbo（例如同时需要场景 3 的小集群便利），离线反量化做一次即可，代价是一次性的。<b>注意：</b>两边都要求「先并行化再加载」；Engram hash_fingerprint/表布局校验失败时优先怀疑训练与打包用了不同结构 JSON。</p>
+    </div>
+
+    <div class="scn">
+      <div class="scn-head">
+        <h4>一页速查</h4>
+        <span class="pick ab">决策原则</span>
+      </div>
+      <p class="scn-why" style="margin-top:10px">
+        <b>规模大、要吞吐极值、要量化/超长序列</b> → torchtitan-npu（场景 1/2/5/6/8）。
+        <b>集群小、要迭代快、要 HF 生态与数值可预期</b> → FSDPTurbo（场景 3/7）。
+        <b>图文 CPT</b> 按数据形态选（场景 4）。两条路线共用同一 CANN 算子生态与 Engram 存储策略，核心差异不在「能不能训」，而在「为哪种工作流优化」：torchtitan-npu 为 recipe 化的大规模预训练优化（显式启用、可审计、性能优先），FSDPTurbo 为声明式的微调与研究优化（易上手、易回退、易对照）。若团队同时承担两类工作流，按场景分开选型比统一到一个框架更现实。
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 6 规模与测试 ============ -->
+<section class="sec" id="k6">
+  <h2><span class="mark" style="background:var(--ink)"></span>规模与测试</h2>
+  <div class="tbl-wrap"><table>
+    <thead><tr>
+      <th class="axis">统计项</th>
+      <th class="col-a">torchtitan-npu</th>
+      <th class="col-b">FSDPTurbo</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="axis">模型实现</td>
+        <td><code>models/deepseek_v4_1/</code> 26 个 .py / 7315 行（最大：<code>__init__.py</code> 1067、<code>model.py</code> 782、<code>engram/host.py</code> 562）</td>
+        <td><code>models/deepseek/deepseek_v41/</code> 27 个 .py / 7405 行（最大：<code>adapter.py</code> 738、<code>host_offload_engram.py</code> 672、<code>context_parallel.py</code> 566）</td>
+      </tr>
+      <tr>
+        <td class="axis">NPU 专属层</td>
+        <td><code>override/deepseek_v4_1/</code> 11 文件 / 1234 行（<code>sparse_attn/ascendc.py</code> 639、<code>lightning_indexer/ascendc.py</code> 271）+ torchao 适配 + <code>ops/ascendc/</code> 公共算子；融合 mHC premix 已入 override（f083b4d9）</td>
+        <td><code>ops/</code> 语义层 + npu 后端（DS 相关：sparse_attention、lightning_indexer、compressor、mhc、engram 及 engram_pypto DSL）；11-17 完成 V4.1 ops 后端重构（58dedec）+ tilekernels 后端（0e47604，Engram gate）</td>
+      </tr>
+      <tr>
+        <td class="axis">示例与脚本</td>
+        <td>6 个顶层脚本（CPT 4k A3/A5、CPT 1M A5、SFT 4k A3/A5、LoRA 4k A3）+ debug/ 多个（含 QAT、单卡 stripped）+ readme；GraphTrainer 脚本启用 DeepEP</td>
+        <td>train.py + run.sh + 4 份 YAML（新增 A3 16 机 256die 配置）+ 4 个数据处理脚本 + 6 份结构 JSON（含 1M 配置 config_16P_A5_1mseq.json）+ 600+ 行 README</td>
+      </tr>
+      <tr>
+        <td class="axis">测试覆盖</td>
+        <td>36 个 V4.1 相关测试文件：模型层 26 个（rope/attention/engram/indexer/mhc/cp/state_dict/contract…）+ override 融合栈 9 个（SMLA 教师、LI 融合、CP frames、几何复用…）+ integration ST</td>
+        <td>15 个 V4.1 相关测试（此前 3 个）：state_dict/vision_packing/tnd_packing/在线打包/packing 等 + ops 层算子测试</td>
+      </tr>
+      <tr>
+        <td class="axis">官方生态声明</td>
+        <td>readme 公开宣称：2026-09 完成 V4.1-Flash 1M 长序列支持与 Ascend950 64 卡全参低精度训练复现（对接 cann-recipes-train）；官方 MXFP8 整包读取路径已覆盖</td>
+        <td>examples README 扩至 600+ 行并详述 1M 分块计划、TND-CP、Host 双后端；模型生态快速扩张（Kimi K3.1、GLM-5.3-Flash 1M、Qwen3.8、MiniMax-M3 等同期合入）</td>
+      </tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 7 结论与借鉴 ============ -->
+<section class="sec" id="k7">
+  <h2><span class="mark" style="background:var(--ink)"></span>结论与借鉴</h2>
+  <p class="lead">两者不是竞争关系，而是同一模型在两种框架哲学下的两次工程化，互有对方值得吸收的部分。</p>
+  <div class="takeaways">
+    <div class="tk">
+      <h4>总判断（2026-11-23 更新）</h4>
+      <p>结构层（组件、几何、融合算子来源、Engram 存储策略）两边高度同源；分化发生在框架耦合层——torchtitan-npu 用「配置级替换 + 显式启用」换取了 compile 入图和量化栈的完整性，代价是与 torchtitan 上游的强绑定；FSDPTurbo 用「vendored 参考 + 算子分发」换取了对官方实现的逐行可对照性和 HF 生态的低门槛接入。值得注意的趋势：11 月中下旬两边在快速收敛——FSDPTurbo 补齐 1M 长序列、attention 重计算、Muon、torchao 量化栈与 TND+融合压缩，torchtitan-npu 打通官方 MXFP8 整包读取并将 DeepEP 设为默认；两者的「独有卖点窗口期」正在缩短，长期差异将收敛到框架哲学本身（override 显式启用 vs plan 声明式配置）。</p>
+    </div>
+    <div class="tk to-a">
+      <h4>FSDPTurbo 可向 torchtitan-npu 借鉴</h4>
+      <p>量化训练在 V4.1 上的实际接入（recipes + QAT + 量化注意力 backend 的「独立 backend + 同开契约」模式，当前 FSDPTurbo 已有 torchao 栈但 V4.1 未接）；官方 MXFP8 整包直读（省去离线反量化）；整图编译与 MoE 路由形态二分的经验；Muon FlexShard 逐头布局防 NS OOM 的工程细节。</p>
+    </div>
+    <div class="tk to-b">
+      <h4>torchtitan-npu 可向 FSDPTurbo 借鉴</h4>
+      <p>ActiveRowAdam 活跃行优化器（比 SparseAdam 更省的 CPU 更新路径）；meta 设备延迟初始化的种子派生方案；长序列分块计划（enable_long_sequence_chunking 的流式索引合并 top-k，与 CP 正交）；TND/BSND 双布局对照工具链与在线打包；mock 数据生成器；attention recompute 的 replay 状态副本方案。</p>
+    </div>
+    <div class="tk">
+      <h4>潜在的互操作风险</h4>
+      <p>两边 Engram 表都按「全局逻辑行、2048 行对齐」保存，但 HF 键映射与量化格式处理各自独立（torchtitan-npu 现已支持读官方 MXFP8 整包，FSDPTurbo 要求已反量化 BF16）；若需跨框架迁移 checkpoint，Engram 与 experts 打包键（gate_up_proj/down_proj vs 上游 V3 布局）需要专门转换器。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 8 附注 ============ -->
+<section class="sec appendix" id="k8">
+  <h2 style="font-size:20px"><span class="mark" style="background:var(--line-strong)"></span>附注：方法与局限</h2>
+  <ul>
+    <li>方法：基于两仓远程最新分支源码走读（torchtitan-npu master 753a3c07、FSDPTurbo main c988cfd，均为 2026-11-23 上午的远程最新提交；本次对比前各拉取了 89 / 93 个新提交），交叉核对两仓 V4.1 readme、示例脚本、YAML/CLI 配置与提交记录；行数为 .py 文件 <code>wc -l</code> 统计。</li>
+    <li>本报告为静态代码对比，未实际运行训练，未测性能（吞吐/显存/收敛），未做数值对齐验证；「支持/不支持」以两仓文档与代码校验逻辑为准。</li>
+    <li>关键路径索引：torchtitan-npu 侧 <code>torchtitan_npu/models/deepseek_v4_1/</code>、<code>torchtitan_npu/override/deepseek_v4_1/</code>、<code>examples/deepseek_v4_1/</code>；FSDPTurbo 侧 <code>fsdp_turbo/models/deepseek/deepseek_v41/</code>、<code>fsdp_turbo/ops/</code>、<code>examples/deepseek_v41/</code>。</li>
+  </ul>
+</section>
+
+<footer>
+  DeepSeek V4.1 训练适配对比报告 · torchtitan-npu × FSDPTurbo · 生成于 2026-11-23 · 基于静态代码分析
+</footer>
+
+</body>
+</html>

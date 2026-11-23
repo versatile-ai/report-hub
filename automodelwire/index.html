@@ -544,12 +544,13 @@
 
 <script>
 const EXPERIMENTS=[
-  {id:"torchtitan-npu-dsv41",name:"torchtitan-npu × DeepSeek V4.1 适配",subtitle:"从四节点 64 专家 SFT 到全量 384 专家 GRPO、32K 长上下文与 HSDP 的完整回溯 —— 时间线 · 有效无环图 · 分布式框架契约 · 权重同步完整性 · Engram 短写修复 · 长训数值分歧未决项",status:"active",startDate:"2026-10-15",lastUpdate:"2026-11-18",
+  {id:"torchtitan-npu-dsv41",name:"torchtitan-npu × DeepSeek V4.1 适配",subtitle:"从四节点 64 专家 SFT 到全量 384 专家 GRPO、32K 长上下文与 HSDP 的完整回溯 —— 时间线 · 有效无环图 · 分布式框架契约 · 权重同步完整性 · Engram 短写修复 · 长训数值分歧未决项",status:"active",startDate:"2026-10-15",lastUpdate:"2026-11-23",
    tags:["torchtitan","torchtitan-npu","DeepSeek-V4.1","CANN","Ascend","verl","GRPO","HSDP","Engram","适配回溯"],
    metrics:[{label:"全量 GRPO",value:"30 步 · MATH 0.43→0.64",tone:"good"},{label:"全量长上下文",value:"32K · Pearson ≥0.997",tone:"good"},{label:"HSDP 4K",value:"三步最低 0.999551",tone:"good"},{label:"Engram 导出修复",value:"Pearson 均值 0.999654",tone:"good"}],
    reports:[
    {title:"完整适配回溯 — 时间线 + 有效无环图",subtitle:"torchtitan-npu 起步至全量 GRPO、长上下文与 HSDP · 六类瓶颈根因与有效解法 · 18 节点因果 DAG · 24 份证据索引 · Engram 短写已验收 · 长训双引擎分歧仍待固定输入判别",file:"torchtitan-npu-dsv41/2026-11-18-adaptation-retrospective.html",date:"2026-11-18",type:"retrospective"},
-   {title:"软件栈与适配修改点 — 调研报告",subtitle:"软件栈分层全景 · DeepSeek V4.1 五处修改点 · A3/A5 分档融合栈 · PR #974 OOM 修复机制图解 (query 维分块 + 逐位等价) · 训练引擎选型参考",file:"torchtitan-npu-dsv41/2026-10-15-survey.html",date:"2026-10-15",type:"survey"}
+   {title:"软件栈与适配修改点 — 调研报告",subtitle:"软件栈分层全景 · DeepSeek V4.1 五处修改点 · A3/A5 分档融合栈 · PR #974 OOM 修复机制图解 (query 维分块 + 逐位等价) · 训练引擎选型参考",file:"torchtitan-npu-dsv41/2026-10-15-survey.html",date:"2026-10-15",type:"survey"},
+   {title:"DeepSeek V4.1 训练适配对比 — torchtitan-npu × FSDPTurbo",subtitle:"同一模型两条实现路线的全维度对比 · 组件/并行/算子/量化/数据/checkpoint 十维度差异 · 每项差异的训练影响与优缺点 · 8 大训练场景选型 (CPT/1M/SFT/多模态/QAT/LoRA/研究/续训) · 基于 2026-11-23 双仓最新代码",file:"torchtitan-npu-dsv41/2026-11-23-comparison.html",date:"2026-11-23",type:"survey"}
    ]},
   {id:"glm53-flash-sft",name:"GLM-5.3-Flash 全量 SFT 训练",subtitle:"321B 模型昇腾 64 卡 SFT 20 步跑通 · loss 9.77→0.083 · 0-size alltoallv notify 握手死锁根因定位与修复 (msprof 点名 + 最小实验复现)",status:"active",startDate:"2026-08-31",lastUpdate:"2026-09-08",
    tags:["GLM-5.3-Flash","321B","SFT","MindSpeed-LLM","fla","MoE","alltoallv","Ascend 910B3","8节点"],
