@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="投机权重更新机制可视化 — 数据流 & 权重流全链路 SVG 图解 · EAGLE-3 在线 drafter 训练 · 235x gap 根因 = 权重从不回写磁盘">
+<title>投机权重更新机制 — 数据流 &amp; 权重流可视化 (2026-08-03)</title>
+<style>
+  :root {
+    --bg:#0D1117; --surface:#161B22; --surface-2:#1C2230; --border:#30363D; --code-bg:#10151C;
+    --text:#E6EDF3; --muted:#8B949E; --tertiary:#6B7385;
+    --accent:#A78BFA; --green:#3FB950; --yellow:#D29922; --red:#F85149; --info:#79C0FF; --orange:#D29922;
+    --green-bg:rgba(63,185,80,0.10); --yellow-bg:rgba(210,153,34,0.10);
+    --red-bg:rgba(248,81,73,0.10); --info-bg:rgba(121,192,255,0.10); --purple-bg:rgba(167,139,250,0.10);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased;}
+  h1,h2,.tag{font-family:'SF Mono','Fira Code',Consolas,monospace;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  .breadcrumb{max-width:1200px;margin:0 auto;padding:20px 48px 0;font-size:12px;color:var(--tertiary);}
+  .breadcrumb a{color:var(--muted)}
+  .breadcrumb .sep{margin:0 8px;color:var(--border)}
+
+  header{max-width:1200px;margin:0 auto;padding:28px 48px 24px;}
+  h1{font-size:28px;font-weight:700;letter-spacing:-0.6px;line-height:1.25;margin-bottom:10px;}
+  .meta{font-size:13px;color:var(--muted);line-height:1.7}
+  .meta b{color:var(--text);font-weight:500}
+
+  .container{max-width:1200px;margin:0 auto;padding:8px 48px 48px;}
+  section{margin-bottom:52px}
+  h2{font-size:18px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+  h3{font-size:14px;font-weight:600;margin:22px 0 8px;}
+  p{margin-bottom:10px}
+
+  /* ===== SVG 可视化 ===== */
+  .viz{background:var(--code-bg);border:1px solid var(--border);border-radius:12px;padding:8px;margin:10px 0 6px;overflow-x:auto;}
+  .viz svg{width:100%;height:auto;display:block;min-width:880px;}
+  svg text{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;}
+  .viz-cap{font-size:12px;color:var(--muted);margin:0 2px 4px;line-height:1.6}
+  .viz-cap b{color:var(--text);font-weight:500}
+
+  /* 图例 */
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin:6px 0 2px;font-size:12px;color:var(--muted);}
+  .legend .li{display:flex;align-items:center;gap:6px}
+  .sw{width:22px;height:3px;border-radius:2px;display:inline-block}
+  .sw.d{background:var(--info)} .sw.w{background:var(--accent)} .sw.g{background:var(--green)} .sw.r{background:var(--red)} .sw.o{background:var(--orange)}
+
+  /* 表格 */
+  .table-wrap{overflow-x:auto;margin:12px 0 16px;border:1px solid var(--border);border-radius:10px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);}
+  th{background:var(--surface-2);text-align:left;padding:9px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;}
+  td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55;}
+  tr:last-child td{border-bottom:none}
+  code{font-family:'SF Mono',Consolas,monospace;font-size:12px;background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--info);white-space:nowrap;}
+
+  .note{border:1px solid;border-radius:10px;padding:12px 16px;margin:12px 0 16px;font-size:13.5px;line-height:1.65;}
+  .note.ok{background:var(--green-bg);border-color:rgba(63,185,80,0.35)}
+  .note.warn{background:var(--yellow-bg);border-color:rgba(210,153,34,0.35)}
+  .note.bad{background:var(--red-bg);border-color:rgba(248,81,73,0.35)}
+  .note.info{background:var(--info-bg);border-color:rgba(121,192,255,0.35)}
+  .note .nt{font-weight:700;display:block;margin-bottom:4px;font-size:11px;letter-spacing:0.8px;text-transform:uppercase;}
+  .note.ok .nt{color:var(--green)} .note.warn .nt{color:var(--yellow)} .note.bad .nt{color:var(--red)} .note.info .nt{color:var(--info)}
+
+  .tag{display:inline-block;font-size:11px;padding:2px 10px;border-radius:20px;margin:2px 4px 2px 0;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);}
+  .footer{max-width:1200px;margin:0 auto;padding:20px 48px 48px;border-top:1px solid var(--border);font-size:12px;color:var(--tertiary);line-height:1.8;}
+</style>
+</head>
+<body>
+
+<div class="breadcrumb">
+  <a href="../index.html">Report Hub</a><span class="sep">/</span>
+  <a href="index.html">automodelwire</a><span class="sep">/</span>
+  <span>verl-speco-npu-rl-drafter</span>
+</div>
+
+<header>
+  <h1>投机权重更新机制 — 数据流 &amp; 权重流可视化</h1>
+  <div class="meta">
+    <b>实验</b> verl-speco-npu-rl-drafter · <b>日期</b> 2026-08-03 · <b>阶段</b> R27-A 诊断收口<br>
+    <b>模型</b> Qwen3-8B 主模型 + EAGLE-3 单层 drafter · <b>硬件</b> 1 节点 8×Ascend 910B3<br>
+    <b>两个重点</b> ① 训练数据怎么传 ② 权重怎么传
+  </div>
+  <div class="legend">
+    <span class="li"><span class="sw d"></span> 数据流 (训练数据)</span>
+    <span class="li"><span class="sw w"></span> 权重流 (目标头同步 / 发布)</span>
+    <span class="li"><span class="sw g"></span> 训练内部</span>
+    <span class="li"><span class="sw r"></span> 磁盘 / 断裂点</span>
+    <span class="li"><span class="sw o"></span> checkpoint 写盘</span>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- ============ 1. 全景图 ============ -->
+<section>
+<h2>1. 全景：整个系统怎么运转（一张图）</h2>
+<div class="viz">
+<svg viewBox="0 0 1150 700" role="img" aria-label="全景流程图">
+  <defs>
+    <marker id="mD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#79C0FF"/></marker>
+    <marker id="mW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#A78BFA"/></marker>
+    <marker id="mG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3FB950"/></marker>
+    <marker id="mR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#F85149"/></marker>
+    <marker id="mO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#D29922"/></marker>
+  </defs>
+
+  <!-- 层框 -->
+  <rect x="20" y="44" width="310" height="300" rx="12" fill="none" stroke="#30363D"/>
+  <text x="34" y="64" font-size="11" font-weight="600" fill="#79C0FF" letter-spacing="0.6">推理层 · SpecoVLLMHttpServer ×4 (TP=2 · 8卡)</text>
+  <rect x="380" y="44" width="310" height="300" rx="12" fill="none" stroke="#30363D"/>
+  <text x="394" y="64" font-size="11" font-weight="600" fill="#A78BFA" letter-spacing="0.6">协调层 · SpecoRayPPOTrainer (ray driver)</text>
+  <rect x="740" y="44" width="390" height="300" rx="12" fill="none" stroke="#30363D"/>
+  <text x="754" y="64" font-size="11" font-weight="600" fill="#A78BFA" letter-spacing="0.6">训练层 · SpecoWorker ×2 (leader+follower)</text>
+
+  <!-- 推理层节点 -->
+  <rect x="40" y="88" width="270" height="56" rx="8" fill="#161B22" stroke="#79C0FF"/>
+  <text x="56" y="111" font-size="13" font-weight="700" fill="#E6EDF3">主模型 Qwen3-8B</text>
+  <text x="56" y="131" font-size="11" fill="#8B949E">hidden_states · target_logprobs 出口</text>
+
+  <rect x="40" y="176" width="270" height="56" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="56" y="199" font-size="13" font-weight="700" fill="#E6EDF3">drafter EAGLE-3</text>
+  <text x="56" y="219" font-size="11" fill="#8B949E">权重 = 热更新目标 (只进内存)</text>
+
+  <rect x="40" y="262" width="270" height="58" rx="8" fill="#161B22" stroke="#F85149" stroke-dasharray="5,4"/>
+  <text x="56" y="284" font-size="11.5" font-weight="600" fill="#F85149">磁盘: eagle3-drafter/model.safetensors</text>
+  <text x="56" y="303" font-size="11" fill="#8B949E">md5=226fb · R19 初始 (未训练)</text>
+  <line x1="175" y1="262" x2="175" y2="236" stroke="#F85149" stroke-width="1.5" marker-end="url(#mR)"/>
+  <text x="188" y="252" font-size="10.5" fill="#F85149">仅启动时加载一次</text>
+
+  <!-- 协调层节点 -->
+  <rect x="400" y="88" width="270" height="118" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="416" y="110" font-size="12.5" font-weight="700" fill="#E6EDF3">主训练循环</text>
+  <text x="416" y="129" font-size="11" font-family="monospace" fill="#79C0FF">update_actor_with_speco</text>
+  <text x="416" y="150" font-size="11" fill="#8B949E">① generate_sequences 包装 → 采集数据</text>
+  <text x="416" y="170" font-size="11" fill="#8B949E">② update_actor 包装 → 训练+发布</text>
+  <text x="416" y="190" font-size="11" fill="#8B949E">③ update_weights 包装 → 延迟发布</text>
+
+  <rect x="400" y="220" width="270" height="52" rx="8" fill="#161B22" stroke="#D29922"/>
+  <text x="416" y="240" font-size="11" font-weight="700" fill="#D29922">闸 1 · 触发训练</text>
+  <text x="416" y="258" font-size="11" fill="#8B949E">global_step % 5 == 0 且非纯 collect</text>
+
+  <rect x="400" y="282" width="270" height="44" rx="8" fill="#161B22" stroke="#D29922"/>
+  <text x="416" y="301" font-size="11" font-weight="700" fill="#D29922">闸 2 · 发布</text>
+  <text x="416" y="316" font-size="10.5" fill="#8B949E">drafter_trained 或 defer 未发 · 4 条件</text>
+
+  <!-- 训练层节点 -->
+  <rect x="760" y="88" width="350" height="50" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="776" y="108" font-size="12" font-weight="700" fill="#E6EDF3">冻结目标头 target_lm_head (老师打分器)</text>
+  <text x="776" y="126" font-size="11" fill="#8B949E">index_copy_ 覆盖 · requires_grad=False</text>
+
+  <rect x="760" y="152" width="350" height="50" rx="8" fill="#161B22" stroke="#79C0FF"/>
+  <text x="776" y="172" font-size="12" font-weight="700" fill="#E6EDF3">样本缓冲 _store_rollout_sample</text>
+  <text x="776" y="190" font-size="11" fill="#8B949E">input_ids / hidden_states / target_logprobs / positions</text>
+
+  <rect x="760" y="216" width="350" height="56" rx="8" fill="#161B22" stroke="#3FB950"/>
+  <text x="776" y="238" font-size="12.5" font-weight="700" fill="#3FB950">draft model 训练</text>
+  <text x="776" y="258" font-size="11" fill="#8B949E">20 步 × 4 batch · lr=1e-5 · 蒸馏 (soft target)</text>
+
+  <rect x="930" y="282" width="180" height="44" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="946" y="301" font-size="11.5" font-weight="700" fill="#E6EDF3">publish snapshot</text>
+  <text x="946" y="316" font-size="10.5" fill="#8B949E">仅 leader · ray.put</text>
+
+  <!-- 数据流 (青) -->
+  <line x1="310" y1="130" x2="400" y2="150" stroke="#79C0FF" stroke-width="1.5" marker-end="url(#mD)"/>
+  <text x="316" y="127" font-size="10.5" fill="#79C0FF">D1 采集</text>
+  <line x1="670" y1="165" x2="760" y2="172" stroke="#79C0FF" stroke-width="1.5" marker-end="url(#mD)"/>
+  <text x="676" y="163" font-size="10.5" fill="#79C0FF">D2 样本 RPC</text>
+
+  <!-- 权重流 -->
+  <line x1="310" y1="106" x2="400" y2="112" stroke="#A78BFA" stroke-width="1.5" marker-end="url(#mW)"/>
+  <text x="316" y="100" font-size="10.5" fill="#A78BFA">W1 lm_head 行同步</text>
+  <line x1="670" y1="106" x2="760" y2="108" stroke="#A78BFA" stroke-width="1.5" marker-end="url(#mW)"/>
+  <text x="676" y="100" font-size="10.5" fill="#A78BFA">W2 sync lm_head</text>
+
+  <line x1="850" y1="202" x2="850" y2="216" stroke="#3FB950" stroke-width="1.5" marker-end="url(#mG)"/>
+  <text x="858" y="212" font-size="10.5" fill="#3FB950">每 5 步</text>
+  <line x1="850" y1="272" x2="850" y2="282" stroke="#A78BFA" stroke-width="1.5" marker-end="url(#mW)"/>
+  <text x="858" y="278" font-size="10.5" fill="#A78BFA">W3 快照</text>
+  <line x1="930" y1="304" x2="670" y2="300" stroke="#A78BFA" stroke-width="1.5" marker-end="url(#mW)"/>
+  <text x="760" y="296" font-size="10.5" fill="#A78BFA">W4 ray.put 取回</text>
+
+  <!-- W5-W7 发布大弧线 (训练→推理) -->
+  <path d="M535,88 C535,24 175,24 175,170" fill="none" stroke="#A78BFA" stroke-width="3" marker-end="url(#mW)"/>
+  <text x="348" y="66" font-size="11.5" font-weight="700" fill="#A78BFA">W5-W7 发布链 (权重回灌推理)</text>
+  <text x="348" y="84" font-size="10.5" fill="#8B949E">zmq SHM · 内存热更新 · 不写盘</text>
+
+  <!-- checkpoint 写盘 (橙) -->
+  <rect x="760" y="366" width="350" height="50" rx="8" fill="#161B22" stroke="#D29922" stroke-dasharray="5,4"/>
+  <text x="776" y="388" font-size="11.5" font-weight="600" fill="#D29922">磁盘: checkpoints/drafter/draft_step_480</text>
+  <text x="776" y="406" font-size="11" fill="#8B949E">md5=72d8d (训练后) · 每 20 步写盘 · 只进不出</text>
+  <line x1="810" y1="272" x2="810" y2="366" stroke="#D29922" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#mO)"/>
+  <text x="818" y="330" font-size="10.5" fill="#D29922">每 20 步</text>
+
+  <!-- 根因带 -->
+  <rect x="20" y="440" width="1110" height="118" rx="12" fill="rgba(248,81,73,0.10)" stroke="rgba(248,81,73,0.5)"/>
+  <text x="40" y="466" font-size="12" font-weight="700" fill="#F85149">235x gap 根因 — 权重来源, 不是采样位置</text>
+  <text x="40" y="492" font-size="12" fill="#E6EDF3">vLLM 加载的 = 磁盘 eagle3-drafter (md5 226fb · R19 初始 · 从未被训练写入)</text>
+  <text x="40" y="514" font-size="12" fill="#E6EDF3">训练产物只在 checkpoints/drafter/draft_step_480 (md5 72d8d) — <tspan fill="#F85149" font-weight="600">从不回写磁盘模型文件 → 重启即丢</tspan></text>
+  <text x="40" y="536" font-size="12" fill="#E6EDF3">R27-A 是 baseline 阶段 (enable_drafter_training=false) → 整条发布链关闭</text>
+  <text x="40" y="554" font-size="12" fill="#E6EDF3">结论: argmax_match=0 是未训练权重的正常行为 · 方案 A (n-2 对齐) 从未被真正验证</text>
+
+  <!-- 下一步带 -->
+  <rect x="20" y="576" width="1110" height="104" rx="12" fill="rgba(63,185,80,0.10)" stroke="rgba(63,185,80,0.5)"/>
+  <text x="40" y="600" font-size="12" font-weight="700" fill="#3FB950">下一步 · 验证方案 A (需授权)</text>
+  <text x="40" y="624" font-size="12" fill="#E6EDF3">① 复制 checkpoints/drafter/draft_step_480 (72d8d) → 替换 eagle3-drafter/model.safetensors (226fb)   [config.json 同架构可直接替换]</text>
+  <text x="40" y="646" font-size="12" fill="#E6EDF3">② 重启 R27-A — vLLM 启动即加载训练后权重</text>
+  <text x="40" y="668" font-size="12" fill="#E6EDF3">判定: argmax_match &gt; 0.5 + acceptance &gt; 1.5 → 方案 A 成立; 仍 ≈ 0 → 回查采样点对齐</text>
+</svg>
+</div>
+<p class="viz-cap"><b>读图顺序:</b> 数据从左边出去 (D1/D2, 青色) → 训练在右边完成 → 权重经两条路回来 (W1/W2 同步目标头, 紫色上方; W5-W7 发布热更新, 紫色大弧线)。<b>红色 = 断裂:</b> 磁盘权重只有"加载"没有"回写"。</p>
+</section>
+
+<!-- ============ 2. 数据流 ============ -->
+<section>
+<h2>2. 重点一：训练数据怎么传</h2>
+<div class="viz">
+<svg viewBox="0 0 1150 520" role="img" aria-label="数据流图">
+  <defs>
+    <marker id="mD2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#79C0FF"/></marker>
+  </defs>
+
+  <text x="30" y="30" font-size="13" font-weight="700" fill="#79C0FF">训练数据 = 推理生成的副产物</text>
+
+  <!-- 左: vLLM 主模型 -->
+  <rect x="30" y="70" width="320" height="130" rx="10" fill="#161B22" stroke="#79C0FF"/>
+  <text x="48" y="95" font-size="12.5" font-weight="700" fill="#E6EDF3">vLLM · 主模型 Qwen3-8B</text>
+  <text x="48" y="116" font-size="11" fill="#8B949E">generate_sequences 生成响应</text>
+  <text x="48" y="137" font-size="11" fill="#8B949E">hidden_states: 最后一层, 窗口前 2048 tok</text>
+  <text x="48" y="158" font-size="11" fill="#8B949E">target_logprobs: 验证位置的主模型打分</text>
+  <text x="48" y="182" font-size="10.5" fill="#6B7385">(每 step 生成后都有 · 数据不额外花钱)</text>
+
+  <!-- 中: trainer 采集 -->
+  <rect x="420" y="70" width="310" height="130" rx="10" fill="#161B22" stroke="#A78BFA"/>
+  <text x="438" y="95" font-size="12.5" font-weight="700" fill="#E6EDF3">SpecoRayPPOTrainer</text>
+  <text x="438" y="116" font-size="11" font-family="monospace" fill="#79C0FF">generate_sequences_with_speco (:1797)</text>
+  <text x="438" y="139" font-size="11" fill="#8B949E">生成前: 等未完成发布 (暂停生成)</text>
+  <text x="438" y="160" font-size="11" fill="#8B949E">生成后: _speco_collect_generation_samples</text>
+  <text x="438" y="184" font-size="10.5" fill="#6B7385">→ collect_rollout_features_rpc (:1308)</text>
+
+  <!-- 右: SpecoWorker -->
+  <rect x="800" y="70" width="330" height="160" rx="10" fill="#161B22" stroke="#3FB950"/>
+  <text x="818" y="95" font-size="12.5" font-weight="700" fill="#3FB950">SpecoWorker.collect_rollout_features (:661)</text>
+  <text x="818" y="118" font-size="11" fill="#8B949E">batch = { input_ids, prompts, responses,</text>
+  <text x="818" y="137" font-size="11" fill="#8B949E">          hidden_states, target_logprobs,</text>
+  <text x="818" y="156" font-size="11" fill="#8B949E">          hidden_positions, global_step }</text>
+  <text x="818" y="181" font-size="11" font-weight="600" fill="#79C0FF">→ _store_rollout_sample (每 5 步)</text>
+
+  <!-- 箭头 -->
+  <line x1="350" y1="120" x2="420" y2="130" stroke="#79C0FF" stroke-width="2" marker-end="url(#mD2)"/>
+  <text x="358" y="114" font-size="11" font-weight="600" fill="#79C0FF">D1 采集</text>
+  <line x1="730" y1="130" x2="800" y2="135" stroke="#79C0FF" stroke-width="2" marker-end="url(#mD2)"/>
+  <text x="738" y="124" font-size="11" font-weight="600" fill="#79C0FF">D2 RPC</text>
+
+  <!-- 底部三卡 -->
+  <rect x="30" y="290" width="350" height="190" rx="10" fill="#161B22" stroke="#30363D"/>
+  <text x="48" y="315" font-size="11.5" font-weight="700" fill="#D29922">① 采集时机</text>
+  <text x="48" y="340" font-size="11" fill="#8B949E">每次 generate_sequences 之后立即采集</text>
+  <text x="48" y="360" font-size="11" fill="#8B949E">每 step 都采; 每 5 步 store 一次</text>
+  <text x="48" y="380" font-size="11" fill="#8B949E">(collect_interval_steps=5)</text>
+  <text x="48" y="405" font-size="11" fill="#8B949E">生成前先等未完成发布</text>
+  <text x="48" y="425" font-size="11" fill="#8B949E">(draft_update_pause_generation=true)</text>
+
+  <rect x="400" y="290" width="350" height="190" rx="10" fill="#161B22" stroke="#30363D"/>
+  <text x="418" y="315" font-size="11.5" font-weight="700" fill="#D29922">② 窗口截取 (教训 #30)</text>
+  <text x="418" y="340" font-size="11" fill="#8B949E">hidden_state_window_mode = front</text>
+  <text x="418" y="360" font-size="11" fill="#8B949E">每样本前 2048 tok (原 512)</text>
+  <text x="418" y="385" font-size="11" fill="#F85149">原 512 采不到响应尾部 →</text>
+  <text x="418" y="405" font-size="11" fill="#F85149">在线采样点 x[N] 的 hidden 从未进训练</text>
+  <text x="418" y="425" font-size="11" fill="#F85149">→ OOD → acceptance≈1.0 (0 加速)</text>
+
+  <rect x="770" y="290" width="360" height="190" rx="10" fill="#161B22" stroke="#30363D"/>
+  <text x="788" y="315" font-size="11.5" font-weight="700" fill="#D29922">③ 样本消费</text>
+  <text x="788" y="340" font-size="11" fill="#8B949E">sample_last_n_steps = 20</text>
+  <text x="788" y="360" font-size="11" fill="#8B949E">train_batches_per_cycle = 4</text>
+  <text x="788" y="380" font-size="11" fill="#8B949E">batch_size_per_gpu = 1</text>
+  <text x="788" y="405" font-size="11" fill="#8B949E">→ 每次训练 = 最近 20 步 × 4 batch</text>
+  <text x="788" y="425" font-size="11" fill="#8B949E">(batch=1: 窗口2048×batch4 曾 OOM)</text>
+
+  <text x="30" y="485" font-size="11.5" font-weight="600" fill="#79C0FF">核心: 数据是推理白送的 —— 主模型每生成一个 token, 顺带就拿到了"输入 + 老师的打分", 不用单独造数据集。</text>
+</svg>
+</div>
+</section>
+
+<!-- ============ 3. 权重流 ============ -->
+<section>
+<h2>3. 重点二：权重怎么传（两条链）</h2>
+<div class="viz">
+<svg viewBox="0 0 1150 640" role="img" aria-label="权重流图">
+  <defs>
+    <marker id="mW2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#A78BFA"/></marker>
+    <marker id="mG2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3FB950"/></marker>
+    <marker id="mR2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#F85149"/></marker>
+  </defs>
+
+  <text x="30" y="30" font-size="13" font-weight="700" fill="#A78BFA">两条链: A = 目标头同步 (训练前) · B = 权重发布 (训练后)</text>
+
+  <!-- 训练范围说明 -->
+  <rect x="30" y="44" width="1040" height="58" rx="10" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.45)"/>
+  <text x="48" y="66" font-size="11.5" font-weight="700" fill="#3FB950">先厘清: 链 A 同步的是"老师(主模型)的 lm_head", 不是"只训练 lm_head"</text>
+  <text x="48" y="86" font-size="11" fill="#8B949E">drafter 训练 = 全量 (EAGLE-3 冻结名单仅 embed_tokens.weight, base_trainer.py:488) · lm_head 自己也在训练</text>
+  <text x="48" y="103" font-size="10.5" fill="#6B7385">蒸馏损失需要"主模型打分"当目标 → 学生每次训练前把老师最新 lm_head 搬进来当打分器 (requires_grad=False 只读)</text>
+
+  <!-- 链 A -->
+  <rect x="30" y="128" width="1040" height="172" rx="10" fill="rgba(167,139,250,0.05)" stroke="#A78BFA" stroke-opacity="0.35"/>
+  <text x="48" y="152" font-size="11.5" font-weight="700" fill="#A78BFA">链 A · 目标头同步 —— "把老师最新的标准答案搬给学生看" (每 5 步 · 训练前)</text>
+
+  <rect x="50" y="170" width="300" height="70" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="66" y="194" font-size="12" font-weight="700" fill="#E6EDF3">主模型 lm_head (vLLM 侧)</text>
+  <text x="66" y="214" font-size="11" fill="#8B949E">全词表 ~15 万行 · FSDP 分片</text>
+  <text x="66" y="231" font-size="10.5" fill="#6B7385">每 5 步都在变 (RL 梯度更新)</text>
+
+  <rect x="430" y="170" width="300" height="70" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="446" y="194" font-size="12" font-weight="700" fill="#E6EDF3">trainer 取行</text>
+  <text x="446" y="214" font-size="11" font-family="monospace" fill="#79C0FF">get_actor_lm_head_weight(row_indices)</text>
+  <text x="446" y="231" font-size="11" fill="#8B949E">只传 t2d 掩码选中的行 (非全词表)</text>
+
+  <rect x="810" y="170" width="250" height="70" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="826" y="194" font-size="12" font-weight="700" fill="#E6EDF3">冻结目标头 (训练进程内)</text>
+  <text x="826" y="214" font-size="11" font-family="monospace" fill="#79C0FF">index_copy_ 覆盖</text>
+  <text x="826" y="231" font-size="11" fill="#8B949E">requires_grad=False (只当打分器)</text>
+
+  <line x1="350" y1="203" x2="430" y2="203" stroke="#A78BFA" stroke-width="2" marker-end="url(#mW2)"/>
+  <text x="358" y="195" font-size="11" font-weight="600" fill="#A78BFA">A1 ray 取行</text>
+  <line x1="730" y1="203" x2="810" y2="203" stroke="#A78BFA" stroke-width="2" marker-end="url(#mW2)"/>
+  <text x="738" y="195" font-size="11" font-weight="600" fill="#A78BFA">A2 sync RPC</text>
+  <text x="48" y="294" font-size="11" fill="#6B7385">用途: 蒸馏损失需要"主模型打分"当目标 —— 打分 = hidden × lm_head, lm_head 必须是最新的</text>
+
+  <!-- 链 B -->
+  <rect x="30" y="330" width="1040" height="180" rx="10" fill="rgba(167,139,250,0.08)" stroke="#A78BFA" stroke-opacity="0.6"/>
+  <text x="48" y="354" font-size="11.5" font-weight="700" fill="#A78BFA">链 B · 权重发布 —— "学生练完把作业搬回推理端" (训练后 · 同步等待)</text>
+
+  <rect x="50" y="372" width="300" height="90" rx="8" fill="#161B22" stroke="#3FB950"/>
+  <text x="66" y="396" font-size="12" font-weight="700" fill="#3FB950">draft model 训练完成</text>
+  <text x="66" y="416" font-size="11" fill="#8B949E">20 步 × 4 batch · 蒸馏 loss</text>
+  <text x="66" y="436" font-size="11" fill="#8B949E">→ 缓存 publish snapshot</text>
+  <text x="66" y="452" font-size="10.5" fill="#6B7385">maybe_publish 4 条件 (周期/已训/快照/leader)</text>
+
+  <rect x="430" y="372" width="300" height="90" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="446" y="396" font-size="12" font-weight="700" fill="#E6EDF3">trainer 发布出口</text>
+  <text x="446" y="416" font-size="11" font-family="monospace" fill="#79C0FF">update_draft_weights(payload)</text>
+  <text x="446" y="436" font-size="11" fill="#8B949E">publish_async=false → 同步等完成</text>
+  <text x="446" y="452" font-size="10.5" fill="#6B7385">发布前: abort_all_requests + clear_kv_cache</text>
+
+  <rect x="810" y="372" width="250" height="90" rx="8" fill="#161B22" stroke="#A78BFA"/>
+  <text x="826" y="396" font-size="12" font-weight="700" fill="#E6EDF3">vLLM drafter (内存)</text>
+  <text x="826" y="416" font-size="11" font-family="monospace" fill="#79C0FF">_load_draft_param 逐参数</text>
+  <text x="826" y="436" font-size="11" fill="#8B949E">图安全 + cumem · EAGLE3 名称翻译</text>
+  <text x="826" y="452" font-size="10.5" fill="#6B7385">→ 外部 Eagle3LlamaForCausalLM</text>
+
+  <line x1="350" y1="410" x2="430" y2="410" stroke="#A78BFA" stroke-width="2.5" marker-end="url(#mW2)"/>
+  <text x="358" y="402" font-size="11" font-weight="600" fill="#A78BFA">B1 ray.put</text>
+  <line x1="730" y1="410" x2="810" y2="410" stroke="#A78BFA" stroke-width="3" marker-end="url(#mW2)"/>
+  <text x="738" y="402" font-size="11" font-weight="600" fill="#A78BFA">B2 zmq + SHM</text>
+  <text x="48" y="496" font-size="11" fill="#6B7385">传输介质: BucketedWeightSender/Receiver (ipc:///tmp/rl-colocate-zmq-replica-{r}-rank-{lr}-draft.sock) · NPU 强制 SHM</text>
+
+  <!-- 断裂红带 -->
+  <rect x="30" y="540" width="1040" height="52" rx="10" fill="rgba(248,81,73,0.10)" stroke="rgba(248,81,73,0.5)"/>
+  <text x="48" y="564" font-size="12" font-weight="700" fill="#F85149">断裂: 两条链都只进内存, 从不写盘</text>
+  <text x="48" y="584" font-size="11.5" fill="#E6EDF3">磁盘 eagle3-drafter/model.safetensors (226fb) 只有"启动加载"入口 · checkpoint (72d8d) 只有"写盘"出口 —— 两者之间没有任何通路 → 重启即丢</text>
+</svg>
+</div>
+<div class="table-wrap">
+<table>
+  <tr><th></th><th>链 A · 目标头同步</th><th>链 B · 权重发布</th></tr>
+  <tr><td><b>方向</b></td><td>主模型 lm_head → 训练进程的冻结目标头</td><td>训练进程 → vLLM 推理进程的 drafter</td></tr>
+  <tr><td><b>内容</b></td><td>lm_head 部分行 (t2d 选中)</td><td>drafter 全部参数</td></tr>
+  <tr><td><b>时机</b></td><td>训练前 (每 5 步)</td><td>训练后 (每 5 步)</td></tr>
+  <tr><td><b>介质</b></td><td>ray object store + RPC</td><td>ray.put + zmq 共享内存 (NPU 强制 SHM)</td></tr>
+  <tr><td><b>比喻</b></td><td>老师把最新标准答案发给学生</td><td>学生把作业抄回推理端使用</td></tr>
+  <tr><td><b>写盘?</b></td><td>否</td><td><b>否 —— 重启即丢</b></td></tr>
+</table>
+</div>
+</section>
+
+<!-- ============ 4. 时间线 ============ -->
+<section>
+<h2>4. 时间线：10 个 step 里发生了什么</h2>
+<div class="viz">
+<svg viewBox="0 0 1150 420" role="img" aria-label="时间线图">
+  <text x="30" y="30" font-size="13" font-weight="700" fill="#E6EDF3">global step 1 → 10 (training_interval_steps = 5)</text>
+  <!-- step 块 -->
+  <g>
+    <rect x="30" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="77" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 1</text>
+    <text x="77" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="135" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="182" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 2</text>
+    <text x="182" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="240" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="287" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 3</text>
+    <text x="287" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="345" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="392" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 4</text>
+    <text x="392" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="450" y="70" width="95" height="60" rx="8" fill="#1C2230" stroke="#A78BFA" stroke-width="2"/>
+    <text x="497" y="92" font-size="12" font-weight="700" fill="#A78BFA" text-anchor="middle">step 5</text>
+    <text x="497" y="110" font-size="10" fill="#A78BFA" text-anchor="middle">① 训练 20 步</text>
+    <text x="497" y="124" font-size="10" fill="#A78BFA" text-anchor="middle">② 发布热更新</text>
+  </g>
+  <g>
+    <rect x="555" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="602" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 6</text>
+    <text x="602" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="660" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="707" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 7</text>
+    <text x="707" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="765" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="812" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 8</text>
+    <text x="812" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="870" y="70" width="95" height="60" rx="8" fill="#161B22" stroke="#30363D"/>
+    <text x="917" y="95" font-size="12" font-weight="700" fill="#8B949E" text-anchor="middle">step 9</text>
+    <text x="917" y="115" font-size="10" fill="#6B7385" text-anchor="middle">生成 + 采集</text>
+  </g>
+  <g>
+    <rect x="975" y="70" width="95" height="60" rx="8" fill="#1C2230" stroke="#A78BFA" stroke-width="2"/>
+    <text x="1022" y="92" font-size="12" font-weight="700" fill="#A78BFA" text-anchor="middle">step 10</text>
+    <text x="1022" y="110" font-size="10" fill="#A78BFA" text-anchor="middle">① 训练 20 步</text>
+    <text x="1022" y="124" font-size="10" fill="#A78BFA" text-anchor="middle">② 发布热更新</text>
+  </g>
+
+  <!-- 泳道说明 -->
+  <line x1="30" y1="170" x2="1070" y2="170" stroke="#30363D" stroke-dasharray="4,3"/>
+  <text x="30" y="195" font-size="11" fill="#8B949E">主模型: 每个 step 都执行 update_actor (RL 训练从不中断)</text>
+  <text x="30" y="217" font-size="11" fill="#8B949E">采集: 每个 step 生成后都采; 每 5 步 store 进样本缓冲</text>
+  <text x="30" y="239" font-size="11" fill="#A78BFA">drafter 训练: 仅 step % 5 == 0 (闸 1) → 训练 20 步 → 发布 (闸 2)</text>
+  <text x="30" y="261" font-size="11" fill="#F85149">磁盘 model.safetensors: 从头到尾不变 (md5 始终 226fb)</text>
+  <text x="30" y="283" font-size="11" fill="#6B7385">注: 训练 + 发布期间 vLLM 生成暂停 (abort + flush), 权重换完恢复</text>
+
+  <!-- 主流程未改 说明框 -->
+  <rect x="30" y="300" width="1040" height="100" rx="10" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.45)"/>
+  <text x="48" y="322" font-size="11.5" font-weight="700" fill="#3FB950">基础 GRPO 主流程没被改 — speco 只在外面包了两层 (speco_ray_trainer.py:1785/1928)</text>
+  <text x="48" y="344" font-size="11" fill="#8B949E">update_actor 被原样调用 (original_update_actor(*args, **kwargs), 参数不变) → verl 原生 GRPO 逐 step 全量更新主模型全部权重 (FSDP)</text>
+  <text x="48" y="366" font-size="11" fill="#8B949E">同步目标头 = 训练 drafter 前的前置动作 (把老师最新 lm_head 搬进训练进程打分) · 训练 drafter = 独立第二套节奏 (每 5 步)</text>
+  <text x="48" y="388" font-size="10.5" fill="#6B7385">唯一主流程内替换: _compute_old_log_prob → 去掉 forced entropy (:1774) · 只影响 RL 损失, 不影响权重刷新节奏</text>
+</svg>
+</div>
+</section>
+
+<!-- ============ 5. 证据 ============ -->
+<section>
+<h2>5. 根因证据链</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>#</th><th>观察</th><th>证据</th><th>结论</th></tr>
+  <tr><td>1</td><td>drafter 训练有效</td><td>top1_acc 0.52→0.91 · ploss 1756→245 · 65 条 quality 日志</td><td>训练链路通</td></tr>
+  <tr><td>2</td><td>发布链路活</td><td>after_draft_ipc_update norms 持续微变 (141.29→141.35)</td><td>vLLM 侧收到过更新</td></tr>
+  <tr><td>3</td><td>磁盘权重从未变</td><td>eagle3-drafter md5=226fb (R19 初始) vs checkpoint md5=72d8d (训练后)</td><td>训练产物从不回写磁盘</td></tr>
+  <tr><td>4</td><td>R27-A 是 baseline 阶段</td><td>launch.sh: enable_drafter_training=false</td><td>更新链整体关闭</td></tr>
+  <tr><td>5</td><td>vLLM 加载路径</td><td>启动时从磁盘 eagle3-drafter 加载</td><td>加载的是未训练 R19 权重</td></tr>
+</table>
+</div>
+<div class="note warn"><span class="nt">遗留矛盾 (R25, 待解)</span>
+R25 训练到 top1_acc 0.91, 接受率却仍是 1.00003 (0 加速)。R25 无 argmax_match 探针数据, 无法区分: (a) 发布后 verify 实际没用新权重 (发布链假活), 还是 (b) 权重真换上了但 acceptance 机制另有问题。需带训练阶段加探针定论。
+</div>
+</section>
+
+</div>
+
+<div class="footer">
+<b>数据来源</b>: 一手日志 r27a_baseline.log + overlay 源码行号 (speco_ray_trainer.py / speco_worker.py / vllm_runtime.py / rollout_publish.py / base_trainer.py / eagle_proposer.py)。<br>
+<b>关联</b>: docs/lessons_learned.md (教训 #30) · 实验目录 results/ · verl-SpeCo 上游。
+</div>
+
+</body>
+</html>
