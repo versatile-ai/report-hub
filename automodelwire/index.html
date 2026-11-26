@@ -564,6 +564,12 @@ const EXPERIMENTS=[
    {title:"CP 数据流可视化:权重/token/图像内容各切不切",subtitle:"切分总览(五件套同置换、图像内容整行复制、KV 整行拼装) · 前向六站数据流(视觉塔独立支路、汇合点=词嵌入后注入、通信清单=图像路径零新增) · 显存账本与 FSDP 权重生命周期",file:"torchtitan-npu-dsv41/2026-11-21-vision-cp-dataflow.html",date:"2026-11-21",type:"design"},
    {title:"视觉栈 CP 接入设计 — 原理版报告(面向无背景读者)",subtitle:"问题(显存墙与框架拒绝) · 社区未支持的意图分析 · 难点原理拆解(doc-chunk 置换/位置语义注入/n-gram 行内前驱) · 方案(解耦判决:图像内容不参与切分) · 验证门 · 风险清单",file:"torchtitan-npu-dsv41/2026-11-21-vision-cp-design-report.html",date:"2026-11-21",type:"design"}
    ]},
+  {id:"dsv41-28-vision-rl",name:"DeepSeek-V4.1-Flash 文本层 → 视觉层适配（视觉强化学习 28 号）",subtitle:"四训练 + 四推理节点图文 GRPO · 视觉塔与 aligner 进训练面的三条链路(模型/数据/同步) · 50 步全同步中 49 步全绿(首步 pearson 0.99912、HBM 32.75 GiB) · 奖励信号第 16 步塌缩与末步检查点 OOM 的归因",status:"active",startDate:"2026-11-19",lastUpdate:"2026-11-26",
+   tags:["DeepSeek-V4.1","vision","多模态","GRPO","verl","torchtitan-npu","vLLM 0.30","权重同步","Engram"],
+   metrics:[{label:"机制四门",value:"49 步全绿 · reloaddiff=0",tone:"good"},{label:"首步一致性",value:"pearson 0.99912 ≥ 0.995",tone:"good"},{label:"学习信号",value:"原始奖励≈0 · 第 16 步起优势归零",tone:"warn"},{label:"终态",value:"49/50 步 · 末步检查点 OOM",tone:"warn"}],
+   reports:[
+   {title:"文本→视觉层适配差异与 50 步全同步实验报告",subtitle:"五章: 适配原理与动机 · 11 项改动点逐条展开 · 51 个文件全量 Git Review · 实验条件(镜像/版本/并行/算法/数据)与 49 步指标(5 张交互曲线) · 结论与遗留",file:"dsv41-28-vision-rl/20261126-text-to-vision-adaptation-and-run-report.html",date:"2026-11-26",type:"stage"}
+   ]},
   {id:"glm53-flash-sft",name:"GLM-5.3-Flash 全量 SFT 训练",subtitle:"321B 模型昇腾 64 卡 SFT 20 步跑通 · loss 9.77→0.083 · 0-size alltoallv notify 握手死锁根因定位与修复 (msprof 点名 + 最小实验复现)",status:"active",startDate:"2026-08-31",lastUpdate:"2026-09-08",
    tags:["GLM-5.3-Flash","321B","SFT","MindSpeed-LLM","fla","MoE","alltoallv","Ascend 910B3","8节点"],
    metrics:[{label:"loss",value:"9.77→0.083 (20步)",tone:"good"},{label:"崩溃",value:"0 (20/20步)",tone:"good"},{label:"稳态耗时",value:"89.4 s/step",tone:"info"},{label:"吞吐",value:"366 tok/s",tone:"info"}],
